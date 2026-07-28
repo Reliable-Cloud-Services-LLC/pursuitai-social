@@ -12,21 +12,49 @@ on:
         type: boolean
         default: false
 
+# A superseded push should not keep burning a runner, and a stalled
+# apt mirror should not hold a PR hostage for the full job timeout.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python deps
+        timeout-minutes: 4
+        run: pip install -r requirements.txt pytest pytest-xdist
+
+      # ffmpeg and the DejaVu fonts are preinstalled on the standard
+      # runner image. Only reach for apt when they are genuinely missing —
+      # `apt-get update` is the slowest and least reliable step in this
+      # workflow, and it was stalling runs past the job timeout.
+      - name: Ensure ffmpeg + fonts
+        timeout-minutes: 4
         run: |
-          pip install -r requirements.txt pytest
-          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+          need=""
+          command -v ffmpeg >/dev/null || need="$need ffmpeg"
+          fc-list 2>/dev/null | grep -qi dejavu || need="$need fonts-dejavu-core"
+          if [ -n "$need" ]; then
+            echo "installing:$need"
+            sudo apt-get update -qq && sudo apt-get install -y -qq $need
+          else
+            echo "ffmpeg and DejaVu fonts already present — skipping apt"
+          fi
+
+      # The suite is subprocess-heavy, so it parallelises well.
       - name: Run test suite
-        run: pytest tests/ -v
+        timeout-minutes: 8
+        run: pytest tests/ -n auto --dist loadfile -q
 
   validate-credentials:
     if: ${{ inputs.validate_credentials }}

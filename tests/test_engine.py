@@ -150,11 +150,18 @@ def sandbox(tmp_path):
             p.unlink()
     return str(dst)
 
-def test_publish_without_credentials_does_not_consume_topic(sandbox):
+def test_publish_without_credentials_does_not_consume_topic(sandbox, cal):
     r = _run(["--prepare"], sandbox)
     assert r.returncode == 0, r.stderr
     pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
-    assert pending["topic"] == "fit-scoring"
+    # W5: rotation runs over VERIFIED topics with clean captions only, so
+    # assert the invariant (a selectable topic was chosen) rather than a
+    # specific id — the id moves whenever a topic's status or copy changes.
+    import compliance
+    selectable = {t["id"] for t in cal["topics"]
+                  if compliance.is_publishable(t)}
+    assert pending["topic"] in selectable, (
+        f'{pending["topic"]} is not VERIFIED')
     assert pending["format"] == "card"
     assert os.path.exists(os.path.join(sandbox, pending["media_x"]))
 
