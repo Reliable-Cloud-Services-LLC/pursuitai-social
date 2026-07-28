@@ -38,7 +38,7 @@ def _mark():
     with open(MARK, "w") as f:
         f.write("called")
 
-def post(text, media_path=None):
+def post(text, media_path=None, reply_text=None):
     _mark()
     return 111
 

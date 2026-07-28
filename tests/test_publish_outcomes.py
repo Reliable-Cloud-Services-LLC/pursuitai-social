@@ -24,12 +24,12 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 CREDS = {"x": {"X_API_KEY": "test-key"}, "ig": {"IG_USER_ID": "test-uid"}}
 
 STUB_OK = {
-    "x": 'def post(text, media_path=None):\n    return 1234567890\n',
+    "x": 'def post(text, media_path=None, reply_text=None):\n    return {"id": "1234567890", "reply_id": "222",\n            "reply_error": None}\n',
     "ig": ('def post_image(path, caption):\n    return "ig-987"\n\n'
            'def post_reel(path, caption):\n    return "ig-987"\n'),
 }
 STUB_RAISES = {
-    "x": ('def post(text, media_path=None):\n'
+    "x": ('def post(text, media_path=None, reply_text=None):\n'
           '    raise RuntimeError("simulated X outage")\n'),
     "ig": ('def post_image(path, caption):\n'
            '    raise RuntimeError("simulated IG outage")\n\n'

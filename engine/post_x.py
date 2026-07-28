@@ -7,7 +7,18 @@ Env vars required (create app at https://developer.x.com, Free tier works):
 """
 import os
 
-def post(text, media_path=None):
+def post(text, media_path=None, reply_text=None):
+    """Post `text`, then thread `reply_text` beneath it as a reply.
+
+    Returns {"id", "reply_id", "reply_error"} rather than a bare id: the
+    reply can fail on its own, and the caller needs to tell "no reply was
+    asked for" apart from "the reply failed".
+
+    A reply failure is NOT re-raised. By the time it happens the post is
+    already public, so raising would mark the channel failed and the next
+    run would publish the same post a second time. A missing CTA reply is
+    a far smaller problem than a duplicate post.
+    """
     import tweepy
     ck, cs = os.environ["X_API_KEY"], os.environ["X_API_SECRET"]
     at, ats = os.environ["X_ACCESS_TOKEN"], os.environ["X_ACCESS_SECRET"]
@@ -29,4 +40,17 @@ def post(text, media_path=None):
     resp = client.create_tweet(text=text, media_ids=media_ids)
     tweet_id = resp.data["id"]
     print(f"[x] posted https://x.com/pursuit_ai/status/{tweet_id}")
-    return tweet_id
+
+    reply_id = reply_error = None
+    if reply_text:
+        try:
+            r = client.create_tweet(text=reply_text,
+                                    in_reply_to_tweet_id=tweet_id)
+            reply_id = str(r.data["id"])
+            print(f"[x] CTA reply {reply_id}")
+        except Exception as e:
+            reply_error = f"{type(e).__name__}: {e}"
+            print(f"[x] CTA reply FAILED (post itself is live): {reply_error}")
+
+    return {"id": str(tweet_id), "reply_id": reply_id,
+            "reply_error": reply_error}

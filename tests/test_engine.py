@@ -43,15 +43,19 @@ def test_brand_config(cal):
 # ---------- captions ----------
 
 def test_x_captions_within_limit(cal):
-    # W2: the CTA link now carries UTM params, so the raw string exceeds 280
-    # while X's own count does not — it weighs every URL at 23 chars.
+    # W4: the body carries no link at all — the CTA and its tagged URL ship
+    # as a threaded reply, so each part is measured on its own.
     for t in cal["topics"]:
-        text = captions.build_x(t, cal["brand"], fmt="card", fresh=False)
-        urls = [w for w in text.split() if w.startswith("http")]
-        weighted = links.x_weighted_length(text, urls)
-        assert weighted <= 280, f"{t['id']} X caption {weighted} weighted chars"
-        assert "pursuitai.net" in text
-        assert "14-day" in text
+        body = captions.build_x(t, cal["brand"], fmt="card", fresh=False)
+        assert len(body) <= 280, f"{t['id']} X body {len(body)} chars"
+        assert "http" not in body
+
+        reply = captions.build_x_reply(t, cal["brand"], "card")
+        urls = [w for w in reply.split() if w.startswith("http")]
+        weighted = links.x_weighted_length(reply, urls)
+        assert weighted <= 280, f"{t['id']} X reply {weighted} weighted chars"
+        assert "pursuitai.net" in reply
+        assert "14-day" in reply
 
 def test_ig_captions_have_cta_and_tags(cal):
     for t in cal["topics"]:
@@ -92,8 +96,7 @@ def test_claude_variant_fails_safe(cal, monkeypatch):
     # must fall back to template, never raise
     text = captions.build_x(cal["topics"][0], cal["brand"], fmt="card",
                             fresh=True)
-    urls = [w for w in text.split() if w.startswith("http")]
-    assert links.x_weighted_length(text, urls) <= 280
+    assert len(text) <= 280
 
 # ---------- cards ----------
 

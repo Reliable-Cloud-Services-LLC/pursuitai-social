@@ -108,6 +108,7 @@ def prepare():
     pending = {
         "date": today, "topic": topic["id"], "format": fmt,
         "text_x": captions.build_x(topic, brand, fmt=fmt),
+        "text_x_reply": captions.build_x_reply(topic, brand, fmt),
         "text_ig": captions.build_ig(topic, brand),
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
@@ -118,8 +119,10 @@ def prepare():
 
 def _post_x(pending):
     import post_x
-    return str(post_x.post(pending["text_x"],
-                           os.path.join(ROOT, pending["media_x"])))
+    # text_x_reply is absent from a pending.json prepared before W4.
+    return post_x.post(pending["text_x"],
+                       os.path.join(ROOT, pending["media_x"]),
+                       reply_text=pending.get("text_x_reply"))
 
 def _post_ig(pending):
     import post_ig
@@ -185,8 +188,13 @@ def publish(skip_x=False, skip_ig=False, force=False):
             print(f"[publish] {ch} SKIPPED: {env_var} not set")
         else:
             try:
-                results[ch] = {"status": "posted", "id": poster(pending),
-                               "error": None}
+                # A poster returns a bare id, or a dict when it has more to
+                # report — X threads a CTA reply that can fail on its own.
+                outcome = poster(pending)
+                extra = dict(outcome) if isinstance(outcome, dict) else {}
+                results[ch] = {"status": "posted",
+                               "id": extra.pop("id", None) or outcome,
+                               "error": None, **extra}
             except Exception as e:
                 results[ch] = {"status": "failed", "id": None,
                                "error": f"{type(e).__name__}: {e}"}

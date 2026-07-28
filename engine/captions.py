@@ -46,19 +46,34 @@ def _claude_variant(topic, platform, brand):
         return None
 
 def build_x(topic, brand, *, fmt, fresh=True):
-    """Build the tweet. `fmt` is required — it becomes utm_content, and a
-    default would silently mislabel the attribution of every post."""
+    """The tweet body — deliberately carries no link.
+
+    A post containing a URL is demoted in distribution, so the CTA link
+    ships as a threaded reply instead (see build_x_reply). Dropping the
+    CTA block also returns its ~62 characters to the copy, which is what
+    makes the body budget workable.
+
+    `fmt` is required even though the body no longer contains the tagged
+    URL: it keeps the body and its reply built from one signature, so a
+    caller cannot produce a body without knowing what reply pairs with it.
+    """
     body = (_claude_variant(topic, "x", brand) if fresh else None) or topic["hook_x"]
     tags = " ".join(brand["hashtags_x"][:2])
-    url = links.build_url(brand["url"], "x", topic["id"], fmt)
-    cta = f"\n\nFree 14-day trial → {url}\n{tags}"
-    # X counts any URL as 23 chars, so budget on the weighted length.
-    # Measuring the literal tagged URL (~96 chars) instead would eat ~73
-    # chars of copy off every tweet and truncate all 24 topics.
-    budget = X_LIMIT - links.x_weighted_length(cta, [url]) - SAFETY_MARGIN
+    suffix = f"\n\n{tags}"
+    budget = X_LIMIT - len(suffix) - SAFETY_MARGIN
     if len(body) > budget:
         body = body[:budget].rsplit(" ", 1)[0].rstrip(".,;") + "…"
-    return body + cta
+    return body + suffix
+
+
+def build_x_reply(topic, brand, fmt):
+    """The CTA, posted as a reply to the body so the body stays link-free.
+
+    X counts any URL as 23 characters whatever its real length, so the
+    tagged URL costs the same here as a bare one would.
+    """
+    url = links.build_url(brand["url"], "x", topic["id"], fmt)
+    return f"Free 14-day trial — no credit card, set up in under 2 minutes:\n{url}"
 
 IG_TAG_COUNT = 8
 
