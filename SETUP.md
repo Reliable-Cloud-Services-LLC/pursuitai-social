@@ -27,7 +27,23 @@ Generation is automated. **Publishing is not.** Our audience is a small, reputat
 
 ## Step 2 — X (Twitter) API credentials
 
-1. Log into https://developer.x.com with the **@pursuit_ai** account → sign up for the **Free** tier (allows posting; ~500 writes/month app-level, plenty for 1/day).
+1. Log into https://developer.x.com with the **@pursuit_ai** account and create a developer account.
+
+   > **X posting is not free.** Since February 2026 the X API is
+   > **pay-per-usage**: you buy credits up front and each call consumes
+   > them. Per [docs.x.com](https://docs.x.com/x-api/introduction):
+   > *"The X API uses pay-per-usage pricing. No subscriptions—pay only for
+   > what you use."* There is no monthly write allowance.
+   >
+   > With a zero balance, publishing fails with
+   > `HTTPException: 402 Payment Required — credits depleted`. That is a
+   > billing state, not a credentials problem: `scripts/validate_x.py`
+   > will still pass, because authentication works fine.
+   >
+   > **Budget note:** each publish is *two* writes — the post plus the
+   > threaded CTA reply (see W4 in CHANGELOG). The weekly analytics
+   > collector adds roughly 20-25 reads per run once at cadence. Buy
+   > credits accordingly, and watch the Developer Console's usage view.
 2. Create a Project + App. In **App settings → User authentication settings**: enable **OAuth 1.0a**, set App permissions to **Read and write** (website/callback URL can be `https://pursuitai.net`).
 3. In **Keys and tokens**, generate:
    - API Key + Secret → secrets `X_API_KEY`, `X_API_SECRET`
