@@ -88,6 +88,42 @@ def _ig_hashtags(brand):
     k = min(IG_TAG_COUNT - 1, len(rest))
     return " ".join([primary] + random.sample(rest, k=k))
 
+# linkedin.com/help/linkedin/answer/a528176 — a post is capped at 3000
+# characters. Our longest hook is well under, so nothing truncates.
+LI_LIMIT = 3000
+LI_HASHTAGS = 3
+
+
+def build_linkedin(topic, brand, *, fmt, fresh=True):
+    """LinkedIn copy for the manual-assisted path.
+
+    Three deliberate differences from the other channels:
+
+      * The link goes in the BODY. LinkedIn hyperlinks a URL in a post, so
+        unlike Instagram there is no reason to hide it in a bio.
+      * Three hashtags, not Instagram's eight. Eight reads as spam to a
+        professional audience.
+      * The longer Instagram hook is the base, since LinkedIn allows 3000
+        characters and rewards substance over a one-liner.
+
+    `fmt` is required, same as build_x — it becomes utm_content.
+    """
+    body = (_claude_variant(topic, "ig", brand) if fresh else None) or topic["hook_ig"]
+    url = links.build_url(brand["url"], "linkedin", topic["id"], fmt)
+    tags = " ".join([brand["hashtags_ig"][0]]
+                    + random.sample(brand["hashtags_ig"][1:], k=LI_HASHTAGS - 1))
+    text = (f"{body}\n\n"
+            f"Start a free 14-day trial — no credit card, set up in under "
+            f"two minutes:\n{url}\n\n{tags}")
+    if len(text) > LI_LIMIT:
+        keep = LI_LIMIT - (len(text) - len(body)) - 1
+        body = body[:keep].rsplit(" ", 1)[0].rstrip(".,;") + "…"
+        text = (f"{body}\n\n"
+                f"Start a free 14-day trial — no credit card, set up in under "
+                f"two minutes:\n{url}\n\n{tags}")
+    return text
+
+
 def build_ig(topic, brand, fresh=True):
     body = (_claude_variant(topic, "ig", brand) if fresh else None) or topic["hook_ig"]
     tags = _ig_hashtags(brand)

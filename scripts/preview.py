@@ -31,6 +31,9 @@ import cards        # noqa: E402
 import compliance   # noqa: E402
 
 RATIOS = ["x", "ig", "square"]
+# LinkedIn is pasted by hand (see docs/LINKEDIN_ACCESS.md), so its
+# ratios are called out separately for the person doing the pasting.
+LINKEDIN_RATIOS = ["square", "portrait"]
 OUT = os.path.join(ROOT, "assets", "preview", "index.html")
 
 
@@ -50,6 +53,8 @@ def render_topic(topic, cal):
         "x_body": captions.build_x(topic, cal["brand"], fmt=fmt, fresh=False),
         "x_reply": captions.build_x_reply(topic, cal["brand"], fmt),
         "ig": captions.build_ig(topic, cal["brand"], fresh=False),
+        "linkedin": captions.build_linkedin(topic, cal["brand"], fmt=fmt,
+                                            fresh=False),
         "violations": sorted({
             v.rule for c in (captions.build_x(topic, cal["brand"], fmt=fmt,
                                               fresh=False),
@@ -87,6 +92,40 @@ h1 { font-size:22px; margin:0 0 4px }
 .cap pre { margin:0; white-space:pre-wrap; word-break:break-word;
            font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace }
 .count { color:#8a8aa8; font-size:11px; margin-top:8px }
+.cap b { display:flex; align-items:center; justify-content:space-between }
+.copy { font:inherit; font-size:10px; letter-spacing:.04em; cursor:pointer;
+        text-transform:uppercase; color:#c4b5fd; background:transparent;
+        border:1px solid rgba(196,181,253,.35); border-radius:6px;
+        padding:2px 8px }
+.copy:hover { background:rgba(196,181,253,.12) }
+.copy.done { color:#4ade80; border-color:#4ade8066 }
+"""
+
+# navigator.clipboard needs a secure context and the sheet is opened over
+# file://, so fall back to a hidden textarea + execCommand.
+COPY_JS = """
+<script>
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('.copy');
+  if (!btn) return;
+  var text = btn.closest('.cap').querySelector('pre').innerText;
+  var done = function () {
+    btn.textContent = 'copied'; btn.classList.add('done');
+    setTimeout(function () {
+      btn.textContent = 'copy'; btn.classList.remove('done');
+    }, 1400);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, function () {});
+    return;
+  }
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (err) {}
+  document.body.removeChild(ta);
+});
+</script>
 """
 
 
@@ -110,18 +149,25 @@ def build_html(rows, cal):
             f"</span></div><div class='shots'>")
         for name, uri in row["images"]:
             w, h = brand.size(name)
+            li = " · LinkedIn" if name in LINKEDIN_RATIOS else ""
             parts.append(f"<div class='shot'><img src='{uri}' alt='{name}'>"
-                         f"<span>{name} · {w}×{h}</span></div>")
+                         f"<span>{name} · {w}×{h}{li}</span></div>")
         parts.append("</div><div class='caps'>")
         x_len = len(row["x_body"])
         for label, text, note in (
                 ("X — post", row["x_body"], f"{x_len}/280 characters"),
                 ("X — threaded reply", row["x_reply"], "link rides here"),
-                ("Instagram", row["ig"], f"{len(row['ig'])}/2200 characters")):
-            parts.append(f"<div class='cap'><b>{label}</b><pre>"
-                         f"{html.escape(text)}</pre>"
-                         f"<div class='count'>{note}</div></div>")
+                ("Instagram", row["ig"], f"{len(row['ig'])}/2200 characters"),
+                ("LinkedIn — paste this",
+                 row["linkedin"], f"{len(row['linkedin'])}/3000 characters "
+                 f"· use the 1:1 or 4:5 card above")):
+            parts.append(
+                f"<div class='cap'><b>{label}"
+                f"<button class='copy' type='button'>copy</button></b>"
+                f"<pre>{html.escape(text)}</pre>"
+                f"<div class='count'>{note}</div></div>")
         parts.append("</div></div>")
+    parts.append(COPY_JS)
     return "\n".join(parts)
 
 
