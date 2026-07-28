@@ -2,3 +2,4 @@ pillow>=10.0
 requests>=2.31
 tweepy>=4.14
 playwright>=1.45
+pytest>=8.0

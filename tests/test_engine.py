@@ -55,6 +55,33 @@ def test_ig_captions_have_cta_and_tags(cal):
         assert "#GovCon" in text or "#FederalContracting" in text
         assert len(text) <= 2200, f"{t['id']} IG caption too long"
 
+def test_ig_caption_always_carries_the_primary_hashtag(cal):
+    """build_ig samples 8 of 10 tags; #GovCon used to be droppable.
+
+    P(both #GovCon and #FederalContracting excluded) was 1/C(10,2) per
+    topic, so ~42% of full-suite runs failed and, worse, real posts shipped
+    without the category's primary tag. The first entry in hashtags_ig is
+    the primary tag and is now always present — matching build_x, which
+    already takes hashtags_x[:2] deterministically.
+    """
+    primary = cal["brand"]["hashtags_ig"][0]
+    for t in cal["topics"]:
+        for _ in range(25):   # sampling is random; assert over many draws
+            assert primary in captions.build_ig(t, cal["brand"], fresh=False)
+
+def test_ig_caption_tag_count_and_variety_preserved(cal):
+    """Pinning the primary must not reduce the tag count or kill rotation."""
+    topic, brand = cal["topics"][0], cal["brand"]
+    seen = set()
+    for _ in range(50):
+        tags = [w for w in captions.build_ig(topic, brand, fresh=False).split()
+                if w.startswith("#")]
+        assert len(tags) == 8
+        assert len(set(tags)) == 8, "no tag may repeat within one caption"
+        assert all(tag in brand["hashtags_ig"] for tag in tags)
+        seen.add(tuple(sorted(tags)))
+    assert len(seen) > 1, "the non-primary tags must still vary between posts"
+
 def test_claude_variant_fails_safe(cal, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "invalid-key-for-test")
     # must fall back to template, never raise
@@ -113,7 +140,7 @@ def sandbox(tmp_path):
             p.unlink()
     return str(dst)
 
-def test_prepare_then_publish_advances_state(sandbox):
+def test_publish_without_credentials_does_not_consume_topic(sandbox):
     r = _run(["--prepare"], sandbox)
     assert r.returncode == 0, r.stderr
     pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
@@ -121,10 +148,11 @@ def test_prepare_then_publish_advances_state(sandbox):
     assert pending["format"] == "card"
     assert os.path.exists(os.path.join(sandbox, pending["media_x"]))
 
-    r = _run(["--publish"], sandbox)  # no creds -> posts skipped, state advances
-    assert r.returncode == 0, r.stderr
-    state = json.load(open(os.path.join(sandbox, "content", "state.json")))
-    assert state["topic_index"] == 1 and state["run_count"] == 1
+    # W1: no creds -> both channels skipped -> nothing posted -> loud failure
+    # and the topic is preserved for a run that can actually publish it.
+    r = _run(["--publish"], sandbox)
+    assert r.returncode == 1, r.stdout
+    assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
     assert not os.path.exists(os.path.join(sandbox, "content", "pending.json"))
     log = open(os.path.join(sandbox, "logs", "posted.jsonl")).read().strip()
     entry = json.loads(log)
@@ -143,5 +171,7 @@ def test_format_rotation_cycles(sandbox):
         _run(["--publish"], sandbox)
     # screenshot/video fall back to card offline; card must appear, no crash
     assert all(f in ("card", "screenshot", "video") for f in seen)
-    state = json.load(open(os.path.join(sandbox, "content", "state.json")))
-    assert state["run_count"] == 4 and state["topic_index"] == 4
+    # W1: publishing nothing consumes nothing, so state is never written.
+    # Rotation under successful publishes is covered in
+    # test_publish_outcomes.py::test_format_is_not_locked_to_topic.
+    assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))

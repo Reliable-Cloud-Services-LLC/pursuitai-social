@@ -1,0 +1,26 @@
+name: Weekly heartbeat
+
+# Deliberately a SEPARATE workflow from daily.yml. If the daily job is
+# disabled, failing at checkout, or its cron never fires, an in-process
+# heartbeat would be silent too — which is the exact failure this is meant
+# to catch. This one speaks every week whether or not anything posted.
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"   # Mondays 10:00 ET
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Report last 7 days of confirmed posts
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: python engine/notify.py --heartbeat

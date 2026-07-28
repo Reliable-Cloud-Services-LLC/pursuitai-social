@@ -42,12 +42,25 @@ def save_json(path, obj):
     with open(path, "w") as f:
         json.dump(obj, f, indent=2)
 
+def select_format(run_count, topic_count):
+    """Pick the format for a run, without locking a topic to one format.
+
+    topic_index and run_count advance together, so a naive
+    FORMATS[run_count % 4] over 24 topics gives gcd(24, 4) = 4 and every
+    topic renders in the same format forever (fit-scoring was always a
+    card, subaward-intel always a video). Offsetting by the completed-cycle
+    count shifts the phase each time round, so each topic works through all
+    four formats over four cycles.
+    """
+    cycle = run_count // topic_count
+    return FORMATS[(run_count + cycle) % len(FORMATS)]
+
 def prepare():
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     brand, topics = cal["brand"], cal["topics"]
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
     topic = topics[state["topic_index"] % len(topics)]
-    fmt = FORMATS[state["run_count"] % len(FORMATS)]
+    fmt = select_format(state["run_count"], len(topics))
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
 
@@ -101,45 +114,90 @@ def prepare():
     print("[prepare] wrote content/pending.json")
     return pending
 
+def _post_x(pending):
+    import post_x
+    return str(post_x.post(pending["text_x"],
+                           os.path.join(ROOT, pending["media_x"])))
+
+def _post_ig(pending):
+    import post_ig
+    if pending["media_ig"].endswith(".mp4"):
+        return post_ig.post_reel(pending["media_ig"], pending["text_ig"])
+    return post_ig.post_image(pending["media_ig"], pending["text_ig"])
+
+# channel -> (env var proving credentials are present, poster)
+POSTERS = {
+    "x":  ("X_API_KEY", _post_x),
+    "ig": ("IG_USER_ID", _post_ig),
+}
+
 def publish(skip_x=False, skip_ig=False):
+    """Post the prepared content. Four outcomes per channel:
+
+      posted    reached the platform, carries an id
+      failed    the call raised, carries the error
+      skipped   enabled but credentials absent
+      disabled  turned off explicitly with --skip-x / --skip-ig
+
+    Exits non-zero if anything failed OR if nothing posted at all — a run
+    that publishes nothing must never report success.
+    """
     pending = load_json(PENDING, None)
     if not pending:
         print("[publish] no pending.json - run --prepare first")
         sys.exit(1)
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
-    entry = dict(pending, x=None, ig=None)
 
-    if not skip_x and os.environ.get("X_API_KEY"):
-        try:
-            import post_x
-            entry["x"] = str(post_x.post(pending["text_x"],
-                                         os.path.join(ROOT, pending["media_x"])))
-        except Exception as e:
-            print(f"[publish] X post FAILED: {e}")
+    disabled = {"x": skip_x, "ig": skip_ig}
+    results = {}
+    for ch, (env_var, poster) in POSTERS.items():
+        if disabled[ch]:
+            results[ch] = {"status": "disabled", "id": None, "error": None}
+            print(f"[publish] {ch} disabled by flag")
+        elif not os.environ.get(env_var):
+            results[ch] = {"status": "skipped", "id": None,
+                           "error": f"{env_var} not set"}
+            print(f"[publish] {ch} SKIPPED: {env_var} not set")
+        else:
+            try:
+                results[ch] = {"status": "posted", "id": poster(pending),
+                               "error": None}
+            except Exception as e:
+                results[ch] = {"status": "failed", "id": None,
+                               "error": f"{type(e).__name__}: {e}"}
+                print(f"[publish] {ch} FAILED: {type(e).__name__}: {e}")
 
-    if not skip_ig and os.environ.get("IG_USER_ID"):
-        try:
-            import post_ig
-            if pending["media_ig"].endswith(".mp4"):
-                entry["ig"] = post_ig.post_reel(pending["media_ig"],
-                                                pending["text_ig"])
-            else:
-                entry["ig"] = post_ig.post_image(pending["media_ig"],
-                                                 pending["text_ig"])
-        except Exception as e:
-            print(f"[publish] IG post FAILED: {e}")
+    def by(status):
+        return [c for c in POSTERS if results[c]["status"] == status]
+    posted, failed, skipped = by("posted"), by("failed"), by("skipped")
 
-    state["topic_index"] = (state["topic_index"] + 1) % len(cal["topics"])
-    state["run_count"] = state.get("run_count", 0) + 1
-    state["last_run"] = pending["date"]
-    save_json(STATE, state)
+    # A topic is only consumed once it has actually reached an audience.
+    if posted:
+        state["topic_index"] = (state["topic_index"] + 1) % len(cal["topics"])
+        state["run_count"] = state.get("run_count", 0) + 1
+        state["last_run"] = pending["date"]
+        save_json(STATE, state)
+    else:
+        print("[publish] nothing posted - topic NOT consumed, will retry")
+
+    entry = dict(pending, channels=results,
+                 x=results["x"]["id"], ig=results["ig"]["id"],
+                 outcome=("posted" if posted and not failed else
+                          "partial" if posted else "failed"))
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a") as f:
         f.write(json.dumps(entry) + "\n")
     if os.path.exists(PENDING):
         os.remove(PENDING)
-    print("[publish] done")
+
+    if failed or not posted:
+        import notify
+        notify.failure(pending["topic"], pending["format"], results)
+        print(f"[publish] FAILED - posted={posted} failed={failed} "
+              f"skipped={skipped}")
+        sys.exit(1)
+    print(f"[publish] done - posted to {', '.join(posted)}")
 
 def main():
     ap = argparse.ArgumentParser()
