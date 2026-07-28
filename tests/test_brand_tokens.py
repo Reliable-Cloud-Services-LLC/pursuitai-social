@@ -199,3 +199,38 @@ def test_long_stat_shrinks_instead_of_overflowing():
                  stat="14 GWACs · 9,000+ holders · live exclusion screening")
     img = cards.render_card(wordy, cal["brand"], size=brand.size("square"))
     assert img.size == (1080, 1080)
+
+
+# ---------- the one colour that must track the product ----------
+
+def test_violet_is_anchored_to_the_product_brand_colour(tokens):
+    """The palette is a deliberate marketing variant (see _provenance), but
+    the brand violet is not free to drift: it is Nebula's --blue in
+    apps/web/src/app/globals.css. If the product changes that, this fails
+    and someone has to make the change knowingly."""
+    assert tokens["colors"]["violet"] == tokens["nebula_anchor"]["violet"]
+    assert tokens["nebula_anchor"]["violet"] == "#7c3aed"
+
+
+def test_the_divergence_is_declared_not_accidental(tokens):
+    prov = tokens["_provenance"]
+    assert prov["status"] == "RESOLVED"
+    declared = set(prov["intentionally_diverges"])
+    anchored = set(prov["anchored_to_product"])
+    assert declared | anchored == set(tokens["colors"]), (
+        "every colour must be either anchored to the product or explicitly "
+        "declared as diverging — an undeclared one is drift")
+
+
+def test_calendar_carries_no_colour(cal_json):
+    """One source of truth. calendar.json used to carry color/color_dark that
+    nothing read, and color_dark (#1e1033) matched neither the renderers nor
+    the theme — a third value in a three-way disagreement."""
+    assert "color" not in cal_json["brand"]
+    assert "color_dark" not in cal_json["brand"]
+
+
+@pytest.fixture(scope="module")
+def cal_json():
+    with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+        return json.load(f)
