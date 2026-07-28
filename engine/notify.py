@@ -40,6 +40,63 @@ def _send(text):
     return True
 
 
+# Slack rejects an oversized text object. Stay well inside it — these are
+# review previews, and the authoritative copy is in pending.json.
+SLACK_TEXT_LIMIT = 3000
+
+
+def _section(text):
+    body = text if len(text) <= SLACK_TEXT_LIMIT else text[:SLACK_TEXT_LIMIT - 1] + "…"
+    return {"type": "section", "text": {"type": "mrkdwn", "text": body}}
+
+
+def _send_blocks(text, blocks):
+    """Slack needs `text` too: it is the notification/fallback line."""
+    url = os.environ.get("NOTIFY_WEBHOOK_URL")
+    if not url:
+        return False
+    try:
+        r = requests.post(url, json={"text": text, "blocks": blocks},
+                          timeout=TIMEOUT)
+    except Exception as e:
+        print(f"[notify] send failed: {type(e).__name__}: {e}")
+        return False
+    if r.status_code >= 300:
+        print(f"[notify] webhook returned {r.status_code}")
+        return False
+    return True
+
+
+def pending_review(pending, media_url=None, review_url=None):
+    """Ask a human to review the prepared post.
+
+    There are no approve/reject buttons: interactive Slack actions need an
+    app with a request URL, i.e. a server to receive the callback, and
+    there isn't one. `review_url` links to the Actions run where the
+    required reviewer approves instead.
+    """
+    topic, fmt = pending.get("topic"), pending.get("format")
+    blocks = [
+        _section(f"*PursuitAI social — ready for review*\n"
+                 f"topic `{topic}` · format `{fmt}`"),
+    ]
+    if media_url:
+        blocks.append({"type": "image", "image_url": media_url,
+                       "alt_text": f"{topic} card"})
+    blocks.append(_section("*X*\n```" + (pending.get("text_x") or "") + "```"))
+    blocks.append(_section("*Instagram*\n```"
+                           + (pending.get("text_ig") or "") + "```"))
+    if review_url:
+        blocks.append(_section(f"<{review_url}|Approve or reject this run →>"))
+    return _send_blocks(f"Ready for review: {topic} ({fmt})", blocks)
+
+
+def blocked(topic, fmt, reason):
+    """A publish was refused by the approval gate."""
+    return _send(f"*PursuitAI social — publish BLOCKED*\n"
+                 f"topic `{topic}` · format `{fmt}`\n{reason}")
+
+
 def failure(topic, fmt, results):
     """Alert that a publish run did not fully succeed.
 

@@ -1,15 +1,16 @@
 name: Daily social post
 
+# Two jobs, deliberately. `prepare` builds and commits the post but cannot
+# publish it; `publish` targets the `social-publish` environment, which has
+# a required reviewer, so GitHub itself pauses the run until a human
+# approves. That pause is the gate — it is enforced by GitHub, not by our
+# code, so no env var or flag here can bypass it.
+
 on:
   schedule:
     # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
     - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry run (generate, don't post)"
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -19,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  post:
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,16 +43,54 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python engine/run.py --prepare
 
-      - name: Commit assets (so Instagram can fetch public URLs)
+      # pending.json is committed too: the publish job is a separate run
+      # that may happen hours later, so the reviewed post has to persist.
+      - name: Commit assets + pending post
         run: |
           git config user.name "pursuitai-bot"
           git config user.email "bot@pursuitai.net"
-          git add -A assets || true
-          git commit -m "assets $(date -u +%F)" || echo "nothing to commit"
+          git add -A assets content/pending.json || true
+          git commit -m "prepare $(date -u +%F)" || echo "nothing to commit"
           git push
 
+      # After the push, so Slack can actually fetch the card image.
+      - name: Send for review
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
+          REVIEW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python engine/run.py --notify-pending
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Required reviewer lives here. The job will not start until approved.
+    environment: social-publish
+    steps:
+      # ref, not the run's SHA: the prepare job pushed pending.json and the
+      # assets after this run started, and we need that commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No playwright or ffmpeg: media is already built and committed.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Reaching this step means a required reviewer already approved in the
+      # GitHub UI. This records WHAT was approved so publish can verify the
+      # content did not change in between.
+      - name: Record approval
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: python engine/run.py --approve
+
       - name: Publish to X + Instagram
-        if: ${{ !inputs.dry_run }}
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
@@ -59,18 +98,18 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          # ref_name, not a hardcoded branch: cron fires on the default
-          # branch (develop), and the assets step commits there.
           MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
         run: python engine/run.py --publish
 
-      # always(): publish now exits non-zero on failure, and the failure
-      # entry in posted.jsonl is the evidence. Without this the fail-loud
-      # change would erase its own audit trail.
+      # always(): publish exits non-zero on failure, and the failure entry
+      # in posted.jsonl is the evidence. Without this the fail-loud change
+      # would erase its own audit trail.
       - name: Commit state + post log
         if: always()
         run: |
+          git config user.name "pursuitai-bot"
+          git config user.email "bot@pursuitai.net"
           git pull --rebase || true
           git add -A content logs || true
           git commit -m "post log $(date -u +%F)" || echo "nothing to commit"
