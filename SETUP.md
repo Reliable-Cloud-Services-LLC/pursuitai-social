@@ -49,19 +49,20 @@ Generation is automated. **Publishing is not.** Our audience is a small, reputat
    > | Media metadata | $0.005 |
    > | Owned reads | $0.001 each |
    >
-   > **Each publish is two writes** — a clean post ($0.015) plus the
-   > threaded CTA reply, which carries the URL ($0.200). About $0.215 a
-   > day, roughly **$4.82/month** at 22 posts including the weekly
-   > analytics reads. Around $25 of credit lasts five months.
+   > **Observed cost: $0.03 per publish** — measured on the first live
+   > post, 2026-07-28. That is two writes at the standard $0.015 rate:
+   > the post plus its threaded CTA reply. The reply carries a URL but
+   > was **not** charged the $0.200 "post with URL" rate.
    >
-   > Note this is marginally MORE than putting the link in the body
-   > ($0.200): W4 moved the URL, it did not remove it, so the surcharge
-   > moved too and a second post was added. The justification is reach —
-   > the main post is no longer a link post — not cost.
+   > Trust the observed figure over the published table — the table is
+   > what led to a $0.215 estimate, 7x too high. At 22 posts a month
+   > that is roughly **$0.66/month**, so $25 of credit lasts about three
+   > years.
    >
-   > If credits ever get tight, dropping the X CTA link entirely (bio
-   > link only, as Instagram already does) costs $0.015 a post, about
-   > $0.33/month. That is a lever, not a recommendation.
+   > This also settles W4: the threaded reply costs $0.015, not $0.200,
+   > so moving the link out of the post body costs essentially nothing
+   > and keeps the main post from being a link post. Re-measure if the
+   > per-publish charge ever drifts from $0.03.
 2. Create a Project + App. In **App settings → User authentication settings**: enable **OAuth 1.0a**, set App permissions to **Read and write** (website/callback URL can be `https://pursuitai.net`).
 3. In **Keys and tokens**, generate:
    - API Key + Secret → secrets `X_API_KEY`, `X_API_SECRET`
