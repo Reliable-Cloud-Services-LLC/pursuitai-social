@@ -13,6 +13,25 @@ generates the card and the copy; a person pastes it.
 That is not a stopgap born of laziness — it follows from a structural
 finding about LinkedIn's review process.
 
+## The daily routine
+
+```bash
+python scripts/preview.py --linkedin
+```
+
+Prints the post text and writes real PNGs to `assets/linkedin/` — both the
+1:1 and 4:5 cards. Attach one, paste the copy, post. Then:
+
+```bash
+python scripts/preview.py --posted <topic-id>
+```
+
+The queue is `logs/linkedin_posted.jsonl`, append-only and **independent of
+`content/state.json`**. LinkedIn should not stall because X is out of API
+credits, and should not skip ahead because X published. It walks the
+calendar in order, then the least recently posted once everything has been
+round once.
+
 ## Why we are not calling the API yet
 
 ### The mechanics are easy

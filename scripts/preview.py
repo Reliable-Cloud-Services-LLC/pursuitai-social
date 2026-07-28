@@ -25,16 +25,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
-import brand        # noqa: E402
+import brand         # noqa: E402
+import manual_queue  # noqa: E402
 import captions     # noqa: E402
 import cards        # noqa: E402
-import compliance   # noqa: E402
+import compliance    # noqa: E402
 
 RATIOS = ["x", "ig", "square"]
 # LinkedIn is pasted by hand (see docs/LINKEDIN_ACCESS.md), so its
 # ratios are called out separately for the person doing the pasting.
 LINKEDIN_RATIOS = ["square", "portrait"]
 OUT = os.path.join(ROOT, "assets", "preview", "index.html")
+LINKEDIN_DIR = os.path.join(ROOT, "assets", "linkedin")
+LINKEDIN_LOG = os.path.join(ROOT, "logs", "linkedin_posted.jsonl")
 
 
 def data_uri(image):
@@ -171,15 +174,65 @@ def build_html(rows, cal):
     return "\n".join(parts)
 
 
+def linkedin_next(cal):
+    """Everything needed for one hand-posted LinkedIn update.
+
+    Writes real PNG files rather than only embedding them in the HTML —
+    a data: URI in a browser saves with a junk filename, and LinkedIn's
+    composer wants a file to drag or browse to.
+    """
+    publishable = [t for t in cal["topics"] if compliance.is_publishable(t)]
+    clean = [t for t in publishable
+             if not compliance.check_claims(
+                 t, captions.build_linkedin(t, cal["brand"], fmt="card",
+                                            fresh=False))]
+    topic = manual_queue.next_unposted(clean, LINKEDIN_LOG)
+    if not topic:
+        print("[linkedin] no publishable topics")
+        return
+
+    os.makedirs(LINKEDIN_DIR, exist_ok=True)
+    paths = []
+    for name in LINKEDIN_RATIOS:
+        p = os.path.join(LINKEDIN_DIR, f"{topic['id']}_{name}.png")
+        cards.render_card(topic, cal["brand"], size=brand.size(name),
+                          out_path=p)
+        w, h = brand.size(name)
+        paths.append((p, f"{name} {w}x{h}"))
+
+    bar = "=" * 72
+    print(f"\n{bar}\n  LINKEDIN — {topic['id']}\n{bar}\n")
+    print(captions.build_linkedin(topic, cal["brand"], fmt="card",
+                                  fresh=False))
+    print(f"\n{bar}\n  IMAGES — attach ONE of these\n{bar}")
+    for p, label in paths:
+        print(f"  {label:<16} {p}")
+    done = len(manual_queue.posted_ids(LINKEDIN_LOG))
+    print(f"\n  {done} posted so far · {len(clean)} in rotation")
+    print(f"\n  When posted:  python scripts/preview.py --posted {topic['id']}\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true",
                     help="include topics that cannot publish")
     ap.add_argument("--topic", help="preview a single topic id")
+    ap.add_argument("--linkedin", action="store_true",
+                    help="next unposted topic: write real PNGs + print the copy")
+    ap.add_argument("--posted", metavar="TOPIC_ID",
+                    help="mark a topic as posted to LinkedIn")
     args = ap.parse_args()
 
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         cal = json.load(f)
+
+    if args.posted:
+        manual_queue.mark_posted(args.posted, LINKEDIN_LOG)
+        print(f"[linkedin] marked {args.posted} as posted")
+        return
+
+    if args.linkedin:
+        return linkedin_next(cal)
 
     topics = cal["topics"]
     if args.topic:
