@@ -154,7 +154,10 @@ def test_publish_without_credentials_does_not_consume_topic(sandbox):
     r = _run(["--prepare"], sandbox)
     assert r.returncode == 0, r.stderr
     pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
-    assert pending["topic"] == "fit-scoring"
+    # W5: rotation runs over VERIFIED topics with clean captions only.
+    # fit-scoring is MISMATCH (its 5th dimension name is wrong), so the
+    # first selectable topic is price-to-win.
+    assert pending["topic"] == "price-to-win"
     assert pending["format"] == "card"
     assert os.path.exists(os.path.join(sandbox, pending["media_x"]))
 

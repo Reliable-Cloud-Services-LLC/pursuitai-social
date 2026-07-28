@@ -26,6 +26,7 @@ sys.path.insert(0, HERE)
 import approval
 import cards
 import captions
+import compliance
 
 STATE = os.path.join(ROOT, "content", "state.json")
 PENDING = os.path.join(ROOT, "content", "pending.json")
@@ -57,9 +58,40 @@ def select_format(run_count, topic_count):
     cycle = run_count // topic_count
     return FORMATS[(run_count + cycle) % len(FORMATS)]
 
+def publishable_topics(cal):
+    """Topics that can actually go out today.
+
+    Two conditions, and both are needed. Status VERIFIED means the claims
+    were traced to a source. A clean template caption means the copy also
+    passes the content rules — a topic can be VERIFIED on its central claim
+    and still carry a sentence we cannot stand behind ("No competitor has
+    this"), and selecting it would deadlock: prepare picks it, publish
+    refuses, forever.
+
+    Rotation runs over this subset, and publish() indexes the same list, so
+    the cursor cannot drift.
+    """
+    out = []
+    for topic in cal["topics"]:
+        if not compliance.is_publishable(topic):
+            continue
+        drafts = {
+            "x": captions.build_x(topic, cal["brand"], fmt="card", fresh=False),
+            "ig": captions.build_ig(topic, cal["brand"], fresh=False),
+        }
+        if not any(compliance.check_claims(topic, c) for c in drafts.values()):
+            out.append(topic)
+    return out
+
+
 def prepare():
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
-    brand, topics = cal["brand"], cal["topics"]
+    brand = cal["brand"]
+    topics = publishable_topics(cal)
+    if not topics:
+        print("[prepare] REFUSED: no VERIFIED topics. Every claim in "
+              "calendar.json is untraced, mismatched, or unverifiable.")
+        sys.exit(1)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
     topic = topics[state["topic_index"] % len(topics)]
     fmt = select_format(state["run_count"], len(topics))
@@ -113,6 +145,25 @@ def prepare():
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
     }
+    # Last check before a human is asked to review it. A Claude-rewritten
+    # caption can introduce a claim the source topic never made, so the
+    # rendered text is checked, not the template it came from. On a
+    # violation, fall back to the hand-written copy — which the selection
+    # filter already proved clean — rather than losing the day's post.
+    if compliance.check_claims(topic, pending["text_x"]) or \
+            compliance.check_claims(topic, pending["text_ig"]):
+        print("[prepare] AI caption tripped a content rule; "
+              "falling back to the vetted template copy")
+        pending["text_x"] = captions.build_x(topic, brand, fmt=fmt, fresh=False)
+        pending["text_x_reply"] = captions.build_x_reply(topic, brand, fmt)
+        pending["text_ig"] = captions.build_ig(topic, brand, fresh=False)
+    try:
+        compliance.assert_publishable(topic, {"x": pending["text_x"],
+                                              "ig": pending["text_ig"]})
+    except compliance.ComplianceError as e:
+        print(f"[prepare] BLOCKED by compliance: {e}")
+        sys.exit(1)
+
     save_json(PENDING, pending)
     print("[prepare] wrote content/pending.json")
     return pending
@@ -206,7 +257,8 @@ def publish(skip_x=False, skip_ig=False, force=False):
 
     # A topic is only consumed once it has actually reached an audience.
     if posted:
-        state["topic_index"] = (state["topic_index"] + 1) % len(cal["topics"])
+        state["topic_index"] = ((state["topic_index"] + 1)
+                                % max(1, len(publishable_topics(cal))))
         state["run_count"] = state.get("run_count", 0) + 1
         state["last_run"] = pending["date"]
         save_json(STATE, state)

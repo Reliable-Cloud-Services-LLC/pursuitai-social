@@ -8,8 +8,23 @@
     "color_dark": "#1e1033",
     "tagline": "AIM · PURSUE · WIN",
     "trial_line": "Free 14-day trial · no credit card · from $249/mo",
-    "hashtags_x": ["#GovCon", "#8a", "#SmallBusiness"],
-    "hashtags_ig": ["#GovCon", "#FederalContracting", "#8aCertified", "#SDVOSB", "#WOSB", "#HUBZone", "#SmallBusiness", "#GovernmentContracts", "#BusinessDevelopment", "#SAMgov"]
+    "hashtags_x": [
+      "#GovCon",
+      "#8a",
+      "#SmallBusiness"
+    ],
+    "hashtags_ig": [
+      "#GovCon",
+      "#FederalContracting",
+      "#8aCertified",
+      "#SDVOSB",
+      "#WOSB",
+      "#HUBZone",
+      "#SmallBusiness",
+      "#GovernmentContracts",
+      "#BusinessDevelopment",
+      "#SAMgov"
+    ]
   },
   "topics": [
     {
@@ -21,7 +36,14 @@
       "hook_ig": "Bid/no-bid shouldn't be a gut call.\n\nPursuitAI scores every SAM.gov opportunity across 5 dimensions — NAICS match, set-aside eligibility, vehicle holder status, technical alignment, and competitive position — grounded in your actual incumbency and win/loss history.\n\nEvery score comes with the evidence behind it.",
       "stat": "5-dimension scoring, tuned to your firm",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/fit_scoring.py:75-81",
+        "verified_on": "2026-07-28",
+        "note": "Copy names the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience; vehicle_eligibility exists only in FORECAST_FIT_WEIGHTS, a different rubric. landing/page.js:294 repeats the same error."
+      }
     },
     {
       "id": "recompete-radar",
@@ -32,7 +54,14 @@
       "hook_ig": "By the time an RFP hits SAM.gov, the winner has usually been working it for a year.\n\nRecompete Radar scans USASpending for federal contracts expiring in 6–36 months in your NAICS space — filter by agency, spot the incumbent, and start capture while there's still time to shape the deal.\n\nZero AI credits. Pure signal.",
       "stat": "6–36 month expiring-contract lookahead",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/recompete.py:288",
+        "verified_on": "2026-07-28",
+        "note": "Copy says 6-36 months. months_ahead is Query(18, ge=3, le=36) — the range is 3-36."
+      }
     },
     {
       "id": "fifty-percent-rule",
@@ -43,18 +72,30 @@
       "hook_ig": "The Limitations on Subcontracting rule (FAR 52.219-14) kills more set-aside bids than bad pricing.\n\nPursuitAI models your prime/sub split — counting similarly-situated entities correctly — for a compliant / at-risk / over-limit verdict BEFORE you sign. Evaluated across the base period and every option year separately.\n\nA dollar-headroom solver even tells you which partner to adjust to recover the most room.",
       "stat": "Compliance verdict per option year",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "external",
+        "source_url": "https://www.acquisition.gov/far/52.219-14",
+        "verified_on": "2026-07-28",
+        "note": "50% for services and supplies; similarly-situated entities excluded. The clause also sets 85%/75% construction limits the '50% Rule' shorthand elides."
+      }
     },
     {
       "id": "subaward-intel",
       "feature": "Sub-Award Intelligence",
       "headline": "Find primes who actually sub to small businesses.",
       "body": "Ranked by real subcontract dollars in your NAICS, filterable by set-aside — with a one-click AI-drafted teaming email grounded in their sub-award history and your past performance.",
-      "hook_x": "Cold-emailing primes is a waste. PursuitAI ranks the primes who ACTUALLY subcontract to small businesses in your NAICS — by real dollars — then drafts the teaming email for you. The GovWin capability without the $20K/yr price tag.",
-      "hook_ig": "Stop pitching primes who never subcontract.\n\nSub-Award Intelligence ranks the primes who actually flow dollars to small businesses in your NAICS — sourced from real sub-award data, filterable by set-aside.\n\nThen one click drafts a teaming email grounded in their sub-award history and your past performance.\n\nThis is the capability firms used to pay $20K/year for.",
+      "hook_x": "Cold-emailing primes is a waste. PursuitAI ranks the primes who ACTUALLY subcontract to small businesses in your NAICS — by real dollars — then drafts the teaming email for you.",
+      "hook_ig": "Stop pitching primes who never subcontract.\n\nSub-Award Intelligence ranks the primes who actually flow dollars to small businesses in your NAICS — sourced from real sub-award data, filterable by set-aside.\n\nThen one click drafts a teaming email grounded in their sub-award history and your past performance.",
       "stat": "Real sub-award dollars, ranked",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28",
+        "note": "Sub-award ranking not traced to implementation. GovWin price figure removed — Deltek publishes no list pricing."
+      }
     },
     {
       "id": "price-to-win",
@@ -65,7 +106,14 @@
       "hook_ig": "The incumbent's price is public data — if you know where to look.\n\nPrice-to-Win anchors your bid to what the government actually paid: USAspending obligations, GSA CALC labor ceilings, eLibrary schedule rates, and BLS OEWS wages across 30 GovCon occupations.\n\nTweak your undercut %, model scope reductions, and drop real rates straight into your cost narrative.",
       "stat": "Anchored to real incumbent pricing",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/bls_oews.py:62",
+        "verified_on": "2026-07-28",
+        "note": "SOC_CROSSWALK contains exactly 30 occupations."
+      }
     },
     {
       "id": "proposal-drafting",
@@ -76,7 +124,11 @@
       "hook_ig": "What if your first draft took hours instead of weeks?\n\nPursuitAI drafts proposals section by section against the real solicitation — technical approach, management plan, past performance, cost narrative — grounded in your named contracts so nothing gets invented.\n\nUpload the RFP packet (PDF + XLSX + DOCX), get a compliance matrix in one pass, then draft.",
       "stat": "Section-by-section, grounded drafting",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "8a-copilot",
@@ -87,7 +139,14 @@
       "hook_ig": "The 8(a) program is a 9-year window. Are you managing it like one?\n\nThe 8(a) Lifecycle Copilot shows your developmental vs transitional stage, term progress, eligibility time remaining, and your next SBA annual-review date — with alerts that get louder as graduation approaches.\n\nUnder 2 years left? It nudges you to line up backup set-asides. That's planning, not panic.",
       "stat": "Stage-aware 8(a) term tracking",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/eight_a_lifecycle.py:26-27",
+        "verified_on": "2026-07-28",
+        "note": "PROGRAM_YEARS=9, DEVELOPMENTAL_YEARS=4, transitional years 5-9."
+      }
     },
     {
       "id": "sole-source",
@@ -98,7 +157,14 @@
       "hook_ig": "The best 8(a) contract is the one that was never competed.\n\nPursuitAI drafts the package you send a contracting officer to support a directed 8(a) sole-source award: the regulatory-basis narrative, responsible-source case, agency-benefit story, and a draft CO letter — grounded in your real past performance.\n\nBuilt-in FAR 19.805-1 threshold check ($4.5M services / $7.0M manufacturing) keeps every package honest.",
       "stat": "Full CO package, FAR-checked",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "MISMATCH",
+        "source_type": "external",
+        "source_url": "https://www.acquisition.gov/far/19.805-1",
+        "verified_on": "2026-07-28",
+        "note": "Copy says $4.5M services / $7.0M manufacturing. FAR 19.805-1(a)(2) is $5.5M / $8.5M. The product carries the same stale figures (eight_a_sole_source.py:27-28), so this is a code defect too."
+      }
     },
     {
       "id": "teaming",
@@ -109,7 +175,12 @@
       "hook_ig": "Your teaming partner search shouldn't be LinkedIn + a spreadsheet.\n\nPursuitAI searches 9,000+ vehicle holders across 14 GWACs — STARS III, CIO-SP3, Polaris, Alliant 2, SEWP VI, GSA MAS — and predicts likely competitors from agency + NAICS history.\n\nEvery partner is screened live against SAM.gov exclusions, so a debarred firm gets flagged before you team with it.",
       "stat": "14 GWACs · 9,000+ holders · live exclusion screening",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28",
+        "note": "'14 GWACs' matches no counting rule in vehicle_keys.py (33 keys, ~10 distinct programs, 21 non-MAS entries). '9,000+ holders' is a data volume requiring a production query."
+      }
     },
     {
       "id": "get-found",
@@ -120,7 +191,11 @@
       "hook_ig": "The best teaming call is the one you receive.\n\nOpt into PursuitAI's Subcontractor Directory and primes assembling a team can find your firm by NAICS, set-aside certification — 8(a), SDVOSB, WOSB, HUBZone — and state, with your capabilities and past performance one click away.\n\nEveryone else's tools only search outward. This is the direction the market forgot.",
       "stat": "Inbound discovery by primes",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "mpjv",
@@ -131,7 +206,14 @@
       "hook_ig": "Most Mentor-Protégé JVs under-bid their own eligibility.\n\nUnder 13 CFR 125.9, your JV can pursue any set-aside the protégé qualifies for — even with a large mentor. PursuitAI records your JV once, then badges every JV-eligible opportunity, credits the mentor's agency experience in scoring, and verifies protégé workshare (≥40%) for compliance.\n\nNo competitor models inherited JV eligibility.",
       "stat": "JV-aware scoring + ≥40% workshare check",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "external",
+        "source_url": "https://www.sba.gov/federal-contracting/contracting-assistance-programs/sba-mentor-protege-program",
+        "verified_on": "2026-07-28",
+        "note": "SBA: the JV may pursue any set-aside the protege qualifies for. The >=40% workshare floor is 13 CFR 125.8(c), not 125.9 as the copy implies (see limitations_constants.py:38)."
+      }
     },
     {
       "id": "forecasts",
@@ -142,7 +224,14 @@
       "hook_ig": "If you only watch SAM.gov, you're seeing opportunities last.\n\nPursuitAI pulls agency procurement forecasts from DHS APFS and 20 more federal agencies — HHS, DOE, DOT, NASA, EPA, HUD, State, USACE — plus GSA eBuy RFQs, into one searchable, scored feed.\n\nFilter by agency, set-aside, notice type, deadline, and place of performance.",
       "stat": "22 sources · one scored feed",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/agency_forecast_ingest/acquisition_gateway.py:1-13",
+        "verified_on": "2026-07-28",
+        "note": "14 named agency modules + acquisition_gateway (GSA, DOL, VA, USDA, NSF, NRC, DOI) = 21 agencies. Confirm the counting rule behind '22 sources'."
+      }
     },
     {
       "id": "awards-tracker",
@@ -153,7 +242,14 @@
       "hook_ig": "Award announcements are competitive intelligence — if you actually see them.\n\nThe Contract Awards Tracker syncs USAspending every night and scores each award in your NAICS across 7 signals: tracked partners, predicted competitors, Recompete Radar matches, vehicle overlap, agency past performance, and more.\n\nEvery Monday, a Claude-drafted digest lands in your inbox.",
       "stat": "Nightly sync · 7 relevance signals",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/contract_award_matches.py:95-103",
+        "verified_on": "2026-07-28",
+        "note": "SCORE table has exactly 7 signals."
+      }
     },
     {
       "id": "pipeline",
@@ -164,7 +260,11 @@
       "hook_ig": "Capture teams don't lose to competitors. They lose to spreadsheets.\n\nPursuitAI runs every pursuit on one live board — Identified, Qualified, Bidding, Submitted — with probability-weighted pipeline value, capture meeting logs, RFP deadlines, and debrief outcomes that feed back into future bid/no-bid calls.\n\nAs a sub? Track your work-share % so the forecast reflects YOUR slice.",
       "stat": "Probability-weighted, real-time board",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "solicitation-analysis",
@@ -175,7 +275,11 @@
       "hook_ig": "Every lost proposal has one missed requirement in it somewhere.\n\nUpload an RFP, RFQ, or RFI packet — PDF cover, XLSX pricing template, DOCX amendments — and PursuitAI returns a structured compliance matrix, evaluation criteria, key personnel requirements, contract terms, and Q&A pairs. One pass.\n\nThen draft against it, section by section.",
       "stat": "Multi-file packet → one compliance matrix",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "capability-statement",
@@ -186,7 +290,12 @@
       "hook_ig": "Industry day tomorrow and your capability statement is from 2023?\n\nPursuitAI generates a branded multi-page capability statement in 8 seconds — logo, technical capabilities organized by theme, representative engagements with outcomes — all grounded in your actual contract history.\n\nShare it with one tap from the mobile app.",
       "stat": "8 seconds, grounded in real past perf",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIABLE",
+        "verified_on": "2026-07-28",
+        "note": "'8 seconds' is a performance claim with no benchmark behind it."
+      }
     },
     {
       "id": "agency-affinity",
@@ -197,7 +306,14 @@
       "hook_ig": "Some agencies are trailing their small-business goals right now — and that's your opening.\n\nAgency Affinity scores every agency 0–100 for YOUR firm: your traction there, in-NAICS demand, set-aside fit, and how far the agency is behind its SBA goaling pace.\n\nIt tells you where to point capture effort — and shows the evidence behind every score.",
       "stat": "0–100 score per agency, evidence-backed",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/agency_affinity.py:96-107",
+        "verified_on": "2026-07-28",
+        "note": "Clamped 0-100, pure arithmetic, no model call."
+      }
     },
     {
       "id": "pricing-boe",
@@ -208,7 +324,11 @@
       "hook_ig": "A winning price you can't defend is a losing price.\n\nPursuitAI builds the full Basis of Estimate: define or upload your labor rate card, auto-match the LCATs extracted from the RFQ, then compute rate × hours × escalation × wrap × ODC — validated against GSA CALC ceilings and the solicitation's own ceiling.\n\nExport a stakeholder-safe BOE straight to Word.",
       "stat": "Full BOE math, CALC-validated",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "resume-deepdive",
@@ -219,7 +339,11 @@
       "hook_ig": "Evaluators don't grade résumés. They grade evidence.\n\nThe Key-Personnel Deep-Dive turns a résumé into a tailored bio plus a requirement→evidence matrix: every solicitation requirement marked meets, partial, or gap — with the résumé line that proves it, and an honest list of gaps to shore up.\n\nSave to a reusable library. Export a combined volume to Word.",
       "stat": "Requirement→evidence matrix, zero invention",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "secure-docs",
@@ -230,7 +354,14 @@
       "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document with your organization's own key before it's stored — platform staff can see metadata, never contents. In-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
       "stat": "Per-org encryption keys + audit log",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/file_storage.py:1-16",
+        "verified_on": "2026-07-28",
+        "note": "Copy says 'your organization's own key - not ours'. Implementation is ONE KMS CMK with per-FILE data keys and org_id as EncryptionContext/AAD. No per-org CMK, and the key is ours. Security claim; must not ship."
+      }
     },
     {
       "id": "exec-analytics",
@@ -241,7 +372,11 @@
       "hook_ig": "Your pipeline review shouldn't be someone reading a spreadsheet aloud.\n\nExecutive Pipeline Analytics gives owners the real picture: pipeline coverage against your new-business goal, weighted forecast by quarter, top contributors, at-risk pursuits (each with the reason it's flagged), and win/loss rates by agency, set-aside, and value band.\n\nOne click exports a board-ready PDF.",
       "stat": "Goal coverage · weighted forecast · board PDF",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     },
     {
       "id": "post-award",
@@ -252,18 +387,30 @@
       "hook_ig": "Every completed contract should make your next proposal stronger.\n\nMy Contracts manages the post-award lifecycle: modifications, CDRL deliverables with status tracking, CPARS ratings with an AI drafter that turns your six factor ratings into a grounded narrative — no invented metrics.\n\nThen promote the finished contract straight into your Past Performance library.",
       "stat": "Mods · CDRLs · CPARS → past-perf library",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28",
+        "note": "CPARS 'six factor ratings' not traced to implementation."
+      }
     },
     {
       "id": "pricing-plans",
       "feature": "Pricing",
-      "headline": "The $30K capture stack, from $249/mo.",
+      "headline": "The whole capture stack, from $249/mo.",
       "body": "AI fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, and the 50% rule check — one platform, a fraction of the incumbents' price. Free 14-day trial.",
-      "hook_x": "GovWin-class intelligence: ~$30K/yr. PursuitAI: from $249/mo — fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, and the only built-in 50% rule check. Free 14-day trial, no credit card.",
-      "hook_ig": "The incumbent capture platforms price small businesses out at ~$30K/year.\n\nPursuitAI is the whole capture pipeline — AI fit scoring across SAM.gov + 21 agency forecasts, recompete radar, sub-award intelligence, teaming match, price-to-win, proposal drafting, and set-aside compliance — from $249/mo.\n\nStart with a free 14-day trial. No credit card. Set up in under 2 minutes.",
+      "hook_x": "PursuitAI: the full capture stack from $249/mo — fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, and the only built-in 50% rule check. Free 14-day trial, no credit card.",
+      "hook_ig": "The incumbent capture platforms price small businesses out.\n\nPursuitAI is the whole capture pipeline — AI fit scoring across SAM.gov + 21 agency forecasts, recompete radar, sub-award intelligence, teaming match, price-to-win, proposal drafting, and set-aside compliance — from $249/mo.\n\nStart with a free 14-day trial. No credit card. Set up in under 2 minutes.",
       "stat": "From $249/mo · 14-day free trial",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/web/src/features/billing/components/BillingTab.js:275",
+        "verified_on": "2026-07-28",
+        "note": "$249/mo agrees across billing UI, terms page, and landing. GovWin price comparison removed."
+      }
     },
     {
       "id": "mobile-app",
@@ -274,7 +421,11 @@
       "hook_ig": "The RFP doesn't wait for you to get back to your desk.\n\nWith PursuitAI's native iOS, iPad & Android apps, you tap Share on any document in Mail, Slack, or Files — and the right analyzer fires automatically: compliance matrix for RFPs, Q&A extractor for Q&A packets.\n\nGenerate outlines, share your capability statement from the share sheet, unlock with Face ID.",
       "stat": "Share-sheet → instant RFP analysis",
       "page": "/",
-      "media": "card"
+      "media": "card",
+      "verification": {
+        "status": "UNVERIFIED",
+        "verified_on": "2026-07-28"
+      }
     }
   ]
 }
