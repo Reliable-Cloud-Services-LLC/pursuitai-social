@@ -54,6 +54,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `post_x.py` | Posts to X. Media rides the v1.1 upload endpoint, the post itself is API v2. |
 | `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
 | `notify.py` | Slack notifications: review requests, failure alerts, and the weekly heartbeat. Silent no-op when unconfigured, and never raises. |
+| `media.py` | Builds the public media URL, and rejects a base Instagram's fetcher couldn't reach. One place the media host is resolved. |
 
 ### `content/` — the data
 
@@ -76,7 +77,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `.github/workflows/test.yml` | Runs the test suite; separately, an opt-in credential pre-flight. |
 | `scripts/validate_x.py` | Proves the X credentials authenticate and can upload media. Posts nothing. |
 | `scripts/validate_ig.py` | Proves the Instagram token, scopes, quota, and — critically — that Instagram can *fetch* your media URL. Creates a real container but never publishes it. |
-| `assets/` | Generated cards, screenshots, and video. Committed because Instagram fetches media by public URL. |
+| `assets/` | Generated cards, screenshots, and video. **Not committed** — uploaded to object storage, which is what Instagram fetches from. |
 | `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
 | `tests/` | 73 tests. See below. |
 

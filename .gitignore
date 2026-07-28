@@ -4,4 +4,10 @@ __pycache__/
 .venv/
 .DS_Store
 .env
+
+# Rendered media is uploaded to object storage, not committed (W8).
+# Instagram fetches by public URL; the repo is not that host.
+assets/cards/
+assets/screenshots/
+assets/video/
 assets/preview/
