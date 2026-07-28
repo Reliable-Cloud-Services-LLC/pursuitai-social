@@ -114,17 +114,11 @@ def test_at_least_one_topic_is_publishable(cal):
     assert publishable, "no VERIFIED topics — the calendar cannot publish"
 
 
-# VERIFIED topics whose captions still trip a caption rule, so they cannot
-# publish yet. Each is one sentence away: an unverifiable competitive
-# superlative ("No competitor has this") that needs an approved copy edit,
-# not a code change. This list may only SHRINK — a new entry means we
-# introduced a claim we cannot stand behind.
-CAPTION_BLOCKED_PENDING_COPY_EDIT = {
-    "fifty-percent-rule",   # "No competitor has this."
-    "8a-copilot",           # "No other platform does this."
-    "mpjv",                 # "No competitor models inherited JV eligibility."
-    "pricing-plans",        # "the only built-in 50% rule check"
-}
+# VERIFIED topics whose captions still trip a caption rule. Emptied once
+# the competitive superlatives were removed by approved copy edit. This
+# set may only SHRINK — a new entry means we introduced a claim we cannot
+# stand behind, and it should be edited out rather than listed here.
+CAPTION_BLOCKED_PENDING_COPY_EDIT = set()
 
 
 def caption_violations(cal, topic):

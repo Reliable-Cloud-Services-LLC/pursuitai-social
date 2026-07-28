@@ -6,10 +6,16 @@ name: Daily social post
 # approves. That pause is the gate — it is enforced by GitHub, not by our
 # code, so no env var or flag here can bypass it.
 
+# SCHEDULE HELD (W5). Only 8 of 24 topics have claims traced to a source,
+# so a Mon–Sat cadence would cycle the same eight posts every 8 days. The
+# cron stays commented out until the verified rotation is large enough;
+# workflow_dispatch still works for a manual, reviewed post.
+#
+# To resume: uncomment the schedule below.
 on:
-  schedule:
-    # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
-    - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
+  # schedule:
+  #   # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
+  #   - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
 
 permissions:

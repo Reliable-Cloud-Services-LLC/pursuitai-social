@@ -262,8 +262,9 @@ def test_approve_records_hash_topic_and_utc_timestamp(sandbox):
     pending, approved = paths(sandbox)
     doc = json.load(open(approved))
     assert doc["pending_sha256"] == approval.compute_hash(pending)
-    assert doc["topic"] == "price-to-win"   # first selectable (W5)
-    assert doc["format"] == "card"
+    pending_doc = json.load(open(pending))
+    assert doc["topic"] == pending_doc["topic"]
+    assert doc["format"] == pending_doc["format"]
     stamp = datetime.datetime.fromisoformat(doc["approved_at"])
     assert stamp.tzinfo is not None, "must be timezone-aware"
 
