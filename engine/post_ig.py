@@ -15,11 +15,13 @@ import os
 import time
 import requests
 
+import media
+
 GRAPH = "https://graph.facebook.com/v21.0"
 
 def _public_url(repo_rel_path):
-    base = os.environ["MEDIA_BASE_URL"].rstrip("/")
-    return f"{base}/{repo_rel_path.lstrip('/')}"
+    """Delegates to engine/media.py so the host lives in one place."""
+    return media.public_url(repo_rel_path)
 
 def post_image(repo_rel_path, caption):
     uid, tok = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]

@@ -22,6 +22,10 @@ shell or put them in a `.env` you never commit (`.env` is gitignored).
 | `IG_ACCESS_TOKEN` | yes, for Instagram | Meta Graph API | Instagram posts fail at auth |
 | `NOTIFY_WEBHOOK_URL` | strongly recommended | Slack | **Every alert and review request is silently dropped.** The approval gate becomes a silent stall — posts are prepared daily and nobody is ever told. |
 | `ANTHROPIC_API_KEY` | optional | Claude Console | Captions fall back to the hand-written hooks in `calendar.json`. Degrades cleanly; nothing breaks. |
+| `MEDIA_BASE_URL` | yes, for Instagram | your bucket | **Instagram cannot publish.** It fetches media by public URL; without this there is nowhere to fetch from. |
+| `MEDIA_BUCKET` | yes | your bucket | The prepare job fails loudly — media has nowhere to go. |
+| `MEDIA_ACCESS_KEY_ID` / `MEDIA_SECRET_ACCESS_KEY` | yes | R2 or IAM | Upload and fetch both fail. |
+| `MEDIA_ENDPOINT` | R2 only | Cloudflare | Leave unset for AWS S3. |
 
 Only `X_API_KEY` and `IG_USER_ID` gate whether a channel is *attempted* — the
 engine checks those two as the "are credentials present" signal. The rest fail
@@ -31,7 +35,6 @@ at authentication time if missing, which surfaces as a `failed` channel.
 
 | Variable | Source | Purpose |
 |---|---|---|
-| `MEDIA_BASE_URL` | computed in the workflow | Public base URL Instagram fetches media from. Built from `github.repository` + `github.ref_name`. |
 | `REVIEW_URL` | computed in the workflow | Link to the Actions run, included in the Slack review request. |
 | `GITHUB_ACTOR` | GitHub Actions | Recorded in `approved.json`. |
 | `GITHUB_ACTIONS` | GitHub Actions | Set to `true` in CI, which is how `--force` refuses to run there. |
@@ -122,6 +125,45 @@ containers expire harmlessly after 24h. This is the single most useful check,
 because a media URL Instagram can't reach is the most common silent failure.
 
 ---
+
+## Media hosting — 4 secrets
+
+Rendered cards, screenshots and video are uploaded to object storage, not
+committed. Instagram fetches media by public URL and the repo was only ever
+standing in as that host — at the cost of growing with every run.
+
+**Cloudflare R2** is the cheaper option (no egress fees, which matters when
+Instagram and X both pull every asset). AWS S3 works identically; skip
+`MEDIA_ENDPOINT`.
+
+1. Create a bucket, e.g. `pursuitai-social-media`.
+2. **Enable public read access.** Instagram's fetcher is unauthenticated —
+   a private bucket fails exactly the way a private repo did. On R2 this is
+   *Settings → Public access → Allow Access*, which gives you an
+   `https://pub-<hash>.r2.dev` domain (or attach a custom domain).
+3. Create an API token scoped to **Object Read & Write** on that bucket
+   only → `MEDIA_ACCESS_KEY_ID`, `MEDIA_SECRET_ACCESS_KEY`.
+4. Set the secrets:
+
+| Secret | Example |
+|---|---|
+| `MEDIA_BUCKET` | `pursuitai-social-media` |
+| `MEDIA_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` (R2 only) |
+| `MEDIA_BASE_URL` | `https://pub-<hash>.r2.dev` — the **public read** domain, not the S3 endpoint |
+
+`MEDIA_BASE_URL` and `MEDIA_ENDPOINT` are different URLs and mixing them is
+the easy mistake: one is where we write, the other is where Instagram
+reads. `engine/media.py` rejects a non-https or loopback base up front,
+because the alternative is a Graph API error hours later that says nothing
+about the cause.
+
+**Verify before trusting it:**
+```bash
+export MEDIA_BASE_URL=... IG_USER_ID=... IG_ACCESS_TOKEN=...
+python scripts/validate_ig.py --container
+```
+That HEADs a real asset URL and creates a container Instagram must fetch —
+it is the only check that proves the bucket is actually reachable.
 
 ## Slack — 1 secret
 

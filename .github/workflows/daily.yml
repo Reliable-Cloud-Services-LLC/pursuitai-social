@@ -49,13 +49,39 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python engine/run.py --prepare
 
-      # pending.json is committed too: the publish job is a separate run
-      # that may happen hours later, so the reviewed post has to persist.
-      - name: Commit assets + pending post
+      # Rendered media goes to object storage, not into git (W8). Instagram
+      # fetches by public URL and the repo was only ever standing in as that
+      # host — at the cost of growing with every run. The AWS CLI is
+      # preinstalled on the runner, so this adds no dependency; R2 is
+      # S3-compatible via --endpoint-url.
+      - name: Upload media to object storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          if [ -z "$BUCKET" ]; then
+            echo "::error::MEDIA_BUCKET is not set. Rendered media is no"
+            echo "::error::longer committed to the repo, so Instagram has"
+            echo "::error::nowhere to fetch from. See SECRETS.md."
+            exit 1
+          fi
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          aws s3 sync assets/ "s3://$BUCKET/assets/" $args \
+            --no-progress --only-show-errors \
+            --exclude "preview/*" --cache-control "public, max-age=31536000"
+          echo "uploaded $(find assets -type f -not -path 'assets/preview/*' | wc -l) file(s)"
+
+      # pending.json still commits: the publish job is a separate run that
+      # may happen hours later, so the reviewed post has to persist.
+      - name: Commit pending post
         run: |
           git config user.name "pursuitai-bot"
           git config user.email "bot@pursuitai.net"
-          git add -A assets content/pending.json || true
+          git add content/pending.json || true
           git commit -m "prepare $(date -u +%F)" || echo "nothing to commit"
           git push
 
@@ -63,7 +89,7 @@ jobs:
       - name: Send for review
         env:
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
           REVIEW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python engine/run.py --notify-pending
 
@@ -84,9 +110,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      # No playwright or ffmpeg: media is already built and committed.
+      # X uploads media BYTES (unlike Instagram, which fetches a URL), so
+      # the publish job needs the files locally. They are no longer in the
+      # repo, so pull them back from the bucket rather than re-rendering —
+      # re-rendering could produce different pixels than what was approved.
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Fetch approved media from object storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          aws s3 sync "s3://$BUCKET/assets/" assets/ $args \
+            --no-progress --only-show-errors
+          ls -la assets/cards | head -3
 
       # Reaching this step means a required reviewer already approved in the
       # GitHub UI. This records WHAT was approved so publish can verify the
