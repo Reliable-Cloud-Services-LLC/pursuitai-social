@@ -92,9 +92,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/sub_awards.py:179-197",
         "verified_on": "2026-07-28",
-        "note": "Sub-award ranking not traced to implementation. GovWin price figure removed — Deltek publishes no list pricing."
+        "note": "Aggregates real SubAward.amount by prime with small-business and 8a/sdvosb/wosb/hubzone flags, so 'ranked by real sub-award dollars, filterable by set-aside' holds. Teaming email grounded in past performance via services/teaming_email.py."
       }
     },
     {
@@ -126,8 +128,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/proposals/draft.py:143-153",
+        "verified_on": "2026-07-28",
+        "note": "Section-by-section drafting keyed by SECTION KEY, capped at 12 sections. Compliance matrix, outline, and capture plan are sibling endpoints in the same package."
       }
     },
     {
@@ -179,7 +184,7 @@
       "verification": {
         "status": "UNVERIFIED",
         "verified_on": "2026-07-28",
-        "note": "'14 GWACs' matches no counting rule in vehicle_keys.py (33 keys, ~10 distinct programs, 21 non-MAS entries). '9,000+ holders' is a data volume requiring a production query."
+        "note": "SAM exclusion screening IS verified (teaming_partner_detail.py:405-421 -> sam_exclusions.check_exclusions). The two NUMBERS are not: '14 GWACs' matches no counting rule in vehicle_keys.py, and '9,000+ holders' is a data volume needing a production query."
       }
     },
     {
@@ -188,13 +193,16 @@
       "headline": "Let the primes find YOU.",
       "body": "Opt into the Subcontractor Directory and primes assembling a team can discover your firm by NAICS, set-aside cert, and state — capabilities and past performance one click away.",
       "hook_x": "Every tool helps you find partners. PursuitAI also runs the other direction: opt into the Subcontractor Directory and primes assembling teams discover YOU — by NAICS, set-aside cert, and state. Inbound teaming is the best teaming.",
-      "hook_ig": "The best teaming call is the one you receive.\n\nOpt into PursuitAI's Subcontractor Directory and primes assembling a team can find your firm by NAICS, set-aside certification — 8(a), SDVOSB, WOSB, HUBZone — and state, with your capabilities and past performance one click away.\n\nEveryone else's tools only search outward. This is the direction the market forgot.",
+      "hook_ig": "The best teaming call is the one you receive.\n\nOpt into PursuitAI's Subcontractor Directory and primes assembling a team can find your firm by NAICS, set-aside certification — 8(a), SDVOSB, WOSB, HUBZone — and state, with your capabilities and past performance one click away.\n\nMost tools only search outward. This one runs both directions.",
       "stat": "Inbound discovery by primes",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/models/_seg2_opportunities.py:544-548",
+        "verified_on": "2026-07-28",
+        "note": "listed_as_subcontractor is an explicit opt-in, default False — 'no firm is exposed without consent'. state/city columns support discovery by state."
       }
     },
     {
@@ -262,8 +270,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/models/_seg2_opportunities.py:345-354",
+        "verified_on": "2026-07-28",
+        "note": "Copy says 'Identified -> Qualified -> Bidding -> Submitted'. The PipelineStage enum is IDENTIFIED, REVIEWING, GO_NO_GO, PURSUING, DRAFTING, SUBMITTED, WON, LOST, NO_BID. 'Qualified' and 'Bidding' do not exist; four real stages are omitted."
       }
     },
     {
@@ -277,8 +288,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/proposals/compliance_generate.py:204-250",
+        "verified_on": "2026-07-28",
+        "note": "Accepts pdf/docx/xlsx in one upload and extracts to a structured matrix in a single pass."
       }
     },
     {
@@ -326,8 +340,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/boe.py:144-148",
+        "verified_on": "2026-07-28",
+        "note": "Copy says the BOE is 'checked against GSA CALC ceilings'. _CEILING_SOURCE_LABEL offers only solicitation, pipeline_value and sam_estimate. gsa_calc appears in api/price_to_win.py and api/gsa_calc.py but nowhere in the BOE path. The rate x hours x escalation x wrap x ODC math itself is real (services/boe.py)."
       }
     },
     {
@@ -341,8 +358,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/proposals/resume_deep_dive.py:12-21",
+        "verified_on": "2026-07-28",
+        "note": "Emits a requirement->evidence matrix with status meets|partial|gap plus a gap action list; evidence is quoted resume lines."
       }
     },
     {
@@ -374,8 +394,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/dashboard.py:205-227",
+        "verified_on": "2026-07-28",
+        "note": "coverage_ratio = probability-weighted pipeline / goal; win_rate from won/submitted; at-risk pursuits and win-loss cohorts at :257-258."
       }
     },
     {
@@ -389,9 +412,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/models/_seg8_post_award.py:187-192",
         "verified_on": "2026-07-28",
-        "note": "CPARS 'six factor ratings' not traced to implementation."
+        "note": "CparsAssessment carries exactly six factor ratings: quality, schedule, cost_control, management, small_business, regulatory."
       }
     },
     {
@@ -423,8 +448,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28"
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/api/correspondence.py:140-143",
+        "verified_on": "2026-07-28",
+        "note": "mobile_share_extension is a first-class correspondence source; analyzer_required drives the downstream extractor automatically."
       }
     }
   ]
