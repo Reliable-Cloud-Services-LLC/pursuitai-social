@@ -40,10 +40,28 @@ Generation is automated. **Publishing is not.** Our audience is a small, reputat
    > billing state, not a credentials problem: `scripts/validate_x.py`
    > will still pass, because authentication works fine.
    >
-   > **Budget note:** each publish is *two* writes — the post plus the
-   > threaded CTA reply (see W4 in CHANGELOG). The weekly analytics
-   > collector adds roughly 20-25 reads per run once at cadence. Buy
-   > credits accordingly, and watch the Developer Console's usage view.
+   > **Rates** ([docs.x.com](https://docs.x.com/x-api/getting-started/pricing)):
+   >
+   > | Operation | Price |
+   > |---|---|
+   > | Standard post | $0.015 |
+   > | **Post containing a URL** | **$0.200** |
+   > | Media metadata | $0.005 |
+   > | Owned reads | $0.001 each |
+   >
+   > **Each publish is two writes** — a clean post ($0.015) plus the
+   > threaded CTA reply, which carries the URL ($0.200). About $0.215 a
+   > day, roughly **$4.82/month** at 22 posts including the weekly
+   > analytics reads. Around $25 of credit lasts five months.
+   >
+   > Note this is marginally MORE than putting the link in the body
+   > ($0.200): W4 moved the URL, it did not remove it, so the surcharge
+   > moved too and a second post was added. The justification is reach —
+   > the main post is no longer a link post — not cost.
+   >
+   > If credits ever get tight, dropping the X CTA link entirely (bio
+   > link only, as Instagram already does) costs $0.015 a post, about
+   > $0.33/month. That is a lever, not a recommendation.
 2. Create a Project + App. In **App settings → User authentication settings**: enable **OAuth 1.0a**, set App permissions to **Read and write** (website/callback URL can be `https://pursuitai.net`).
 3. In **Keys and tokens**, generate:
    - API Key + Secret → secrets `X_API_KEY`, `X_API_SECRET`
