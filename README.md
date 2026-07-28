@@ -55,6 +55,8 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
 | `notify.py` | Slack notifications: review requests, failure alerts, and the weekly heartbeat. Silent no-op when unconfigured, and never raises. |
 | `media.py` | Builds the public media URL, and rejects a base Instagram's fetcher couldn't reach. One place the media host is resolved. |
+| `analytics.py` | Reads post performance back from each platform into `logs/metrics.jsonl`. Runs weekly, never on the publish path. |
+| `rotation.py` | Weights the topic order by measured engagement. Degrades to plain round-robin when metrics are thin. |
 
 ### `content/` — the data
 
@@ -79,6 +81,8 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `scripts/validate_ig.py` | Proves the Instagram token, scopes, quota, and — critically — that Instagram can *fetch* your media URL. Creates a real container but never publishes it. |
 | `assets/` | Generated cards, screenshots, and video. **Not committed** — uploaded to object storage, which is what Instagram fetches from. |
 | `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
+| `logs/metrics.jsonl` | Append-only performance samples, keyed to the post ids in `posted.jsonl`. |
+| `.github/workflows/analytics.yml` | Weekly metrics collection. Separate from publishing because X reads are billed. |
 | `tests/` | 73 tests. See below. |
 
 ---
@@ -93,6 +97,12 @@ cycles rather than being locked to one forever.
 
 Neither advances unless a channel confirms a post, so a failed or unapproved
 run replays the same content rather than burning it.
+
+Once enough posts have metrics, the topic cycle is **weighted**: strong
+topics appear twice per cycle, weak ones drop out, the middle is untouched,
+and the calendar's order is preserved so the feed never reshuffles
+wholesale. Below six scored topics it stays plain round-robin — a weighting
+scheme that misbehaves on thin data is worse than none.
 
 ---
 

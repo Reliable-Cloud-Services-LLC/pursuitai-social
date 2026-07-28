@@ -58,7 +58,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
+          # R2 wants 'auto'; S3 needs a real region. Configurable so either works.
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
           BUCKET: ${{ secrets.MEDIA_BUCKET }}
           ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
         run: |
@@ -121,7 +122,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
+          # R2 wants 'auto'; S3 needs a real region. Configurable so either works.
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
           BUCKET: ${{ secrets.MEDIA_BUCKET }}
           ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
         run: |
