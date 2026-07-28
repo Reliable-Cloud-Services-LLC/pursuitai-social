@@ -70,6 +70,8 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | Path | What it does |
 |---|---|
 | `.github/workflows/daily.yml` | The two-job pipeline: `prepare` (cron) → approval → `publish`. |
+| `scripts/preview.py` | Renders every publishable post — all ratios, every channel's copy, with copy buttons — into one self-contained HTML sheet. Nothing ships that hasn't been looked at. |
+| `docs/LINKEDIN_ACCESS.md` | Why LinkedIn is pasted by hand, and the Development-tier application to submit. |
 | `.github/workflows/heartbeat.yml` | Weekly "N posts in the last 7 days", so silence is itself detectable. |
 | `.github/workflows/test.yml` | Runs the test suite; separately, an opt-in credential pre-flight. |
 | `scripts/validate_x.py` | Proves the X credentials authenticate and can upload media. Posts nothing. |
@@ -103,6 +105,7 @@ python engine/run.py --publish          # verify approval, then post
 python engine/run.py --dry-run          # generate and print, post nothing
 python engine/run.py                    # prepare only, then tell you what's next
 
+python scripts/preview.py               # visual review sheet for every post
 python engine/links.py                  # print the Instagram bio link
 python engine/notify.py --heartbeat     # weekly liveness report
 pytest tests/ -v                        # 73 tests
@@ -132,5 +135,14 @@ the project, so tests exercise the real code path and never touch a network.
 See **[SECRETS.md](SECRETS.md)** for every credential the engine uses and how to obtain it.
 See **[SETUP.md](SETUP.md)** for credentials, the Slack webhook, the approval
 environment, the Instagram bio link, and the daily review routine.
+
+## Channels
+
+| Channel | How it publishes |
+|---|---|
+| X | API, automated — body plus a threaded CTA reply |
+| Instagram | API, automated — Graph API fetches media by public URL |
+| **LinkedIn** | **Manual paste from the preview sheet.** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). |
+| Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 
 **Kill switch:** disable the workflow in the Actions tab.
