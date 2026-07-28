@@ -263,18 +263,18 @@
       "id": "pipeline",
       "feature": "Pipeline & Team Board",
       "headline": "Run every pursuit on one board.",
-      "body": "Move opportunities through Identified → Qualified → Bidding → Submitted with probability-weighted pipeline value, capture meeting logs, and win/loss debriefs that feed future bid decisions.",
-      "hook_x": "Your capture pipeline is not a spreadsheet relay. One board: Identified → Qualified → Bidding → Submitted, probability-weighted value, RFP deadlines, debrief capture — and your whole team sees it in real time.",
-      "hook_ig": "Capture teams don't lose to competitors. They lose to spreadsheets.\n\nPursuitAI runs every pursuit on one live board — Identified, Qualified, Bidding, Submitted — with probability-weighted pipeline value, capture meeting logs, RFP deadlines, and debrief outcomes that feed back into future bid/no-bid calls.\n\nAs a sub? Track your work-share % so the forecast reflects YOUR slice.",
-      "stat": "Probability-weighted, real-time board",
+      "body": "Move opportunities through Identified → Reviewing → Go/No-Go → Pursuing → Drafting → Submitted, with an explicit bid decision gate, probability-weighted pipeline value, capture meeting logs, and win/loss debriefs that feed future bid decisions.",
+      "hook_x": "Your capture pipeline is not a spreadsheet relay. One board — Identified, Reviewing, Go/No-Go, Pursuing, Drafting, Submitted — with a real bid-decision gate, probability-weighted value, RFP deadlines and debrief capture. Your whole team sees it live.",
+      "hook_ig": "Capture teams don't lose to competitors. They lose to spreadsheets.\n\nPursuitAI runs every pursuit on one live board — Identified, Reviewing, Go/No-Go, Pursuing, Drafting, Submitted — with probability-weighted pipeline value, capture meeting logs, RFP deadlines, and debrief outcomes that feed back into future bid/no-bid calls.\n\nThe Go/No-Go stage is a real gate: decline a pursuit and the tools lock until an owner reopens it.\n\nAs a sub? Track your work-share % so the forecast reflects YOUR slice.",
+      "stat": "Explicit Go/No-Go gate, weighted board",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
         "source_ref": "apps/backend/app/models/_seg2_opportunities.py:345-354",
         "verified_on": "2026-07-28",
-        "note": "Copy says 'Identified -> Qualified -> Bidding -> Submitted'. The PipelineStage enum is IDENTIFIED, REVIEWING, GO_NO_GO, PURSUING, DRAFTING, SUBMITTED, WON, LOST, NO_BID. 'Qualified' and 'Bidding' do not exist; four real stages are omitted."
+        "note": "Stage names now match the PipelineStage enum. The previous copy named 'Qualified' and 'Bidding', neither of which exists, and omitted four real stages including the Go/No-Go gate. The no-bid lock is app/services/no_bid.py."
       }
     },
     {
@@ -333,18 +333,18 @@
       "id": "pricing-boe",
       "feature": "Pricing & Basis of Estimate",
       "headline": "A priced cost volume, not just a target.",
-      "body": "Upload a rate card, auto-match required LCATs from the RFQ, compute rate × hours × escalation × wrap × ODC — checked against GSA CALC ceilings. Export a stakeholder-safe BOE to Word.",
-      "hook_x": "Price-to-win gives you the number. The BOE builder gives you the defense: rate × hours × escalation × wrap × ODC, auto-matched to the RFQ's LCATs and checked against GSA CALC ceilings. Export to Word, done.",
-      "hook_ig": "A winning price you can't defend is a losing price.\n\nPursuitAI builds the full Basis of Estimate: define or upload your labor rate card, auto-match the LCATs extracted from the RFQ, then compute rate × hours × escalation × wrap × ODC — validated against GSA CALC ceilings and the solicitation's own ceiling.\n\nExport a stakeholder-safe BOE straight to Word.",
-      "stat": "Full BOE math, CALC-validated",
+      "body": "Upload a rate card, auto-match required LCATs from the RFQ, compute rate × hours × escalation × wrap × ODC — checked against the solicitation's own ceiling. Export a stakeholder-safe BOE to Word.",
+      "hook_x": "Price-to-win gives you the number. The BOE builder gives you the defense: rate × hours × escalation × wrap × ODC, auto-matched to the RFQ's LCATs and checked against the solicitation ceiling. Export to Word, done.",
+      "hook_ig": "A winning price you can't defend is a losing price.\n\nPursuitAI builds the full Basis of Estimate: define or upload your labor rate card, auto-match the LCATs extracted from the RFQ, then compute rate × hours × escalation × wrap × ODC — with every line checked against the solicitation's own ceiling and your own value estimate.\n\nExport a stakeholder-safe BOE straight to Word.",
+      "stat": "Full BOE math, ceiling-checked",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
         "source_ref": "apps/backend/app/services/boe.py:144-148",
         "verified_on": "2026-07-28",
-        "note": "Copy says the BOE is 'checked against GSA CALC ceilings'. _CEILING_SOURCE_LABEL offers only solicitation, pipeline_value and sam_estimate. gsa_calc appears in api/price_to_win.py and api/gsa_calc.py but nowhere in the BOE path. The rate x hours x escalation x wrap x ODC math itself is real (services/boe.py)."
+        "note": "_CEILING_SOURCE_LABEL validates against solicitation, pipeline_value and sam_estimate. The previous copy claimed GSA CALC ceilings; gsa_calc is used in api/price_to_win.py and api/gsa_calc.py but nowhere in the BOE path. The rate x hours x escalation x wrap x ODC math is api/proposals/pricing_boe.py:190."
       }
     },
     {
