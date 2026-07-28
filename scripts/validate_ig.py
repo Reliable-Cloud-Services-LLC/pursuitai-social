@@ -83,7 +83,7 @@ def main():
     if r.status_code == 200 and r.json().get("data"):
         u = r.json()["data"][0]
         used = u.get("quota_usage", 0)
-        ok(f"quota used {used}/50 in current 24h window")
+        ok(f"quota used {used}/100 in current 24h window")
     else:
         print("    (quota endpoint unavailable — not fatal)")
 

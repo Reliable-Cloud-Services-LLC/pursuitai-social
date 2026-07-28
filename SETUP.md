@@ -41,7 +41,7 @@ You don't have an Instagram account yet, so:
 2. **Create a Facebook Page** for PursuitAI (required bridge), then link it: Instagram Settings → Business tools → Connect a Facebook Page.
 3. **Create a Meta app** at https://developers.facebook.com → Create App → type **Business**. Add the **Instagram Graph API** and **Facebook Login for Business** products.
 4. Get a **long-lived access token**:
-   - Open Graph API Explorer (https://developers.facebook.com/tools/explorer), select your app, click "Get User Access Token" with scopes: `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `business_management`.
+   - Open Graph API Explorer (https://developers.facebook.com/tools/explorer), select your app, click "Get User Access Token" with scopes: `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`, `business_management`.
    - Exchange it for a long-lived token (60 days):
      ```
      GET https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=<APP_ID>&client_secret=<APP_SECRET>&fb_exchange_token=<SHORT_TOKEN>
@@ -58,6 +58,8 @@ You don't have an Instagram account yet, so:
 Note: while your Meta app is in Development mode it can post to accounts that have a role on the app (your own) — that's all this engine needs. No App Review required.
 
 ## Step 4 — GitHub secrets
+
+> Full retrieval instructions for every credential, including what breaks without each one, are in **[SECRETS.md](SECRETS.md)**.
 
 Repo → Settings → Secrets and variables → Actions → New repository secret:
 
@@ -165,7 +167,7 @@ link; the bio link attributes Instagram traffic in aggregate.
 ## Platform-rules notes (keep it boring, keep it safe)
 
 - Posting your own product content on a schedule is fully within X automation rules and Instagram platform terms; both endpoints used here are the official, documented publish APIs.
-- Instagram API caps content publishing at 50 posts/24h — we use 1.
+- Instagram allows 100 API-published posts per rolling 24h period — we use 1.
 - Don't add follow/unfollow, DM, or mass-reply automation to this engine; that's where accounts get flagged.
 
 ## Local testing
