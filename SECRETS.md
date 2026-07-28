@@ -63,6 +63,13 @@ You need a developer account on the **@pursuit_ai** account itself.
 **Expiry:** OAuth 1.0a user tokens do not expire. They stay valid until you
 revoke them or change app permissions.
 
+**Credits, not a free tier.** X is pay-per-usage since February 2026 — you
+buy credits and each call consumes them. A zero balance surfaces as
+`402 Payment Required — credits depleted` at publish time, *after*
+`validate_x.py` passes, because the credentials are fine and only the
+billing is not. Budget for two writes per publish (post + threaded reply)
+plus the weekly analytics reads.
+
 **Verify without posting:**
 ```bash
 export X_API_KEY=... X_API_SECRET=... X_ACCESS_TOKEN=... X_ACCESS_SECRET=...
