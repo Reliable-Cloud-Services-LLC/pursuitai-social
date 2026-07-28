@@ -113,7 +113,7 @@ def sandbox(tmp_path):
             p.unlink()
     return str(dst)
 
-def test_prepare_then_publish_advances_state(sandbox):
+def test_publish_without_credentials_does_not_consume_topic(sandbox):
     r = _run(["--prepare"], sandbox)
     assert r.returncode == 0, r.stderr
     pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
@@ -121,10 +121,11 @@ def test_prepare_then_publish_advances_state(sandbox):
     assert pending["format"] == "card"
     assert os.path.exists(os.path.join(sandbox, pending["media_x"]))
 
-    r = _run(["--publish"], sandbox)  # no creds -> posts skipped, state advances
-    assert r.returncode == 0, r.stderr
-    state = json.load(open(os.path.join(sandbox, "content", "state.json")))
-    assert state["topic_index"] == 1 and state["run_count"] == 1
+    # W1: no creds -> both channels skipped -> nothing posted -> loud failure
+    # and the topic is preserved for a run that can actually publish it.
+    r = _run(["--publish"], sandbox)
+    assert r.returncode == 1, r.stdout
+    assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
     assert not os.path.exists(os.path.join(sandbox, "content", "pending.json"))
     log = open(os.path.join(sandbox, "logs", "posted.jsonl")).read().strip()
     entry = json.loads(log)
@@ -143,5 +144,7 @@ def test_format_rotation_cycles(sandbox):
         _run(["--publish"], sandbox)
     # screenshot/video fall back to card offline; card must appear, no crash
     assert all(f in ("card", "screenshot", "video") for f in seen)
-    state = json.load(open(os.path.join(sandbox, "content", "state.json")))
-    assert state["run_count"] == 4 and state["topic_index"] == 4
+    # W1: publishing nothing consumes nothing, so state is never written.
+    # Rotation under successful publishes is covered in
+    # test_publish_outcomes.py::test_format_is_not_locked_to_topic.
+    assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
