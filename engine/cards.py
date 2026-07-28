@@ -9,15 +9,24 @@ import math
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
+import brand
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-BRAND_VIOLET = (124, 58, 237)      # #7c3aed
-BRAND_DEEP = (23, 12, 46)          # dark backdrop
-BRAND_DEEP2 = (44, 21, 84)
-WHITE = (255, 255, 255)
-MUTED = (196, 181, 253)            # violet-200
-GREEN = (74, 222, 128)
+# Palette comes from content/brand_tokens.json — never hardcode a colour
+# here, or it drifts away from video.py (see tests/test_brand_tokens.py).
+VIOLET = brand.rgb("violet")
+DEEP = brand.rgb("deep")
+DEEP2 = brand.rgb("deep2")
+GLOW = brand.rgb("glow")
+WHITE = brand.rgb("white")
+MUTED = brand.rgb("muted")
+BODY_TEXT = brand.rgb("body_text")
+GREEN = brand.rgb("green")
+CTA_BAR = brand.rgba("cta_bar", 255)
+CHIP_FILL = brand.rgba("violet", brand.ALPHA["chip_fill"])
+GRID_LINE = brand.rgba("white", brand.ALPHA["grid_line"])
 
 def _font(size, bold=True):
     candidates = [
@@ -30,6 +39,10 @@ def _font(size, bold=True):
         if os.path.exists(c):
             return ImageFont.truetype(c, size)
     return ImageFont.load_default()
+
+def _fits(draw, text, font, max_w):
+    return draw.textlength(text, font=font) <= max_w
+
 
 def _wrap(draw, text, font, max_w):
     words, lines, cur = text.split(), [], ""
@@ -46,8 +59,8 @@ def _wrap(draw, text, font, max_w):
     return lines
 
 def _gradient(w, h):
-    img = Image.new("RGB", (w, h), BRAND_DEEP)
-    top = Image.new("RGB", (w, h), BRAND_DEEP2)
+    img = Image.new("RGB", (w, h), DEEP)
+    top = Image.new("RGB", (w, h), DEEP2)
     mask = Image.new("L", (w, h))
     md = ImageDraw.Draw(mask)
     for y in range(h):
@@ -56,21 +69,31 @@ def _gradient(w, h):
     # violet glow, upper right
     glow = Image.new("RGB", (w, h), (0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    gd.ellipse([w * 0.45, -h * 0.35, w * 1.25, h * 0.45], fill=(88, 38, 178))
+    gd.ellipse([w * 0.45, -h * 0.35, w * 1.25, h * 0.45], fill=GLOW)
     glow = glow.filter(ImageFilter.GaussianBlur(w // 9))
     img = Image.blend(img, Image.blend(img, glow, 0.55), 0.8)
     # subtle grid
     d = ImageDraw.Draw(img, "RGBA")
     step = w // 14
     for x in range(0, w, step):
-        d.line([(x, 0), (x, h)], fill=(255, 255, 255, 8))
+        d.line([(x, 0), (x, h)], fill=GRID_LINE)
     for y in range(0, h, step):
-        d.line([(0, y), (w, y)], fill=(255, 255, 255, 8))
+        d.line([(0, y), (w, y)], fill=GRID_LINE)
     return img
+
+class LayoutOverflow(Exception):
+    """Copy ran past the CTA bar. Fail rather than post a broken card."""
+
 
 def render_card(topic, brand, size=(1080, 1350), out_path=None):
     w, h = size
-    s = w / 1080.0  # scale factor
+    # Scale by the CONSTRAINING dimension, not the width. Scaling on width
+    # alone gave a 1600x900 card 1.48x sizing inside 0.83x the height, so
+    # every 16:9 card rendered with its headline sliced by the CTA bar and
+    # the body copy and stat chip pushed off-canvas entirely. 4:5 and 1:1
+    # are unaffected (their smaller side is 1080), so this only repairs the
+    # landscape ratio.
+    s = min(w, h) / 1080.0
     img = _gradient(w, h)
     d = ImageDraw.Draw(img, "RGBA")
     pad = int(84 * s)
@@ -89,13 +112,16 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
     chip_txt = topic["feature"].upper()
     cw = d.textlength(chip_txt, font=chip_f)
     d.rounded_rectangle([pad, y, pad + cw + int(48 * s), y + int(62 * s)],
-                        radius=int(31 * s), fill=(124, 58, 237, 235))
+                        radius=int(31 * s), fill=CHIP_FILL)
     d.text((pad + int(24 * s), y + int(13 * s)), chip_txt, font=chip_f, fill=WHITE)
 
     # headline
     y += int(120 * s)
     head_f = _font(int(84 * s) if h > w else int(72 * s))
     for line in _wrap(d, topic["headline"], head_f, w - 2 * pad):
+        if not _fits(d, line, head_f, w - 2 * pad):
+            raise LayoutOverflow(
+                f"{topic.get('id')} headline word too long for {w}x{h}: {line!r}")
         d.text((pad, y), line, font=head_f, fill=WHITE)
         y += int((head_f.size) * 1.16)
 
@@ -103,23 +129,50 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
     y += int(36 * s)
     body_f = _font(int(40 * s) if h > w else int(34 * s), bold=False)
     for line in _wrap(d, topic["body"], body_f, w - 2 * pad):
-        d.text((pad, y), line, font=body_f, fill=(226, 219, 250))
+        if not _fits(d, line, body_f, w - 2 * pad):
+            raise LayoutOverflow(
+                f"{topic.get('id')} body word too long for {w}x{h}: {line!r}")
+        d.text((pad, y), line, font=body_f, fill=BODY_TEXT)
         y += int(body_f.size * 1.42)
 
-    # stat chip
-    y += int(48 * s)
-    stat_f = _font(int(36 * s))
+    # stat chip. The gap is tight rather than generous: on a 1:1 canvas the
+    # longest topics clear the CTA bar by only a few pixels.
+    y += int(30 * s)
+    # The stat is one unwrappable line, so shrink it to fit rather than
+    # letting the chip run past the edge (teaming's stat overran by 111px
+    # at 4:5 and 1:1).
     stat = "  " + topic["stat"] + "  "
+    stat_size = int(36 * s)
+    chip_room = w - 2 * pad - int(70 * s)
+    while stat_size > int(22 * s):
+        stat_f = _font(stat_size)
+        if d.textlength(stat, font=stat_f) <= chip_room:
+            break
+        stat_size -= 1
+    stat_f = _font(stat_size)
     sw = d.textlength(stat, font=stat_f)
+    if sw > chip_room:
+        raise LayoutOverflow(
+            f"{topic.get('id')} stat too long for {w}x{h}: {topic['stat']!r}")
     d.rounded_rectangle([pad, y, pad + sw + int(70 * s), y + int(84 * s)],
                         radius=int(18 * s), outline=GREEN, width=max(2, int(3 * s)))
     d.ellipse([pad + int(26 * s), y + int(32 * s), pad + int(46 * s),
                y + int(52 * s)], fill=GREEN)
     d.text((pad + int(56 * s), y + int(20 * s)), stat, font=stat_f, fill=GREEN)
 
-    # bottom CTA bar
+    # A shorter canvas (1:1) gives the copy less room than the 4:5 the
+    # layout was tuned for. Refuse to emit a card whose content collides
+    # with the CTA bar — a broken card is worse than a missed post, and
+    # the preview sheet is where this should be caught.
     bar_h = int(150 * s)
-    d.rectangle([0, h - bar_h, w, h], fill=(12, 6, 26, 255))
+    content_bottom = y + int(84 * s)
+    if content_bottom > h - bar_h:
+        raise LayoutOverflow(
+            f"{topic.get('id')} overflows at {w}x{h}: content reaches "
+            f"{content_bottom}px, CTA bar starts at {h - bar_h}px")
+
+    # bottom CTA bar
+    d.rectangle([0, h - bar_h, w, h], fill=CTA_BAR)
     cta_f = _font(int(40 * s))
     d.text((pad, h - bar_h + int(30 * s)), "Start your free 14-day trial",
            font=cta_f, fill=WHITE)
@@ -129,7 +182,7 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
     # arrow button
     bx = w - pad - int(96 * s)
     d.ellipse([bx, h - bar_h + int(28 * s), bx + int(94 * s),
-               h - bar_h + int(122 * s)], fill=BRAND_VIOLET)
+               h - bar_h + int(122 * s)], fill=VIOLET)
     ar_f = _font(int(52 * s))
     d.text((bx + int(28 * s), h - bar_h + int(40 * s)), "→", font=ar_f, fill=WHITE)
 
@@ -145,7 +198,10 @@ def render_all(calendar_path=None, out_dir=None):
         cal = json.load(f)
     made = []
     for t in cal["topics"]:
-        for suffix, size in (("ig", (1080, 1350)), ("x", (1600, 900))):
+        # square is the LinkedIn 1:1; portrait (4:5) shares ig's canvas so
+        # it is rendered once, under the ig name.
+        for suffix in ("ig", "x", "square"):
+            size = brand.size(suffix)
             p = os.path.join(out_dir, f"{t['id']}_{suffix}.png")
             render_card(t, cal["brand"], size=size, out_path=p)
             made.append(p)
