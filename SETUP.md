@@ -100,6 +100,23 @@ The publish job targets a GitHub **environment** with a required reviewer. GitHu
 
 > Required reviewers are available on GitHub Free **for public repositories**. If this repo is ever made private, this protection silently stops applying — re-check it if you change visibility.
 
+### Set secrets BEFORE dispatching a run
+
+GitHub resolves `${{ secrets.* }}` when a workflow run is **created**, not
+when a job executes. That distinction is invisible in a normal pipeline —
+jobs start seconds after dispatch — but this one pauses for approval, so a
+run can sit for hours between the two.
+
+It cost us a live run. The run was created at 20:43, the X credentials were
+added at 21:00, the publish job executed at 22:09 after approval — and it
+still saw empty values and skipped both channels.
+
+So: **add or change a secret, then dispatch.** If a secret changes while a
+run is waiting for approval, re-dispatch rather than approving the parked
+run — approving it will use the stale values. Nothing is lost by
+re-dispatching: the topic is not consumed by a failed run, so the same post
+is prepared again.
+
 ### Your daily routine
 
 1. ~9:32 AM ET a Slack message arrives: the rendered card, both captions, the topic, and a link to the run.
