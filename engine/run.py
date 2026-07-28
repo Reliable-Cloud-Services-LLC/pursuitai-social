@@ -27,11 +27,13 @@ import approval
 import cards
 import captions
 import compliance
+import rotation
 
 STATE = os.path.join(ROOT, "content", "state.json")
 PENDING = os.path.join(ROOT, "content", "pending.json")
 APPROVED = os.path.join(ROOT, "content", "approved.json")
 LOG = os.path.join(ROOT, "logs", "posted.jsonl")
+METRICS = os.path.join(ROOT, "logs", "metrics.jsonl")
 FORMATS = ["card", "screenshot", "card", "video"]
 
 def load_json(path, default):
@@ -81,7 +83,14 @@ def publishable_topics(cal):
         }
         if not any(compliance.check_claims(topic, c) for c in drafts.values()):
             out.append(topic)
-    return out
+
+    # Weight by measured performance where we have enough of it. With no
+    # metrics — the state for the first several weeks — this returns `out`
+    # unchanged, so rotation behaves exactly as it did before.
+    import analytics
+    scores = rotation.topic_scores(analytics.load_jsonl(LOG),
+                                   analytics.load_jsonl(METRICS))
+    return rotation.build_rotation(out, scores)
 
 
 def prepare():
