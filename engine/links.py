@@ -81,5 +81,7 @@ if __name__ == "__main__":
     with open(os.path.join(root, "content", "calendar.json")) as f:
         brand = json.load(f)["brand"]
     print("Instagram bio link:\n  " + bio_url(brand["url"], "instagram"))
+    print("\nX bio link (profile Website field):\n  "
+          + bio_url(brand["url"], "x"))
     print("\nExample X post link:\n  "
           + build_url(brand["url"], "x", "fit-scoring", "card"))
