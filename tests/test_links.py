@@ -93,12 +93,23 @@ def test_url_counts_as_23_regardless_of_length():
 
 # ---------- X captions ----------
 
-def test_x_caption_carries_all_utm_params(cal):
+def x_thread(topic, brand, fmt):
+    """Everything one X post puts in front of a reader.
+
+    W4 moved the link out of the body into a threaded reply, so the W2
+    contract — every generated caption carries all four utm_ params — now
+    holds across the pair rather than a single string.
+    """
+    return (captions.build_x(topic, brand, fmt=fmt, fresh=False) + "\n"
+            + captions.build_x_reply(topic, brand, fmt))
+
+
+def test_x_thread_carries_all_utm_params(cal):
     for topic in cal["topics"]:
         for fmt in FORMATS:
-            text = captions.build_x(topic, cal["brand"], fmt=fmt, fresh=False)
+            text = x_thread(topic, cal["brand"], fmt)
             for key in UTM_KEYS:
-                assert key in text, f"{topic['id']}/{fmt} caption missing {key}"
+                assert key in text, f"{topic['id']}/{fmt} thread missing {key}"
             assert f"utm_campaign={topic['id']}" in text
             assert f"utm_content={fmt}" in text
 
@@ -108,7 +119,7 @@ def test_cta_points_at_the_landing_page_not_the_app(cal):
     visitor none of the marketing they just clicked for. Every CTA must
     land on the public page."""
     for topic in cal["topics"]:
-        text = captions.build_x(topic, cal["brand"], fmt="card", fresh=False)
+        text = x_thread(topic, cal["brand"], "card")
         url = next(w for w in text.split() if w.startswith("http"))
         parsed = urlparse(url)
         assert parsed.netloc == "pursuitai.net"
@@ -121,14 +132,16 @@ def test_empty_path_is_normalised_to_slash():
     assert url.startswith("https://pursuitai.net/?"), url
 
 
-def test_x_caption_within_weighted_limit(cal):
+def test_each_part_of_the_thread_is_within_the_weighted_limit(cal):
     for topic in cal["topics"]:
         for fmt in FORMATS:
-            text = captions.build_x(topic, cal["brand"], fmt=fmt, fresh=False)
-            url = [w for w in text.split() if w.startswith("http")]
-            assert len(url) == 1, "exactly one link in the body"
-            weighted = links.x_weighted_length(text, url)
-            assert weighted <= 280, f"{topic['id']}/{fmt} weighted {weighted}"
+            body = captions.build_x(topic, cal["brand"], fmt=fmt, fresh=False)
+            reply = captions.build_x_reply(topic, cal["brand"], fmt)
+            assert len(body) <= 280, f"{topic['id']}/{fmt} body too long"
+            url = [w for w in reply.split() if w.startswith("http")]
+            assert len(url) == 1, "exactly one link, in the reply"
+            weighted = links.x_weighted_length(reply, url)
+            assert weighted <= 280, f"{topic['id']}/{fmt} reply {weighted}"
 
 
 def test_tagging_does_not_shrink_the_body(cal):
@@ -146,13 +159,15 @@ def test_tagging_does_not_shrink_the_body(cal):
         assert body_short == body_long, f"{topic['id']} body varied with URL length"
 
 
-def test_x_caption_still_has_cta_and_tags(cal):
-    """Guards the copy contract the pre-W2 suite asserted."""
+def test_thread_still_has_cta_and_tags(cal):
+    """Guards the copy contract the pre-W2 suite asserted. W4 split it: the
+    hashtags stay on the body, the trial CTA moved to the reply."""
     for topic in cal["topics"]:
-        text = captions.build_x(topic, cal["brand"], fmt="card", fresh=False)
-        assert "pursuitai.net" in text
-        assert "14-day" in text
-        assert "#GovCon" in text
+        body = captions.build_x(topic, cal["brand"], fmt="card", fresh=False)
+        reply = captions.build_x_reply(topic, cal["brand"], "card")
+        assert "#GovCon" in body
+        assert "pursuitai.net" in reply
+        assert "14-day" in reply
 
 
 def test_build_x_requires_an_explicit_format(cal):
