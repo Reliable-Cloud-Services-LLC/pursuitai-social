@@ -55,6 +55,33 @@ def test_ig_captions_have_cta_and_tags(cal):
         assert "#GovCon" in text or "#FederalContracting" in text
         assert len(text) <= 2200, f"{t['id']} IG caption too long"
 
+def test_ig_caption_always_carries_the_primary_hashtag(cal):
+    """build_ig samples 8 of 10 tags; #GovCon used to be droppable.
+
+    P(both #GovCon and #FederalContracting excluded) was 1/C(10,2) per
+    topic, so ~42% of full-suite runs failed and, worse, real posts shipped
+    without the category's primary tag. The first entry in hashtags_ig is
+    the primary tag and is now always present — matching build_x, which
+    already takes hashtags_x[:2] deterministically.
+    """
+    primary = cal["brand"]["hashtags_ig"][0]
+    for t in cal["topics"]:
+        for _ in range(25):   # sampling is random; assert over many draws
+            assert primary in captions.build_ig(t, cal["brand"], fresh=False)
+
+def test_ig_caption_tag_count_and_variety_preserved(cal):
+    """Pinning the primary must not reduce the tag count or kill rotation."""
+    topic, brand = cal["topics"][0], cal["brand"]
+    seen = set()
+    for _ in range(50):
+        tags = [w for w in captions.build_ig(topic, brand, fresh=False).split()
+                if w.startswith("#")]
+        assert len(tags) == 8
+        assert len(set(tags)) == 8, "no tag may repeat within one caption"
+        assert all(tag in brand["hashtags_ig"] for tag in tags)
+        seen.add(tuple(sorted(tags)))
+    assert len(seen) > 1, "the non-primary tags must still vary between posts"
+
 def test_claude_variant_fails_safe(cal, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "invalid-key-for-test")
     # must fall back to template, never raise

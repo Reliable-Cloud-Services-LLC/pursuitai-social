@@ -52,9 +52,22 @@ def build_x(topic, brand, fresh=True):
         body = body[:budget].rsplit(" ", 1)[0].rstrip(".,;") + "…"
     return body + cta
 
+IG_TAG_COUNT = 8
+
+def _ig_hashtags(brand):
+    """Primary tag first, then a random sample of the rest.
+
+    The first entry in hashtags_ig is the category's primary tag and always
+    ships — sampling all 8 from 10 could drop it entirely. Mirrors build_x,
+    which already takes hashtags_x[:2] deterministically.
+    """
+    primary, rest = brand["hashtags_ig"][0], brand["hashtags_ig"][1:]
+    k = min(IG_TAG_COUNT - 1, len(rest))
+    return " ".join([primary] + random.sample(rest, k=k))
+
 def build_ig(topic, brand, fresh=True):
     body = (_claude_variant(topic, "ig", brand) if fresh else None) or topic["hook_ig"]
-    tags = " ".join(random.sample(brand["hashtags_ig"], k=min(8, len(brand["hashtags_ig"]))))
+    tags = _ig_hashtags(brand)
     return (f"{body}\n\n"
             f"Start your free 14-day trial — link in bio or {brand['url'].replace('https://', '')}\n"
             f"No credit card. Set up in under 2 minutes.\n\n{tags}")
