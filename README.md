@@ -129,6 +129,7 @@ the project, so tests exercise the real code path and never touch a network.
 
 ## Setup and operations
 
+See **[SECRETS.md](SECRETS.md)** for every credential the engine uses and how to obtain it.
 See **[SETUP.md](SETUP.md)** for credentials, the Slack webhook, the approval
 environment, the Instagram bio link, and the daily review routine.
 
