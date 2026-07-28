@@ -34,27 +34,45 @@ jobs:
         timeout-minutes: 4
         run: pip install -r requirements.txt pytest pytest-xdist
 
-      # ffmpeg and the DejaVu fonts are preinstalled on the standard
-      # runner image. Only reach for apt when they are genuinely missing —
-      # `apt-get update` is the slowest and least reliable step in this
-      # workflow, and it was stalling runs past the job timeout.
-      - name: Ensure ffmpeg + fonts
-        timeout-minutes: 4
-        run: |
-          need=""
-          command -v ffmpeg >/dev/null || need="$need ffmpeg"
-          fc-list 2>/dev/null | grep -qi dejavu || need="$need fonts-dejavu-core"
-          if [ -n "$need" ]; then
-            echo "installing:$need"
-            sudo apt-get update -qq && sudo apt-get install -y -qq $need
-          else
-            echo "ffmpeg and DejaVu fonts already present — skipping apt"
-          fi
+      # NO apt in this job. The DejaVu fonts ARE on the runner image, but
+      # ffmpeg is NOT — installing it pulls a large dependency tree and is
+      # the slowest, least reliable step in the workflow; it timed out at
+      # four minutes on PR #9. Only test_video_builds needs it, and that
+      # test already skips itself when ffmpeg is absent, so the whole suite
+      # runs here without it and the video job below covers the gap.
+      - name: Confirm fonts (cards render blocky without them)
+        run: fc-list | grep -qi dejavu && echo "DejaVu present"
 
       # The suite is subprocess-heavy, so it parallelises well.
       - name: Run test suite
         timeout-minutes: 8
         run: pytest tests/ -n auto --dist loadfile -q
+
+  # ffmpeg is quarantined here so an apt stall fails one small job instead
+  # of the whole signal. --no-install-recommends keeps the dependency tree
+  # to what ffmpeg actually needs; a re-run of just this job is cheap.
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install Python deps
+        timeout-minutes: 4
+        run: pip install -r requirements.txt pytest
+      - name: Install ffmpeg
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+      - name: Video render test
+        timeout-minutes: 8
+        run: pytest tests/ -q -k video
 
   validate-credentials:
     if: ${{ inputs.validate_credentials }}
