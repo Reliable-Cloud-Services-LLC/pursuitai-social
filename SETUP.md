@@ -62,6 +62,9 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `IG_USER_ID` | yes | Instagram business account ID |
 | `IG_ACCESS_TOKEN` | yes | long-lived Graph API token |
 | `ANTHROPIC_API_KEY` | optional | fresh Claude-written caption variants |
+| `NOTIFY_WEBHOOK_URL` | strongly recommended | Slack incoming webhook. Alerts on any run that doesn't fully publish, plus a weekly heartbeat. **Without it every failure is silent** — which is exactly how nine runs published nothing while reporting success. |
+
+To create the Slack webhook: Slack → your workspace → Apps → **Incoming Webhooks** → Add to Slack → pick the channel → copy the URL. The engine posts a plain `{"text": "..."}` payload; unset the variable and every notification becomes a silent no-op.
 
 ## Step 5 — First run
 
@@ -76,6 +79,42 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 - **Cadence**: edit the cron in `.github/workflows/daily.yml`. Two posts/day: add a second cron line (e.g. `30 21 * * 1-5` for 5:30 PM ET).
 - **Kill switch**: disable the workflow in the Actions tab.
 - **Token maintenance**: X tokens don't expire. IG System User tokens don't expire; user-exchanged tokens need refreshing every ~60 days (the engine will start logging IG failures in `logs/posted.jsonl` if the token lapses — the X side keeps running regardless).
+
+## Attribution (UTM tagging)
+
+Every clickable link the engine emits is tagged so the admin dashboard can
+attribute a visit to a specific post:
+
+```
+utm_source=<platform>   utm_medium=organic
+utm_campaign=<topic_id> utm_content=<format>
+```
+
+All links point at the **public landing page** (`pursuitai.net`), never
+`pursuitai.net/app` — the app URL opens the sign-in screen, which shows a
+first-time visitor none of the marketing they just clicked for.
+
+Three places deliberately show the bare domain instead of a tagged link:
+
+- **Cards, video, and screenshot footers.** The URL is drawn into the image.
+  A UTM string baked into pixels is unclickable and ugly.
+- **Instagram captions.** IG captions are not hyperlinked, so a tagged URL
+  there is ~100 characters a human would have to retype. See below.
+
+### One-time manual step — the Instagram bio link
+
+Instagram's only clickable link is the one in the profile bio, so that is
+where IG attribution comes from. Set it once:
+
+```bash
+python engine/links.py     # prints the exact URL to paste
+```
+
+Instagram → Edit profile → Website → paste the printed bio link. It is
+generated from `content/calendar.json`, so it cannot drift from the code.
+
+Per-post Instagram attribution is not achievable without a per-post short
+link; the bio link attributes Instagram traffic in aggregate.
 
 ## Platform-rules notes (keep it boring, keep it safe)
 

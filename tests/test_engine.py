@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 import captions  # noqa: E402
 import cards     # noqa: E402
+import links     # noqa: E402
 
 @pytest.fixture(scope="session")
 def cal():
@@ -42,9 +43,13 @@ def test_brand_config(cal):
 # ---------- captions ----------
 
 def test_x_captions_within_limit(cal):
+    # W2: the CTA link now carries UTM params, so the raw string exceeds 280
+    # while X's own count does not — it weighs every URL at 23 chars.
     for t in cal["topics"]:
-        text = captions.build_x(t, cal["brand"], fresh=False)
-        assert len(text) <= 280, f"{t['id']} X caption {len(text)} chars"
+        text = captions.build_x(t, cal["brand"], fmt="card", fresh=False)
+        urls = [w for w in text.split() if w.startswith("http")]
+        weighted = links.x_weighted_length(text, urls)
+        assert weighted <= 280, f"{t['id']} X caption {weighted} weighted chars"
         assert "pursuitai.net" in text
         assert "14-day" in text
 
@@ -85,8 +90,10 @@ def test_ig_caption_tag_count_and_variety_preserved(cal):
 def test_claude_variant_fails_safe(cal, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "invalid-key-for-test")
     # must fall back to template, never raise
-    text = captions.build_x(cal["topics"][0], cal["brand"], fresh=True)
-    assert len(text) <= 280
+    text = captions.build_x(cal["topics"][0], cal["brand"], fmt="card",
+                            fresh=True)
+    urls = [w for w in text.split() if w.startswith("http")]
+    assert links.x_weighted_length(text, urls) <= 280
 
 # ---------- cards ----------
 

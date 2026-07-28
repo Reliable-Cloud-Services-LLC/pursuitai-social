@@ -49,5 +49,7 @@ jobs:
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main
+          # Validate the branch this run is dispatched from, not a
+          # hardcoded one — assets are committed to the default branch.
+          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
         run: python scripts/validate_ig.py --container

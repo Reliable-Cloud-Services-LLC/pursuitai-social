@@ -105,7 +105,7 @@ def prepare():
 
     pending = {
         "date": today, "topic": topic["id"], "format": fmt,
-        "text_x": captions.build_x(topic, brand),
+        "text_x": captions.build_x(topic, brand, fmt=fmt),
         "text_ig": captions.build_ig(topic, brand),
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
