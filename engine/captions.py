@@ -8,7 +8,10 @@ import os
 import json
 import random
 
+import links
+
 X_LIMIT = 280
+SAFETY_MARGIN = 5
 
 def _claude_variant(topic, platform, brand):
     """Optional: fresh copy via the Claude API. Falls back silently."""
@@ -42,12 +45,17 @@ def _claude_variant(topic, platform, brand):
         print(f"[captions] Claude variant failed, using template: {e}")
         return None
 
-def build_x(topic, brand, fresh=True):
+def build_x(topic, brand, *, fmt, fresh=True):
+    """Build the tweet. `fmt` is required — it becomes utm_content, and a
+    default would silently mislabel the attribution of every post."""
     body = (_claude_variant(topic, "x", brand) if fresh else None) or topic["hook_x"]
     tags = " ".join(brand["hashtags_x"][:2])
-    cta = f"\n\nFree 14-day trial → {brand['url']}\n{tags}"
-    # trim body if needed (t.co links count as 23 chars; stay conservative)
-    budget = X_LIMIT - len(cta) - 5
+    url = links.build_url(brand["url"], "x", topic["id"], fmt)
+    cta = f"\n\nFree 14-day trial → {url}\n{tags}"
+    # X counts any URL as 23 chars, so budget on the weighted length.
+    # Measuring the literal tagged URL (~96 chars) instead would eat ~73
+    # chars of copy off every tweet and truncate all 24 topics.
+    budget = X_LIMIT - links.x_weighted_length(cta, [url]) - SAFETY_MARGIN
     if len(body) > budget:
         body = body[:budget].rsplit(" ", 1)[0].rstrip(".,;") + "…"
     return body + cta
@@ -77,5 +85,5 @@ if __name__ == "__main__":
     with open(os.path.join(os.path.dirname(here), "content", "calendar.json")) as f:
         cal = json.load(f)
     t = cal["topics"][0]
-    print("--- X ---\n" + build_x(t, cal["brand"], fresh=False))
+    print("--- X ---\n" + build_x(t, cal["brand"], fmt="card", fresh=False))
     print("\n--- IG ---\n" + build_ig(t, cal["brand"], fresh=False))
