@@ -44,7 +44,7 @@ def sandbox(tmp_path):
     dst = tmp_path / "proj"
     for d in ("engine", "content"):
         shutil.copytree(os.path.join(ROOT, d), dst / d)
-    for f in ("state.json", "pending.json"):
+    for f in ("state.json", "pending.json", "approved.json"):
         p = dst / "content" / f
         if p.exists():
             p.unlink()
@@ -69,6 +69,17 @@ def run(args, cwd, channels=()):
         env.update(CREDS[ch])
     return subprocess.run([sys.executable, "engine/run.py"] + args,
                           cwd=cwd, env=env, capture_output=True, text=True)
+
+
+def prepare(sandbox):
+    """Prepare and approve.
+
+    W3 gates publish behind human approval. These tests exercise channel
+    outcomes, not the gate itself (tests/test_approval.py owns that), so
+    they clear it the same way a reviewer would.
+    """
+    run(["--prepare"], sandbox)
+    run(["--approve"], sandbox)
 
 
 def state_of(sandbox):
@@ -96,14 +107,14 @@ def log_entries(sandbox):
 def test_channel_failure_exits_nonzero(sandbox):
     install(sandbox, "x", "raises")
     install(sandbox, "ig", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     r = run(["--publish"], sandbox, channels=("x", "ig"))
     assert r.returncode != 0, r.stdout
 
 
 def test_all_skipped_exits_nonzero(sandbox):
     """No credentials at all must NOT report success — that is the live bug."""
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     r = run(["--publish"], sandbox, channels=())
     assert r.returncode != 0, r.stdout
 
@@ -111,7 +122,7 @@ def test_all_skipped_exits_nonzero(sandbox):
 def test_full_success_exits_zero(sandbox):
     install(sandbox, "x", "ok")
     install(sandbox, "ig", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     r = run(["--publish"], sandbox, channels=("x", "ig"))
     assert r.returncode == 0, r.stdout + r.stderr
 
@@ -122,14 +133,14 @@ def test_topic_not_consumed_on_total_failure(sandbox):
     install(sandbox, "x", "raises")
     install(sandbox, "ig", "raises")
     seed_state(sandbox, topic_index=5, run_count=5)
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=("x", "ig"))
     assert state_of(sandbox) == {"topic_index": 5, "run_count": 5}
 
 
 def test_topic_not_consumed_when_all_channels_skipped(sandbox):
     seed_state(sandbox, topic_index=5, run_count=5)
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=())
     assert state_of(sandbox) == {"topic_index": 5, "run_count": 5}
 
@@ -138,10 +149,10 @@ def test_failed_run_replays_the_same_topic_and_format(sandbox):
     """Freezing both counters means the next run retries identical content."""
     install(sandbox, "x", "raises")
     install(sandbox, "ig", "raises")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     first = json.load(open(os.path.join(sandbox, "content", "pending.json")))
     run(["--publish"], sandbox, channels=("x", "ig"))
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     second = json.load(open(os.path.join(sandbox, "content", "pending.json")))
     assert (first["topic"], first["format"]) == (second["topic"],
                                                  second["format"])
@@ -150,7 +161,7 @@ def test_failed_run_replays_the_same_topic_and_format(sandbox):
 def test_topic_advances_on_partial_success(sandbox):
     install(sandbox, "x", "ok")
     install(sandbox, "ig", "raises")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     r = run(["--publish"], sandbox, channels=("x", "ig"))
     s = state_of(sandbox)
     assert s["topic_index"] == 1 and s["run_count"] == 1
@@ -161,7 +172,7 @@ def test_topic_advances_on_partial_success(sandbox):
 def test_topic_advances_on_full_success(sandbox):
     install(sandbox, "x", "ok")
     install(sandbox, "ig", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=("x", "ig"))
     s = state_of(sandbox)
     assert s["topic_index"] == 1 and s["run_count"] == 1
@@ -173,11 +184,11 @@ def test_topic_advances_on_full_success(sandbox):
 def test_log_distinguishes_posted_skipped_failed(sandbox):
     # run 1: x posts, ig has no credentials -> posted + skipped
     install(sandbox, "x", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=("x",))
     # run 2: x now throws -> failed
     install(sandbox, "x", "raises")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=("x",))
 
     first, second = log_entries(sandbox)
@@ -189,7 +200,7 @@ def test_log_distinguishes_posted_skipped_failed(sandbox):
 
 
 def test_missing_credentials_logged_as_skipped_not_failed(sandbox):
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=())
     ch = log_entries(sandbox)[0]["channels"]
     assert ch["x"]["status"] == "skipped" and "X_API_KEY" in ch["x"]["error"]
@@ -198,7 +209,7 @@ def test_missing_credentials_logged_as_skipped_not_failed(sandbox):
 
 def test_explicit_skip_flag_is_disabled_not_failure(sandbox):
     install(sandbox, "ig", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     r = run(["--publish", "--skip-x"], sandbox, channels=("ig",))
     assert r.returncode == 0, r.stdout
     assert log_entries(sandbox)[0]["channels"]["x"]["status"] == "disabled"
@@ -208,7 +219,7 @@ def test_legacy_log_keys_preserved(sandbox):
     """posted.jsonl consumers still read top-level x / ig ids."""
     install(sandbox, "x", "ok")
     install(sandbox, "ig", "ok")
-    run(["--prepare"], sandbox)
+    prepare(sandbox)
     run(["--publish"], sandbox, channels=("x", "ig"))
     e = log_entries(sandbox)[0]
     assert e["x"] == "1234567890" and e["ig"] == "ig-987"

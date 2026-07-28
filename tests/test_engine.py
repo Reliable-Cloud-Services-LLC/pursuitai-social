@@ -157,6 +157,8 @@ def test_publish_without_credentials_does_not_consume_topic(sandbox):
 
     # W1: no creds -> both channels skipped -> nothing posted -> loud failure
     # and the topic is preserved for a run that can actually publish it.
+    # W3: clear the approval gate first, or publish never reaches a channel.
+    _run(["--approve"], sandbox)
     r = _run(["--publish"], sandbox)
     assert r.returncode == 1, r.stdout
     assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))

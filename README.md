@@ -1,23 +1,135 @@
 # PursuitAI Social Engine
 
-Fully autonomous social media marketing for [pursuitai.net](https://pursuitai.net) — generates branded content, live site screenshots, and short videos, then posts to X (@pursuit_ai) and Instagram daily via the official APIs. Runs free on GitHub Actions.
+Generates branded content, live-site screenshots, and short vertical videos for
+[pursuitai.net](https://pursuitai.net), then publishes to X ([@pursuit_ai](https://x.com/pursuit_ai))
+and Instagram through the official APIs. Runs on GitHub Actions.
+
+**Every post is reviewed by a human before it goes out.** The audience is
+federal contracting BD and capture professionals at small businesses — a small,
+reputation-dense market where one wrong factual claim is not recoverable.
+Nothing publishes without an explicit approval.
+
+---
+
+## How a post actually happens
 
 ```
-.github/workflows/daily.yml   cron: Mon–Sat 9:30 AM ET → prepare → commit → publish
-engine/
-  run.py          orchestrator (topic + format rotation, state, logging)
-  cards.py        branded 1080x1350 / 1600x900 feature cards (PIL)
-  screenshots.py  live-site captures via Playwright, platform-cropped
-  video.py        ~13s vertical videos via PIL + ffmpeg (Reels / X)
-  captions.py     platform captions; Claude-fresh variants if ANTHROPIC_API_KEY set
-  post_x.py       X API v2 + media upload (tweepy)
-  post_ig.py      Instagram Graph API (image + Reels publish)
-content/
-  calendar.json   brand config + 24 feature topics (single source of truth)
-  state.json      rotation cursor (committed by the bot)
-  posts_preview_14days.md   what the first two weeks look like
-assets/           generated cards / screenshots / video (committed so IG can fetch)
-logs/posted.jsonl every post: date, topic, format, IDs, captions
+  09:30 ET, Mon–Sat
+        │
+        ▼
+  ┌───────────┐   picks the next topic + format, renders the media,
+  │  prepare  │   writes captions, commits everything to the repo
+  └─────┬─────┘
+        │  Slack: the card, both captions, and a link to approve
+        ▼
+  ┌───────────┐   GitHub pauses here. A required reviewer must click
+  │  APPROVE  │   approve in the Actions UI. Enforced by GitHub.
+  └─────┬─────┘
+        │
+        ▼
+  ┌───────────┐   verifies the content still matches what was approved,
+  │  publish  │   posts to X + Instagram, logs the outcome per channel
+  └───────────┘
 ```
 
-**Setup:** see [SETUP.md](SETUP.md). **Kill switch:** disable the workflow in the Actions tab.
+If nobody approves, nothing publishes and **the topic is not consumed** — it
+comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
+`failed` row in the log.
+
+---
+
+## Repository layout
+
+### `engine/` — the code
+
+| File | What it does |
+|---|---|
+| `run.py` | **The orchestrator.** Owns the CLI, topic/format rotation, the state cursor, the approval gate, and per-channel publish outcomes. Everything else is called from here. |
+| `approval.py` | The content-integrity half of the gate. Hashes `pending.json`, writes and verifies `approved.json`, enforces the 24-hour expiry. |
+| `captions.py` | Turns a topic into platform copy. Optionally asks Claude for a fresh variant, always falls back to the hand-written hook. Enforces X's character limit. |
+| `links.py` | Builds UTM-tagged URLs so the admin dashboard can attribute a visit to a post. Also generates the Instagram bio link. |
+| `cards.py` | Renders branded feature cards (1080×1350 for Instagram, 1600×900 for X) with PIL. No network. |
+| `video.py` | Builds a ~14s vertical 1080×1920 clip from PIL slides via ffmpeg. No external footage. |
+| `screenshots.py` | Captures pursuitai.net live via Playwright and crops platform-sized frames, so content stays current as the product changes. |
+| `post_x.py` | Posts to X. Media rides the v1.1 upload endpoint, the post itself is API v2. |
+| `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
+| `notify.py` | Slack notifications: review requests, failure alerts, and the weekly heartbeat. Silent no-op when unconfigured, and never raises. |
+
+### `content/` — the data
+
+| File | What it does |
+|---|---|
+| `calendar.json` | **The single source of truth.** Brand config plus 24 feature topics, each with a headline, body, per-platform hooks, and a stat. Add a topic here and nothing else changes. |
+| `state.json` | The rotation cursor: which topic is next, how many runs have published. Only advances on a confirmed post. |
+| `pending.json` | The prepared-but-unpublished post, awaiting review. Committed, because the publish job is a separate run. |
+| `approved.json` | Proof of approval: a hash of `pending.json` plus a timestamp. Deleted once spent. |
+| `posts_preview_14days.md` | A hand-written preview of the first two weeks. Documentation only — no code reads it. |
+
+### Everything else
+
+| Path | What it does |
+|---|---|
+| `.github/workflows/daily.yml` | The two-job pipeline: `prepare` (cron) → approval → `publish`. |
+| `.github/workflows/heartbeat.yml` | Weekly "N posts in the last 7 days", so silence is itself detectable. |
+| `.github/workflows/test.yml` | Runs the test suite; separately, an opt-in credential pre-flight. |
+| `scripts/validate_x.py` | Proves the X credentials authenticate and can upload media. Posts nothing. |
+| `scripts/validate_ig.py` | Proves the Instagram token, scopes, quota, and — critically — that Instagram can *fetch* your media URL. Creates a real container but never publishes it. |
+| `assets/` | Generated cards, screenshots, and video. Committed because Instagram fetches media by public URL. |
+| `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
+| `tests/` | 73 tests. See below. |
+
+---
+
+## The two rotations
+
+**Topics** advance one per published post, round-robin through all 24.
+
+**Formats** cycle `card → screenshot → card → video`. The offset shifts each
+time the topic list wraps, so a given topic appears in every format over four
+cycles rather than being locked to one forever.
+
+Neither advances unless a channel confirms a post, so a failed or unapproved
+run replays the same content rather than burning it.
+
+---
+
+## Commands
+
+```bash
+python engine/run.py --prepare          # pick, render, write pending.json
+python engine/run.py --notify-pending   # send it to Slack for review
+python engine/run.py --approve          # record approval (never automatic)
+python engine/run.py --publish          # verify approval, then post
+python engine/run.py --dry-run          # generate and print, post nothing
+python engine/run.py                    # prepare only, then tell you what's next
+
+python engine/links.py                  # print the Instagram bio link
+python engine/notify.py --heartbeat     # weekly liveness report
+pytest tests/ -v                        # 73 tests
+```
+
+`--force` skips the approval gate. It prints a loud warning and **hard-refuses
+to run in CI**, so it cannot become a production bypass.
+
+---
+
+## Tests
+
+| File | Covers |
+|---|---|
+| `test_engine.py` | Calendar schema, caption limits, card rendering, video duration, rotation |
+| `test_publish_outcomes.py` | Per-channel outcomes, exit codes, topic consumption, notifications |
+| `test_links.py` | UTM construction, the landing-page rule, X character weighting |
+| `test_approval.py` | The gate: expiry, tampering, CI bypass refusal, no auto-approve |
+
+Failure is injected by overwriting the poster modules inside a throwaway copy of
+the project, so tests exercise the real code path and never touch a network.
+
+---
+
+## Setup and operations
+
+See **[SETUP.md](SETUP.md)** for credentials, the Slack webhook, the approval
+environment, the Instagram bio link, and the daily review routine.
+
+**Kill switch:** disable the workflow in the Actions tab.
