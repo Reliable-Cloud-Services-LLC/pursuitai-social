@@ -9,16 +9,22 @@ import subprocess
 import tempfile
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
+import brand
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-W, H = 1080, 1920
-VIOLET = (124, 58, 237)
-DEEP = (23, 12, 46)
-DEEP2 = (44, 21, 84)
-WHITE = (255, 255, 255)
-MUTED = (196, 181, 253)
-GREEN = (74, 222, 128)
+# Palette + canvas come from content/brand_tokens.json — never hardcode a
+# colour here, or it drifts away from cards.py.
+W, H = brand.size("video")
+VIOLET = brand.rgb("violet")
+DEEP = brand.rgb("deep")
+DEEP2 = brand.rgb("deep2")
+GLOW = brand.rgb("glow")
+WHITE = brand.rgb("white")
+MUTED = brand.rgb("muted")
+BODY_TEXT = brand.rgb("body_text")
+GREEN = brand.rgb("green")
 
 def _font(size, bold=True):
     p = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
@@ -38,7 +44,7 @@ def _bg():
     img = Image.composite(top, img, mask)
     glow = Image.new("RGB", (W, H), (0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    gd.ellipse([W * 0.3, -H * 0.2, W * 1.4, H * 0.35], fill=(88, 38, 178))
+    gd.ellipse([W * 0.3, -H * 0.2, W * 1.4, H * 0.35], fill=GLOW)
     glow = glow.filter(ImageFilter.GaussianBlur(140))
     return Image.blend(img, Image.blend(img, glow, 0.55), 0.8)
 
@@ -82,7 +88,7 @@ def _slide(lines_big, lines_small=None, chip=None, cta=False, screenshot=None):
         sf = _font(46, False)
         for ln in lines_small:
             for sub in _wrap(d, ln, sf, W - 180):
-                d.text((90, y), sub, font=sf, fill=(226, 219, 250))
+                d.text((90, y), sub, font=sf, fill=BODY_TEXT)
                 y += 66
     if screenshot and os.path.exists(screenshot):
         shot = Image.open(screenshot).convert("RGB")

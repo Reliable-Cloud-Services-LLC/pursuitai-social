@@ -1,0 +1,42 @@
+{
+  "_comment": "Single source of truth for every colour and canvas size the renderers use. cards.py and video.py read from here; neither may hold a colour literal. VALUES ARE UNRESOLVED — see _provenance.",
+  "_provenance": {
+    "status": "PENDING_REVIEW",
+    "note": "These are the values that were hardcoded in cards.py and video.py, relocated verbatim. They have NOT been reconciled against the PursuitAI Nebula theme in apps/web/src/app/globals.css, where only 'violet' currently matches. Do not treat them as canonical until that decision is made.",
+    "checked_against": "apps/web/src/app/globals.css :root,[data-theme=\"nebula\"]",
+    "checked_on": "2026-07-28"
+  },
+
+  "colors": {
+    "violet":      "#7c3aed",
+    "deep":        "#170c2e",
+    "deep2":       "#2c1554",
+    "glow":        "#5826b2",
+    "white":       "#ffffff",
+    "muted":       "#c4b5fd",
+    "body_text":   "#e2dbfa",
+    "green":       "#4ade80",
+    "cta_bar":     "#0c061a"
+  },
+
+  "alpha": {
+    "chip_fill": 235,
+    "grid_line": 8
+  },
+
+  "sizes": {
+    "x":        [1600, 900],
+    "ig":       [1080, 1350],
+    "square":   [1080, 1080],
+    "portrait": [1080, 1350],
+    "video":    [1080, 1920]
+  },
+
+  "size_notes": {
+    "x": "16:9 — X/Twitter in-stream",
+    "ig": "4:5 — Instagram feed, the tallest ratio IG renders without cropping",
+    "square": "1:1 — LinkedIn square; also safe on every network",
+    "portrait": "4:5 — LinkedIn portrait; same canvas as ig, kept as a separate name so LinkedIn sizing can move without touching Instagram",
+    "video": "9:16 — Reels / vertical video"
+  }
+}
