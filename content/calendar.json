@@ -183,17 +183,20 @@
     {
       "id": "teaming",
       "feature": "Smart Teaming & Partner Match",
-      "headline": "9,000+ vehicle holders. One search.",
-      "body": "Search across 14 GWACs (STARS III, CIO-SP3, Polaris, Alliant 2, SEWP VI, GSA MAS), predict competitors from FPDS history, and screen every partner live against SAM.gov exclusions.",
-      "hook_x": "Building a team? PursuitAI searches 9,000+ contract vehicle holders across 14 GWACs, predicts your competitors from FPDS data, and screens every candidate against the SAM.gov exclusions registry — before you sign anything.",
-      "hook_ig": "Your teaming partner search shouldn't be LinkedIn + a spreadsheet.\n\nPursuitAI searches 9,000+ vehicle holders across 14 GWACs — STARS III, CIO-SP3, Polaris, Alliant 2, SEWP VI, GSA MAS — and predicts likely competitors from agency + NAICS history.\n\nEvery partner is screened live against SAM.gov exclusions, so a debarred firm gets flagged before you team with it.",
-      "stat": "14 GWACs · 9,000+ holders · live exclusion screening",
+      "headline": "8,000+ vehicle holders. One search.",
+      "body": "Search STARS III, CIO-SP3, Polaris, Alliant 2, SEWP and OASIS+ holders, predict competitors from USAspending award history, and screen every partner against SAM.gov exclusions.",
+      "hook_x": "Building a team? PursuitAI searches 8,000+ contract vehicle holders and drops debarred firms before you ever see them. STARS III, CIO-SP3, Polaris, Alliant 2, SEWP, OASIS+, GSA MAS — with competitors predicted from USAspending award history.",
+      "hook_ig": "Your teaming partner search shouldn't be LinkedIn + a spreadsheet.\n\nPursuitAI searches 8,000+ vehicle holders across the major federal IT vehicles — 8(a) STARS III, CIO-SP3, Polaris, Alliant 2, NASA SEWP, OASIS+ and the GSA Schedule — and predicts likely competitors from agency + NAICS award history.\n\nEvery partner with a UEI is screened against the SAM.gov exclusions list, and a debarred firm is dropped from your results — not flagged for you to notice.",
+      "stat": "8,000+ holders · live exclusion screening",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28",
-        "note": "SAM exclusion screening IS verified (teaming_partner_detail.py:405-421 -> sam_exclusions.check_exclusions). The two NUMBERS are not: '14 GWACs' matches no counting rule in vehicle_keys.py, and '9,000+ holders' is a data volume needing a production query."
+        "status": "VERIFIED",
+        "source_type": "code+operator",
+        "source_ref": "apps/backend/app/services/vehicle_keys.py:35-83 (VEHICLE_LABELS — every vehicle named in the copy is a real key); apps/backend/app/api/competitors.py:1-9 (contract_awards + sub_awards, both USAspending); apps/backend/app/api/smart_teaming.py:1682-1712 (sam_exclusions.check_exclusions over every partner UEI, excluded entities DROPPED not flagged)",
+        "operator_source": "vehicle_holders row count = 8042, reported from production by the operator on 2026-07-29. NOT derivable from source: the rosters load from S3 CSVs (contract_holders_seed.py), so no code read can confirm a volume. Copy says '8,000+' rather than 8,042 — a floor stays true as the roster churns; an exact figure goes stale on the next seed run and nobody would notice.",
+        "verified_on": "2026-07-29",
+        "note": "Three defects fixed. (1) '14 GWACs' matched no counting rule — VEHICLE_LABELS has 29 keys over 10 families. The count is gone; the copy names the vehicles instead, which is what a reader wanted from the number anyway. (2) 'GWACs' was the wrong noun: the copy listed GSA MAS inside '14 GWACs' and MAS is a Schedule, not a GWAC (OASIS+ is a multi-agency BPA per the code's own comment). Now 'contract vehicle holders' / 'major federal IT vehicles', which covers all three kinds. (3) 'FPDS history' named the wrong source — the prediction aggregates contract_awards + sub_awards, both USAspending; FpdsAction appears only in a set-aside cert post-filter. Also UPGRADED a claim that was too weak: excluded firms are dropped entirely, not flagged, and the copy now says so. 'Every partner' qualified to 'every partner with a UEI' — the check keys on UEI, so a partner without one is not screened."
       },
       "icon": "users"
     },
