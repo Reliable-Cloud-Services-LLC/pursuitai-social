@@ -92,12 +92,12 @@
     {
       "term": "\\bGovCons\\b",
       "say": "Guv Cons",
-      "why": "plural, before the singular rule."
+      "why": "plural, before the singular rule. Two words — see the GovCon rule."
     },
     {
       "term": "\\bGovCon\\b",
-      "say": "Guv-Con",
-      "why": "'GUV-con', one compound word. Raw gives a hard-A 'GAHV KAHN' as two stressed words."
+      "say": "Guv Con",
+      "why": "'GUV CON', two evenly-stressed words (ɡˈʌv kˈɑn). The compound respelling 'Guv-Con' phonemized to ɡˌʌvkˈɑn — stress on -CON — which the operator rejected BY EAR against synthesized samples on 2026-07-29. The vowel was right; the stress was the problem. Chosen from four candidates, not guessed."
     },
     {
       "term": "\\bSEWP\\s+VI\\b",
