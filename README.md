@@ -223,8 +223,16 @@ imported — the import pointed at a sibling checkout that does not exist on a
 CI runner, so it silently did nothing there. `--drift` reports terms the main
 app has picked up since.
 
-A test fails if any acronym in any ad narration reaches the synthesizer
-without either a rule or an explicit "reads correctly as-is" entry.
+Two checks, because there are two scripts. The deterministic fallback is
+covered by a test: any acronym reaching the synthesizer without a rule or a
+`reads_correctly` entry fails the build. The **Claude-drafted** script does
+not exist until render time, so `narration.build()` checks it there and falls
+back to the deterministic script if it carries jargon the lexicon has never
+seen — naming the terms, so the fix is one line in the sheet.
+
+Whatever is finally spoken is recorded on the post — `narration` as written
+and `narration_spoken` as the synthesizer received it — so an ad that sounds
+wrong can be traced afterwards instead of guessed at.
 
 ---
 

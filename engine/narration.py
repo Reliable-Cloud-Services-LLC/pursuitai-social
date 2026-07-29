@@ -16,6 +16,7 @@ import os
 import re
 
 import compliance
+import pronounce
 
 # Kokoro reads a bare URL as a string of letters. Say the domain.
 SPOKEN_URL = "pursuit A.I. dot net"
@@ -77,11 +78,21 @@ def build(topic, brand, fresh=True):
     """
     draft = _claude(topic, brand) if fresh else None
     if draft:
+        untreated = pronounce.untreated(draft)
         if len(draft.split()) > MAX_WORDS * 1.4:
             print("[narration] draft too long, using fallback")
         elif compliance.check_claims(topic, draft):
             rules = [v.rule for v in compliance.check_claims(topic, draft)]
             print(f"[narration] draft violated {rules}, using fallback")
+        elif untreated:
+            # The model reaches for jargon the topic never used. Nothing
+            # downstream would notice: the script is synthesized and thrown
+            # away, so a mangled acronym only ever surfaces by someone
+            # listening. The deterministic fallback is covered by a test, so
+            # it is the safe landing place.
+            print(f"[narration] draft has unpronounceable jargon "
+                  f"{untreated}, using fallback — add a rule to "
+                  f"content/pronunciations.json to keep drafts like this")
         else:
             return draft
     return fallback(topic, brand)

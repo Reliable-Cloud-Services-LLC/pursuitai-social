@@ -54,3 +54,41 @@ def applied(text):
     """Which rules fire on this text — for review, not for synthesis."""
     return [(term, say) for pattern, say, term, _why in rules()
             if pattern.search(text)]
+
+
+# A token the synthesizer will read as an acronym: any run of capitals, or a
+# word carrying an interior capital. Deliberately loose — a false positive
+# costs one line in reads_correctly; a false negative ships a mangled ad.
+_JARGON = re.compile(r"\b[A-Z][A-Za-z]*[A-Z][A-Za-z0-9+]*\b|\b[A-Z]{2,}\b")
+
+
+@functools.lru_cache(maxsize=1)
+def reads_correctly():
+    """Tokens that need no rule because Kokoro already says them right."""
+    with open(LEXICON) as f:
+        return frozenset(json.load(f).get("reads_correctly", []))
+
+
+@functools.lru_cache(maxsize=1)
+def _covered():
+    """Literal forms the rules handle, for coverage checks."""
+    return frozenset(re.sub(r"\\b|[\\\\()\[\]?+*]", "", term)
+                     for _, _, term, _ in rules())
+
+
+def untreated(text):
+    """Acronyms that would reach the synthesizer with no rule behind them.
+
+    Run against a script BEFORE it is synthesized. The narration for an ad
+    is drafted by Claude at render time and was never recorded anywhere, so
+    a model that reached for an unlisted acronym produced a mangled ad that
+    nothing in the repo could later explain. This is the check that stops
+    that; ``narration.build`` falls back to the deterministic script when it
+    returns anything.
+
+    Checked against the text AFTER the lexicon runs, because that is what
+    the synthesizer actually receives.
+    """
+    seen = spoken(text)
+    return sorted(t for t in _JARGON.findall(seen)
+                  if t not in reads_correctly() and t not in _covered())

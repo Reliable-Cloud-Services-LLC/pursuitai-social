@@ -140,38 +140,33 @@ def test_spoken_is_idempotent():
 
 # ---------- coverage over the real scripts ----------
 
-# Tokens that read correctly as-is — verified against the phonemes Kokoro
-# produces WITH its espeak fallback, via scripts/check_pronunciation.py.
-# This is not a wishlist: each was checked, not assumed.
-READS_CORRECTLY = {
-    "AI", "SBA", "JV", "ODC", "CDRL", "MPA", "BLS", "CALC", "FAR", "CFR",
-    "PDF", "XLSX", "DOCX", "NDA", "NDAs", "USA", "SAM", "CO", "COs",
-    # emphasis capitals, not acronyms — these phonemize as ordinary words
-    "YOUR", "AND", "ANY", "ACTUALLY", "NOT", "AI-drafted",
-}
-
-
-def _jargon(text):
-    return set(re.findall(r"\b[A-Z][A-Za-z]*[A-Z][A-Za-z0-9+]*\b|\b[A-Z]{2,}\b",
-                          text))
-
-
 def test_every_jargon_token_in_every_script_is_handled(cal):
     """The ratchet. A new topic introducing an untreated acronym would
-    otherwise be caught only by someone listening to the finished ad."""
-    covered = {re.sub(r"\\b|[\\\\()\[\]?+*]", "", t)
-               for _, _, t, _ in pronounce.rules()}
+    otherwise be caught only by someone listening to the finished ad.
+
+    This covers the DETERMINISTIC fallback only — the Claude-drafted script
+    is checked at render time by narration.build(), because it does not
+    exist until then. See tests/test_narration_record.py.
+    """
     unhandled = {}
     for topic in cal["topics"]:
         if not compliance.is_publishable(topic):
             continue
-        text = narration.fallback(topic, cal["brand"])
-        # what survives the lexicon is what the synthesizer actually sees
-        for token in _jargon(pronounce.spoken(text)):
-            if token in READS_CORRECTLY or token in covered:
-                continue
+        for token in pronounce.untreated(
+                narration.fallback(topic, cal["brand"])):
             unhandled.setdefault(token, []).append(topic["id"])
     assert not unhandled, (
         "untreated jargon reaches the synthesizer — run "
-        f"scripts/check_pronunciation.py and add a rule or an entry to "
-        f"READS_CORRECTLY: {unhandled}")
+        "scripts/check_pronunciation.py, then add a rule or a "
+        f"reads_correctly entry to content/pronunciations.json: {unhandled}")
+
+
+def test_the_reads_correctly_list_holds_no_term_that_has_a_rule():
+    """A token in both places is a contradiction: the rule says it needs
+    respelling, the list says it does not."""
+    covered = {re.sub(r"\\b|[\\\\()\[\]?+*]", "", t)
+               for _, _, t, _ in pronounce.rules()}
+    both = covered & pronounce.reads_correctly()
+    assert not both, (
+        "these have a rule AND are listed as needing none — the rule already "
+        f"respells them to spaced letters, so the entry is dead: {both}")
