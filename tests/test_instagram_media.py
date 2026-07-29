@@ -213,3 +213,14 @@ def test_validator_prefers_an_asset_that_actually_shipped(tmp_path, monkeypatch)
     assert "reversed" in body, "must prefer the NEWEST shipped asset"
     # the calendar-derived guess must remain, as the fresh-clone fallback
     assert "is_publishable" in body
+
+
+def test_validator_does_not_bless_an_expiring_token():
+    """A 0-days token passes every chain check and still cannot run a
+    daily cron. The operator hit exactly this: every check green, a
+    'can post autonomously' verdict, and a token that died the same day.
+    The verdict must gate on expiry, and exit non-zero."""
+    src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
+    verdict = src[src.index("token_days_left is not None"):]
+    assert "sys.exit(1)" in verdict.split("All checks passed")[0], (
+        "an expiring token must fail the verdict, not just warn")
