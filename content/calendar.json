@@ -191,9 +191,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "UNVERIFIED",
-        "verified_on": "2026-07-28",
-        "note": "SAM exclusion screening IS verified (teaming_partner_detail.py:405-421 -> sam_exclusions.check_exclusions). The two NUMBERS are not: '14 GWACs' matches no counting rule in vehicle_keys.py, and '9,000+ holders' is a data volume needing a production query."
+        "status": "MISMATCH",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/vehicle_keys.py:35-83 (VEHICLE_LABELS, 29 keys across 10 parent families); apps/backend/app/api/competitors.py:1-9 (reads contract_awards + sub_awards, both USAspending; live USAspending HTTP as supplement), :811 (FpdsAction used only for set-aside cert flags); apps/backend/app/api/smart_teaming.py:1682-1712 (sam_exclusions.check_exclusions over every partner UEI)",
+        "verified_on": "2026-07-29",
+        "note": "Traced fully. THREE defects, not the two the earlier note guessed at. (1) '14 GWACs' matches no counting rule: VEHICLE_LABELS has 29 keys over 10 parent families (9 if CIO-SP3 SB folds into CIO-SP3). Nothing yields 14. (2) 'GWACs' is the wrong NOUN for the set, and this is the one a capture professional catches on sight: the copy lists GSA MAS inside '14 GWACs', and MAS is a Schedule, not a GWAC. OASIS+ is described in the code's own comment as 'GSA's multi-agency BPA'. (3) 'predict competitors from FPDS history' names the wrong source — competitors.py aggregates contract_awards + sub_awards (both USAspending) with a live USAspending call as supplement; FpdsAction appears only in a set-aside cert post-filter, not in the prediction. UNVERIFIABLE: '9,000+ vehicle holders' is a production data volume — the rosters load from S3 CSVs (contract_holders_seed.py), so no source read can confirm it. VERIFIED and STRONGER than claimed: exclusion screening batch-checks every partner UEI and DROPS excluded entities entirely rather than flagging them, plus surfaces an advisory when the check could not run. The copy undersells it as 'gets flagged'. NB the earlier note cited teaming_partner_detail.py for this; it is smart_teaming.py."
       },
       "icon": "users"
     },
