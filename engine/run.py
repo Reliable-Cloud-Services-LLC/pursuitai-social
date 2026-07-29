@@ -29,6 +29,7 @@ import cards
 import captions
 import compliance
 import media
+import pronounce
 import rotation
 
 STATE = os.path.join(ROOT, "content", "state.json")
@@ -133,6 +134,7 @@ def prepare(force_format=None, force_topic=None):
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
 
+    narration_script = None
     shot_x = shot_ig = None
     if fmt in ("screenshot", "video"):
         try:
@@ -159,7 +161,7 @@ def prepare(force_format=None, force_topic=None):
             import adspot
             import narration
             import voice
-            script = narration.build(topic, brand)
+            script = narration_script = narration.build(topic, brand)
             ad_dir = os.path.join(ROOT, "assets", "video")
             wav = os.path.join(ad_dir, f"{topic['id']}_vo.wav")
             secs = voice.synthesize(script, wav)
@@ -172,7 +174,10 @@ def prepare(force_format=None, force_topic=None):
             # An ad is the richest format and the most ways to fail. Falling
             # back to the card keeps the day's post rather than losing it.
             print(f"[prepare] ad build failed ({e}); using card")
-            ad_path, fmt = None, "card"
+            # Clear the script too: a card has no audio, and recording a
+            # narration against one would put a line in the post log that
+            # was never spoken.
+            ad_path, fmt, narration_script = None, "card", None
 
     video_path = None
     if fmt == "video":
@@ -223,6 +228,14 @@ def prepare(force_format=None, force_topic=None):
         # move the rotation: advancing past a forced topic would silently
         # skip whatever was actually next.
         "out_of_band": bool(force_topic),
+        # What the ad actually says. Drafted by Claude at render time and
+        # previously discarded, so a mispronunciation or an off-message line
+        # could not be traced after the fact — the only record was the
+        # rendered audio. Both forms: as written, and as the synthesizer
+        # receives it after the pronunciation lexicon.
+        "narration": narration_script,
+        "narration_spoken": (pronounce.spoken(narration_script)
+                             if narration_script else None),
     }
     # Last check before a human is asked to review it. A Claude-rewritten
     # caption can introduce a claim the source topic never made, so the

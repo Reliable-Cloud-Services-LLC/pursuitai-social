@@ -18,47 +18,248 @@
     "Adding a term: run scripts/check_pronunciation.py to see the phonemes",
     "before and after. Do not guess a respelling — check it."
   ],
+  "_READS_CORRECTLY_NOTE": [
+    "Tokens that need no rule because Kokoro already says them right.",
+    "Every one was checked against its phonemes via",
+    "scripts/check_pronunciation.py — this is not a wishlist, and an",
+    "entry added without checking defeats the coverage gate.",
+    "",
+    "It is production data, not a test fixture: narration.build()",
+    "consults it to decide whether a Claude-drafted script is sayable",
+    "before that script is ever synthesized."
+  ],
+  "reads_correctly": [
+    "AI",
+    "SBA",
+    "JV",
+    "ODC",
+    "CDRL",
+    "MPA",
+    "BLS",
+    "CALC",
+    "FAR",
+    "CFR",
+    "PDF",
+    "XLSX",
+    "DOCX",
+    "NDA",
+    "NDAs",
+    "USA",
+    "SAM",
+    "DHS",
+    "DoD",
+    "YOUR",
+    "AND",
+    "ANY",
+    "ACTUALLY",
+    "NOT",
+    "AI-drafted"
+  ],
   "rules": [
-    {"term": "PursuitAI", "say": "Pursuit A.I.", "why": "the brand: 'Pursuit A-I'. Raw reads as one word, 'pursoo-tye'."},
-    {"term": "USA[\\s-]?[Ss]pending", "say": "U S A Spending", "why": "raw becomes 'you-ESS ASS-pending' — the S attaches to the wrong syllable."},
-    {"term": "\\bSAM\\.gov\\b", "say": "Sam dot gov", "why": "the dot is silent otherwise."},
-    {"term": "\\bCPARS\\b", "say": "See-Parz", "why": "said as one word, 'SEE-parz', not spelled out."},
-    {"term": "\\bNAICS\\b", "say": "nayks", "why": "'nakes', rhymes with 'makes'. Raw spells out N-A-I-C-S."},
-    {"term": "\\bGovCons\\b", "say": "Guv Cons", "why": "plural, before the singular rule."},
-    {"term": "\\bGovCon\\b", "say": "Guv-Con", "why": "'GUV-con', one compound word. Raw gives a hard-A 'GAHV KAHN' as two stressed words."},
-    {"term": "\\bGAO\\b", "say": "G A O", "why": "spelled out."},
-    {"term": "\\bUEI\\b", "say": "U E I", "why": "spelled out."},
-    {"term": "\\bFPDS\\b", "say": "F P D S", "why": "spelled out."},
-    {"term": "\\bIGCE\\b", "say": "I G C E", "why": "spelled out."},
-    {"term": "\\bAPFS\\b", "say": "A P F S", "why": "DHS forecast system, spelled out."},
-    {"term": "\\biOS\\b", "say": "i O S", "why": "Apple mobile OS, 'i-O-S'."},
-    {"term": "\\bCLINs\\b", "say": "clins", "why": "contract line items, 'clinz'."},
-    {"term": "\\bCLIN\\b", "say": "clin", "why": "said as a word, 'clin'."},
-    {"term": "\\bRFPs\\b", "say": "R F P's", "why": "solicitation doc types, spelled out."},
-    {"term": "\\bRFP\\b", "say": "R F P", "why": "spelled out."},
-    {"term": "\\bRFIs\\b", "say": "R F I's", "why": "spelled out."},
-    {"term": "\\bRFI\\b", "say": "R F I", "why": "spelled out."},
-    {"term": "\\bRFQs\\b", "say": "R F Q's", "why": "spelled out."},
-    {"term": "\\bRFQ\\b", "say": "R F Q", "why": "spelled out."},
-    {"term": "\\bLCATs\\b", "say": "L Cats", "why": "labor categories, 'ell-cats'."},
-    {"term": "\\bLCAT\\b", "say": "L Cat", "why": "'ell-cat'."},
-    {"term": "Q&A", "say": "Q and A", "why": "'Q and A', not 'Q-ampersand-A'."},
-    {"term": "\\bBD\\b", "say": "B D", "why": "business development, 'B-D'."},
-    {"term": "8\\(a\\)", "say": "eight-A", "why": "the 8(a) program. Raw reads the parentheses."},
-    {"term": "\\bMentor[-\\s]Prot([ée])g([ée])\\b", "say": "Mentor protégé", "why": "the hyphen compound glues into one rushed word. Must run before the possessive rule so 'Mentor-Protege's' still splits."},
-    {"term": "\\bProt([ée])g([ée])'?s\\b", "say": "protégé 's", "why": "the possessive flips to a hard-G 'pruh-tay-gay'."},
-    {"term": "\\bGWACs\\b", "say": "Gee-Wacks", "why": "'gee-wacks'. Raw spells out G-W-A-C."},
-    {"term": "\\bGWAC\\b", "say": "Gee-Wack", "why": "'gee-wack'."},
-    {"term": "\\bIDIQs\\b", "say": "I D I Q's", "why": "spelled out, plural."},
-    {"term": "\\bIDIQ\\b", "say": "I D I Q", "why": "'I-D-I-Q', letter by letter."},
-    {"term": "\\bAlliant\\b", "say": "Uh-Lie-Ant", "why": "rhymes with 'reliant', not 'Allient'."},
-    {"term": "\\bHUBZone\\b", "say": "Hub Zone", "why": "two words, 'HUB ZONE'."},
-    {"term": "\\bGSA\\b", "say": "G S A", "why": "spelled out."},
-    {"term": "\\bSTARS III\\b", "say": "Stars Three", "why": "the roman numeral is read as a word otherwise."},
-    {"term": "\\bOASIS\\+", "say": "Oasis Plus", "why": "the plus is silent otherwise."},
-    {"term": "\\bR[ée]sum[ée]s\\b", "say": "Rez-oo-mays", "why": "the CV, plural. Raw reads the VERB, 'rih-ZOOMS'."},
-    {"term": "\\bR[ée]sum[ée]\\b", "say": "Rez-oo-may", "why": "the CV. Raw reads the verb, 'rih-ZOOM'."},
-    {"term": "\\bCOs\\b", "say": "C O's", "why": "contracting officers, plural, before the singular."},
-    {"term": "\\bCO\\b", "say": "C O", "why": "contracting officer. Raw says 'koh' — it reads CO as a word."}
+    {
+      "term": "PursuitAI",
+      "say": "Pursuit A.I.",
+      "why": "the brand: 'Pursuit A-I'. Raw reads as one word, 'pursoo-tye'."
+    },
+    {
+      "term": "USA[\\s-]?[Ss]pending",
+      "say": "U S A Spending",
+      "why": "raw becomes 'you-ESS ASS-pending' — the S attaches to the wrong syllable."
+    },
+    {
+      "term": "\\bSAM\\.gov\\b",
+      "say": "Sam dot gov",
+      "why": "the dot is silent otherwise."
+    },
+    {
+      "term": "\\bCPARS\\b",
+      "say": "See-Parz",
+      "why": "said as one word, 'SEE-parz', not spelled out."
+    },
+    {
+      "term": "\\bNAICS\\b",
+      "say": "nayks",
+      "why": "'nakes', rhymes with 'makes'. Raw spells out N-A-I-C-S."
+    },
+    {
+      "term": "\\bGovCons\\b",
+      "say": "Guv Cons",
+      "why": "plural, before the singular rule."
+    },
+    {
+      "term": "\\bGovCon\\b",
+      "say": "Guv-Con",
+      "why": "'GUV-con', one compound word. Raw gives a hard-A 'GAHV KAHN' as two stressed words."
+    },
+    {
+      "term": "\\bGAO\\b",
+      "say": "G A O",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bUEI\\b",
+      "say": "U E I",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bFPDS\\b",
+      "say": "F P D S",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bIGCE\\b",
+      "say": "I G C E",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bAPFS\\b",
+      "say": "A P F S",
+      "why": "DHS forecast system, spelled out."
+    },
+    {
+      "term": "\\biOS\\b",
+      "say": "i O S",
+      "why": "Apple mobile OS, 'i-O-S'."
+    },
+    {
+      "term": "\\bCLINs\\b",
+      "say": "clins",
+      "why": "contract line items, 'clinz'."
+    },
+    {
+      "term": "\\bCLIN\\b",
+      "say": "clin",
+      "why": "said as a word, 'clin'."
+    },
+    {
+      "term": "\\bRFPs\\b",
+      "say": "R F P's",
+      "why": "solicitation doc types, spelled out."
+    },
+    {
+      "term": "\\bRFP\\b",
+      "say": "R F P",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bRFIs\\b",
+      "say": "R F I's",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bRFI\\b",
+      "say": "R F I",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bRFQs\\b",
+      "say": "R F Q's",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bRFQ\\b",
+      "say": "R F Q",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bLCATs\\b",
+      "say": "L Cats",
+      "why": "labor categories, 'ell-cats'."
+    },
+    {
+      "term": "\\bLCAT\\b",
+      "say": "L Cat",
+      "why": "'ell-cat'."
+    },
+    {
+      "term": "Q&A",
+      "say": "Q and A",
+      "why": "'Q and A', not 'Q-ampersand-A'."
+    },
+    {
+      "term": "\\bBD\\b",
+      "say": "B D",
+      "why": "business development, 'B-D'."
+    },
+    {
+      "term": "8\\(a\\)",
+      "say": "eight-A",
+      "why": "the 8(a) program. Raw reads the parentheses."
+    },
+    {
+      "term": "\\bMentor[-\\s]Prot([ée])g([ée])\\b",
+      "say": "Mentor protégé",
+      "why": "the hyphen compound glues into one rushed word. Must run before the possessive rule so 'Mentor-Protege's' still splits."
+    },
+    {
+      "term": "\\bProt([ée])g([ée])'?s\\b",
+      "say": "protégé 's",
+      "why": "the possessive flips to a hard-G 'pruh-tay-gay'."
+    },
+    {
+      "term": "\\bGWACs\\b",
+      "say": "Gee-Wacks",
+      "why": "'gee-wacks'. Raw spells out G-W-A-C."
+    },
+    {
+      "term": "\\bGWAC\\b",
+      "say": "Gee-Wack",
+      "why": "'gee-wack'."
+    },
+    {
+      "term": "\\bIDIQs\\b",
+      "say": "I D I Q's",
+      "why": "spelled out, plural."
+    },
+    {
+      "term": "\\bIDIQ\\b",
+      "say": "I D I Q",
+      "why": "'I-D-I-Q', letter by letter."
+    },
+    {
+      "term": "\\bAlliant\\b",
+      "say": "Uh-Lie-Ant",
+      "why": "rhymes with 'reliant', not 'Allient'."
+    },
+    {
+      "term": "\\bHUBZone\\b",
+      "say": "Hub Zone",
+      "why": "two words, 'HUB ZONE'."
+    },
+    {
+      "term": "\\bGSA\\b",
+      "say": "G S A",
+      "why": "spelled out."
+    },
+    {
+      "term": "\\bSTARS III\\b",
+      "say": "Stars Three",
+      "why": "the roman numeral is read as a word otherwise."
+    },
+    {
+      "term": "\\bOASIS\\+",
+      "say": "Oasis Plus",
+      "why": "the plus is silent otherwise."
+    },
+    {
+      "term": "\\bR[ée]sum[ée]s\\b",
+      "say": "Rez-oo-mays",
+      "why": "the CV, plural. Raw reads the VERB, 'rih-ZOOMS'."
+    },
+    {
+      "term": "\\bR[ée]sum[ée]\\b",
+      "say": "Rez-oo-may",
+      "why": "the CV. Raw reads the verb, 'rih-ZOOM'."
+    },
+    {
+      "term": "\\bCOs\\b",
+      "say": "C O's",
+      "why": "contracting officers, plural, before the singular."
+    },
+    {
+      "term": "\\bCO\\b",
+      "say": "C O",
+      "why": "contracting officer. Raw says 'koh' — it reads CO as a word."
+    }
   ]
 }
