@@ -120,17 +120,75 @@ scheme that misbehaves on thin data is worse than none.
 .venv/bin/python engine/run.py --dry-run          # generate and print, post nothing
 .venv/bin/python engine/run.py                    # prepare only, then tell you what's next
 
+.venv/bin/python engine/run.py --prepare --format ad   # force a format instead of the rotation
+
 .venv/bin/python scripts/preview.py               # visual review sheet for every post
-.venv/bin/python scripts/preview.py --linkedin    # next LinkedIn post: PNGs + copy
-.venv/bin/python scripts/preview.py --instagram   # same, for the Instagram queue
-.venv/bin/python scripts/preview.py --posted <id> --channel linkedin|instagram
 .venv/bin/python engine/links.py                  # print the Instagram bio link
 .venv/bin/python engine/notify.py --heartbeat     # weekly liveness report
-pytest tests/ -v                        # 73 tests
+pytest tests/ -q                                  # the full suite
 ```
 
 `--force` skips the approval gate. It prints a loud warning and **hard-refuses
 to run in CI**, so it cannot become a production bypass.
+
+`--format` overrides the rotation's choice for one run. The topic still
+advances, so use it to preview a format, not to pin one.
+
+---
+
+## Posting by hand
+
+LinkedIn has no API access, and Instagram has none yet. Both are posted by
+hand from artifacts this script generates. Each channel keeps **its own
+cursor**, so the two queues advance independently and neither repeats a
+topic. Compliance runs first — a topic that cannot publish never reaches you.
+
+```bash
+# Still card — fast, no voice model needed
+.venv/bin/python scripts/preview.py --linkedin
+.venv/bin/python scripts/preview.py --instagram
+
+# Animated spot with voiceover — same renderer the automated runs use
+.venv/bin/python scripts/preview.py --linkedin  --format ad
+.venv/bin/python scripts/preview.py --instagram --format ad
+
+# A specific topic instead of whatever is next in the queue
+.venv/bin/python scripts/preview.py --linkedin --format ad --topic mpjv
+
+# Record it, so that topic does not come round again on that channel
+.venv/bin/python scripts/preview.py --posted <topic-id> --channel linkedin
+.venv/bin/python scripts/preview.py --posted <topic-id> --channel instagram
+```
+
+Each run prints the caption (with its character count against the channel
+limit) and the files to attach, then the exact `--posted` command to close
+it out. **Nothing is marked posted until you say so** — re-running before
+that gives you the same topic again, so a half-finished post is never lost.
+
+### What gets written
+
+Into `assets/linkedin/` or `assets/instagram/`:
+
+| Channel | `--format card` | `--format ad` |
+|---|---|---|
+| LinkedIn | `square` 1080×1080, `portrait` 1080×1350 | `square` 1080×1080, `video` 1080×1920 |
+| Instagram | `ig` 1080×1350 | `video` 1080×1920, `square` 1080×1080 |
+
+Attach **one**, listed most-recommended first. Video ships with a `_poster.jpg`
+beside it — set that as the cover rather than accepting the platform default,
+which is frame 0 and on these spots is a bare gradient.
+
+### Notes on the animated format
+
+* It needs the **voice model** (`requirements-voice.txt`, ~1 GB, torch from
+  the CPU index) and **ffmpeg**. Without the voice model it still renders,
+  silent, and says so.
+* Budget roughly **2–3 minutes per ratio** on a laptop. The voiceover is
+  synthesised once and shared across ratios — rendering it per ratio would
+  give each spot a different edit, since scene lengths stretch to the
+  narration.
+* The copy is the deterministic variant (no Claude call), so the same topic
+  produces the same caption every time.
 
 ---
 
@@ -174,8 +232,8 @@ environment, the Instagram bio link, and the daily review routine.
 | Channel | How it publishes |
 |---|---|
 | X | API, automated — body plus a threaded CTA reply |
-| Instagram | API when credentials exist; **manual paste** meanwhile — `--instagram` |
-| **LinkedIn** | **Manual paste — `python scripts/preview.py --linkedin`.** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). |
+| Instagram | API when credentials exist; **manual paste** meanwhile — see [Posting by hand](#posting-by-hand) |
+| **LinkedIn** | **Manual paste — see [Posting by hand](#posting-by-hand).** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). |
 | Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 
 **Kill switch:** disable the workflow in the Actions tab.
