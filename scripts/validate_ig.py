@@ -92,27 +92,49 @@ def main():
     if args.container:
         print("[5] container creation (fetch test — will NOT publish)")
         base = os.environ.get("MEDIA_BASE_URL") or fail("MEDIA_BASE_URL not set")
-        # JPEG, and derived rather than hardcoded. Meta's content-publishing
-        # reference: "JPEG is the only image format supported." Every card is
-        # rendered as PNG and converted for Instagram (media.as_jpeg), so a
-        # validator pointed at the .png would test a format we deliberately
-        # stopped sending — and pass, giving false confidence, because the
-        # PNG is still in the bucket alongside it.
-        #
-        # Derived from the calendar so it cannot rot: the hardcoded topic id
-        # would break silently the day that topic stops being publishable.
-        sys.path.insert(0, os.path.join(ROOT, "engine"))
-        import compliance
-        with open(os.path.join(ROOT, "content", "calendar.json")) as f:
-            topics = json.load(f)["topics"]
-        publishable = [t for t in topics if compliance.is_publishable(t)]
-        if not publishable:
-            fail("no publishable topic to test with")
-        test_asset = f"assets/cards/{publishable[0]['id']}_ig.jpg"
+        # Test an asset that PROVABLY SHIPPED, not one we hope exists.
+        # prepare only syncs the assets it renders that run, so the bucket
+        # holds exactly what past runs produced — and S3 answers 403 (not
+        # 404) for a missing key when listing is private. The previous
+        # version derived a plausible path from the calendar; on a bucket
+        # that had never rendered that topic it 403'd and read as a
+        # credentials problem, mid-credential-setup, to the first person
+        # who ran it. posted.jsonl is the ledger of what actually reached
+        # the bucket: walk it newest-first for a JPEG (Meta accepts no
+        # other image format — see media.as_jpeg).
+        test_asset = None
+        log_path = os.path.join(ROOT, "logs", "posted.jsonl")
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                entries = [json.loads(line) for line in f if line.strip()]
+            for entry in reversed(entries):
+                for key in ("cover_ig", "media_ig"):
+                    rel = entry.get(key) or ""
+                    if rel.lower().endswith((".jpg", ".jpeg")):
+                        test_asset = rel
+                        break
+                if test_asset:
+                    break
+        if not test_asset:
+            # Fresh clone / empty log: fall back to the first publishable
+            # topic's card. May not be uploaded yet — the error below says
+            # exactly that instead of implying broken credentials.
+            sys.path.insert(0, os.path.join(ROOT, "engine"))
+            import compliance
+            with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+                topics = json.load(f)["topics"]
+            publishable = [t for t in topics if compliance.is_publishable(t)]
+            if not publishable:
+                fail("no publishable topic to test with")
+            test_asset = f"assets/cards/{publishable[0]['id']}_ig.jpg"
         url = f"{base.rstrip('/')}/{test_asset}"
         head = requests.head(url, timeout=30)
         if head.status_code != 200:
             fail(f"asset not publicly reachable ({head.status_code}): {url}\n"
+                 f"       NB S3 returns 403 for a MISSING key when listing is\n"
+                 f"       private — this usually means the file was never\n"
+                 f"       uploaded (run a prepare), not that credentials are\n"
+                 f"       wrong.\n"
                  "    push the repo (public) first, or fix MEDIA_BASE_URL")
         ok(f"asset publicly reachable: {url}")
         r = requests.post(f"{GRAPH}/{uid}/media", data={

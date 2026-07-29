@@ -199,3 +199,17 @@ def test_validator_does_not_hardcode_a_topic_id():
     src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
     assert "is_publishable" in src, (
         "the test asset should be derived from the calendar, not fixed")
+
+
+def test_validator_prefers_an_asset_that_actually_shipped(tmp_path, monkeypatch):
+    """The bucket holds exactly what past prepare runs uploaded, and S3
+    answers 403 for a missing key — so a derived-but-never-rendered path
+    reads as a credentials failure to whoever is setting up credentials.
+    posted.jsonl is the ledger of what really reached the bucket; the
+    validator must walk it (newest first) before guessing."""
+    src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
+    body = src[src.index("--container"):]
+    assert "posted.jsonl" in body, "validator no longer consults the ledger"
+    assert "reversed" in body, "must prefer the NEWEST shipped asset"
+    # the calendar-derived guess must remain, as the fresh-clone fallback
+    assert "is_publishable" in body
