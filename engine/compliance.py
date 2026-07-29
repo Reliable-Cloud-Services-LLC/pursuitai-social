@@ -45,14 +45,24 @@ AGENCIES = (r"SBA|GSA|DHS|DoD|DOD|NASA|VA|HHS|DOE|DOT|EPA|HUD|USACE|"
             r"Department of [A-Z][a-z]+(?: [A-Z][a-z]+)*|federal government|"
             r"the government")
 
+# Things a federal agency legitimately approves that belong to the USER,
+# not to us. "your SBA-approved MPA" is accurate and standard GovCon
+# language; "PursuitAI is SBA-approved" is the claim we must never make.
+# The rule cannot tell those apart from the hyphen alone, so the noun that
+# follows decides.
+USER_OWNED = (r"MPA|mentor[- ]prot[ée]g[ée] agreement|joint venture|JV|"
+              r"agreement|certification|cert|status|subcontracting plan|"
+              r"plan|contract|award|schedule|application|8\(a\) status")
+
 # An endorsement is a RELATIONSHIP claim: approved by, partnered with,
 # official. Naming an agency as a data source is not one, and the product
 # is built on federal data — it has to be able to say so.
 _ENDORSEMENT = [
     re.compile(rf"\b(?:endorsed|approved|certified|authorized|sanctioned)\s+by\s+"
                rf"(?:the\s+)?(?:{AGENCIES})\b", re.I),
-    re.compile(rf"\b(?:{AGENCIES})[- ](?:approved|endorsed|certified|authorized)\b",
-               re.I),
+    # negative lookahead: an agency-approved THING the user owns is fine
+    re.compile(rf"\b(?:{AGENCIES})[- ](?:approved|endorsed|certified|authorized)\b"
+               rf"(?!\s+(?:{USER_OWNED})\b)", re.I),
     re.compile(rf"\b(?:official|authorized)\s+(?:{AGENCIES})\s+"
                rf"(?:partner|vendor|supplier|provider)\b", re.I),
     re.compile(rf"\bin\s+partnership\s+with\s+(?:the\s+)?(?:{AGENCIES})\b", re.I),
@@ -132,6 +142,21 @@ def is_publishable(topic):
     return verification.get("status") in PUBLISHABLE_STATUSES
 
 
+# Fields rendered onto the card image. These were invisible to the gate
+# for the whole project: check_claims only ever received caption text, so
+# a claim living in `body` shipped on every card unexamined.
+RENDERED_FIELDS = ("headline", "body", "stat")
+
+
+def check_rendered(topic):
+    """Violations in the text drawn onto the card itself."""
+    out = []
+    for field in RENDERED_FIELDS:
+        for v in check_claims(topic, (topic or {}).get(field) or ""):
+            out.append(Violation(v.rule, f"{field}: {v.message}", v.excerpt))
+    return out
+
+
 def check_claims(topic, caption):
     """Return a list of Violation. Empty means the caption may publish."""
     caption = caption or ""
@@ -209,7 +234,7 @@ def assert_publishable(topic, captions_by_channel):
         raise ComplianceError(
             f"topic {topic.get('id')!r} is {status}, not VERIFIED — its "
             f"claims have not been traced to a source")
-    problems = []
+    problems = [f"card {v}" for v in check_rendered(topic)]
     for channel, caption in captions_by_channel.items():
         for violation in check_claims(topic, caption):
             problems.append(f"{channel}: {violation}")

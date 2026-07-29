@@ -50,6 +50,9 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `links.py` | Builds UTM-tagged URLs so the admin dashboard can attribute a visit to a post. Also generates the Instagram bio link. |
 | `cards.py` | Renders branded feature cards (1080×1350 for Instagram, 1600×900 for X) with PIL. No network. |
 | `video.py` | Builds a ~14s vertical 1080×1920 clip from PIL slides via ffmpeg. No external footage. |
+| `adspot.py` | Animated feature spots — real Lucide icons and type flowing through four scenes. No screenshots. |
+| `narration.py` | Claude-drafted voiceover scripts, gated by the same compliance rules; deterministic fallback. |
+| `voice.py` | Kokoro `af_heart` TTS, matching the product's instructional-video catalogue. Optional — ads ship silent without it. |
 | `screenshots.py` | Captures pursuitai.net live via Playwright and crops platform-sized frames, so content stays current as the product changes. |
 | `post_x.py` | Posts to X. Media rides the v1.1 upload endpoint, the post itself is API v2. |
 | `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
@@ -80,6 +83,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `scripts/validate_x.py` | Proves the X credentials authenticate and can upload media. Posts nothing. |
 | `scripts/validate_ig.py` | Proves the Instagram token, scopes, quota, and — critically — that Instagram can *fetch* your media URL. Creates a real container but never publishes it. |
 | `assets/` | Generated cards, screenshots, and video. **Not committed** — uploaded to object storage, which is what Instagram fetches from. |
+| `assets/icons/` | **Committed.** Lucide icons (ISC), rasterised once by `scripts/build_icons.py`, so the engine needs no SVG rasteriser at runtime. |
 | `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
 | `logs/metrics.jsonl` | Append-only performance samples, keyed to the post ids in `posted.jsonl`. |
 | `.github/workflows/analytics.yml` | Weekly metrics collection. Separate from publishing because X reads are billed. |
@@ -91,7 +95,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 
 **Topics** advance one per published post, round-robin through all 24.
 
-**Formats** cycle `card → screenshot → card → video`. The offset shifts each
+**Formats** cycle `card → screenshot → card → video → ad`. The offset shifts each
 time the topic list wraps, so a given topic appears in every format over four
 cycles rather than being locked to one forever.
 

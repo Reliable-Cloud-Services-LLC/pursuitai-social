@@ -10,6 +10,7 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 import brand
+import cards
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -27,12 +28,14 @@ BODY_TEXT = brand.rgb("body_text")
 GREEN = brand.rgb("green")
 
 def _font(size, bold=True):
-    p = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
-         else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-    try:
-        return ImageFont.truetype(p, size)
-    except OSError:
-        return ImageFont.load_default()
+    """Same candidate list as cards.py.
+
+    This used to try only the Linux DejaVu path and fall back to PIL's
+    bitmap default, so video rendered at a tiny unreadable size on macOS
+    while looking fine on the CI runner — which made it impossible to
+    review a clip locally before it shipped.
+    """
+    return cards._font(size, bold=bold)
 
 def _bg():
     img = Image.new("RGB", (W, H), DEEP)

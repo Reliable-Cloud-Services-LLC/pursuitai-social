@@ -210,3 +210,43 @@ def test_violation_has_a_readable_message():
 def test_clean_caption_produces_no_violations(cal):
     topic = cal["topics"][0]
     assert compliance.check_claims(topic, "A clean sentence with no claims.") == []
+
+
+# ---------- the card's own text ----------
+
+def test_agency_approved_user_artifacts_are_allowed():
+    """'your SBA-approved MPA' is accurate GovCon language — the agreement
+    really was approved by SBA. Only a claim that WE are agency-approved is
+    the violation."""
+    for ok in ("Record your SBA-approved MPA once.",
+               "Your SBA-approved joint venture can bid.",
+               "an SBA-approved mentor-protégé agreement"):
+        assert not [v for v in check(ok) if v.rule == "federal_endorsement"], ok
+
+
+def test_agency_approving_us_is_still_blocked():
+    for bad in ("SBA-approved bid scoring.", "GSA-certified capture software.",
+                "Our platform is DHS-authorized."):
+        assert any(v.rule == "federal_endorsement" for v in check(bad)), bad
+
+
+def test_check_rendered_reads_the_card_fields():
+    topic = verified_topic(body="No competitor has this.")
+    rules = [v.rule for v in compliance.check_rendered(topic)]
+    assert "competitive_claim" in rules
+
+
+def test_check_rendered_names_the_offending_field():
+    topic = verified_topic(headline="Guaranteed to win.")
+    assert "headline:" in compliance.check_rendered(topic)[0].message
+
+
+def test_no_publishable_topic_renders_a_violating_card(cal):
+    """The gate saw captions only for the whole project. A claim in `body`
+    is drawn onto every card and was never checked."""
+    for t in cal["topics"]:
+        if not compliance.is_publishable(t):
+            continue
+        violations = compliance.check_rendered(t)
+        assert not violations, (
+            f"{t['id']} card renders: {[str(v) for v in violations]}")

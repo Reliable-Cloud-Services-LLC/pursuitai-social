@@ -334,3 +334,22 @@ def test_format_selection_is_deterministic():
     import run as engine_run
     assert (engine_run.select_format(0, 24)
             == engine_run.select_format(0, 24) == engine_run.FORMATS[0])
+
+
+def test_format_is_not_locked_at_any_topic_count():
+    """The offset must survive ANY topic count, not just today's.
+
+    `(run_count + cycle)` expands to `index + cycle*(topic_count + 1)`, so
+    it re-locks whenever topic_count + 1 is a multiple of len(FORMATS).
+    Adding a fifth format made 24 topics hit exactly that.
+    """
+    import run as engine_run
+    every = set(engine_run.FORMATS)
+    for n_topics in range(4, 40):
+        seen = {}
+        for rc in range(n_topics * len(engine_run.FORMATS)):
+            seen.setdefault(rc % n_topics, set()).add(
+                engine_run.select_format(rc, n_topics))
+        for topic, formats in seen.items():
+            assert formats == every, (
+                f"{n_topics} topics: topic {topic} locked to {sorted(formats)}")

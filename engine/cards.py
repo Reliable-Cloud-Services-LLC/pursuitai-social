@@ -10,6 +10,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 import brand
+import brand as brand_module
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -85,7 +86,25 @@ class LayoutOverflow(Exception):
     """Copy ran past the CTA bar. Fail rather than post a broken card."""
 
 
-def render_card(topic, brand, size=(1080, 1350), out_path=None):
+# Element order for a staged reveal. motion.py animates these; a static
+# card draws them all at once.
+REVEAL_ORDER = ("brand", "chip", "headline", "body", "stat", "cta")
+
+
+def _ease(t):
+    """Ease-out cubic. Motion that decelerates reads as deliberate; linear
+    reads as mechanical."""
+    t = max(0.0, min(1.0, t))
+    return 1 - (1 - t) ** 3
+
+
+def _fade(colour, alpha):
+    """RGB(A) at a given 0..1 alpha, for the reveal."""
+    a = int(255 * max(0.0, min(1.0, alpha)))
+    return tuple(colour[:3]) + (a,)
+
+
+def render_card(topic, brand, size=(1080, 1350), out_path=None, reveal=None):
     w, h = size
     # Scale by the CONSTRAINING dimension, not the width. Scaling on width
     # alone gave a 1600x900 card 1.48x sizing inside 0.83x the height, so
@@ -98,22 +117,37 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
     d = ImageDraw.Draw(img, "RGBA")
     pad = int(84 * s)
 
+    # reveal maps element -> 0..1 opacity/offset progress. None means a
+    # finished card, which is what every static render wants.
+    rv = {k: 1.0 for k in REVEAL_ORDER}
+    if reveal:
+        rv.update(reveal)
+
+    def slide(name, distance=40):
+        """Vertical offset for an element still animating in."""
+        return int((1 - _ease(rv[name])) * distance * s)
+
     # top brand row
     logo_f = _font(int(46 * s))
-    d.text((pad, pad), "PursuitAI", font=logo_f, fill=WHITE)
+    d.text((pad, pad + slide("brand")), "PursuitAI", font=logo_f,
+           fill=_fade(WHITE, rv["brand"]))
     lw = d.textlength("PursuitAI", font=logo_f)
     tag_f = _font(int(26 * s), bold=False)
-    d.text((pad + lw + int(24 * s), pad + int(14 * s)), brand["tagline"],
-           font=tag_f, fill=MUTED)
+    d.text((pad + lw + int(24 * s), pad + int(14 * s) + slide("brand")),
+           brand["tagline"], font=tag_f, fill=_fade(MUTED, rv["brand"]))
 
     # feature eyebrow chip
     y = pad + int(150 * s) if h > w else pad + int(120 * s)
     chip_f = _font(int(30 * s))
+    brand_alpha_chip = brand_module.ALPHA["chip_fill"] / 255.0
     chip_txt = topic["feature"].upper()
     cw = d.textlength(chip_txt, font=chip_f)
-    d.rounded_rectangle([pad, y, pad + cw + int(48 * s), y + int(62 * s)],
-                        radius=int(31 * s), fill=CHIP_FILL)
-    d.text((pad + int(24 * s), y + int(13 * s)), chip_txt, font=chip_f, fill=WHITE)
+    cy = y + slide("chip")
+    d.rounded_rectangle([pad, cy, pad + cw + int(48 * s), cy + int(62 * s)],
+                        radius=int(31 * s),
+                        fill=_fade(VIOLET, rv["chip"] * brand_alpha_chip))
+    d.text((pad + int(24 * s), cy + int(13 * s)), chip_txt, font=chip_f,
+           fill=_fade(WHITE, rv["chip"]))
 
     # headline
     y += int(120 * s)
@@ -122,7 +156,8 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
         if not _fits(d, line, head_f, w - 2 * pad):
             raise LayoutOverflow(
                 f"{topic.get('id')} headline word too long for {w}x{h}: {line!r}")
-        d.text((pad, y), line, font=head_f, fill=WHITE)
+        d.text((pad, y + slide("headline")), line, font=head_f,
+               fill=_fade(WHITE, rv["headline"]))
         y += int((head_f.size) * 1.16)
 
     # body
@@ -132,7 +167,8 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
         if not _fits(d, line, body_f, w - 2 * pad):
             raise LayoutOverflow(
                 f"{topic.get('id')} body word too long for {w}x{h}: {line!r}")
-        d.text((pad, y), line, font=body_f, fill=BODY_TEXT)
+        d.text((pad, y + slide("body")), line, font=body_f,
+               fill=_fade(BODY_TEXT, rv["body"]))
         y += int(body_f.size * 1.42)
 
     # stat chip. The gap is tight rather than generous: on a 1:1 canvas the
@@ -154,11 +190,14 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
     if sw > chip_room:
         raise LayoutOverflow(
             f"{topic.get('id')} stat too long for {w}x{h}: {topic['stat']!r}")
-    d.rounded_rectangle([pad, y, pad + sw + int(70 * s), y + int(84 * s)],
-                        radius=int(18 * s), outline=GREEN, width=max(2, int(3 * s)))
-    d.ellipse([pad + int(26 * s), y + int(32 * s), pad + int(46 * s),
-               y + int(52 * s)], fill=GREEN)
-    d.text((pad + int(56 * s), y + int(20 * s)), stat, font=stat_f, fill=GREEN)
+    sy = y + slide("stat")
+    d.rounded_rectangle([pad, sy, pad + sw + int(70 * s), sy + int(84 * s)],
+                        radius=int(18 * s), outline=_fade(GREEN, rv["stat"]),
+                        width=max(2, int(3 * s)))
+    d.ellipse([pad + int(26 * s), sy + int(32 * s), pad + int(46 * s),
+               sy + int(52 * s)], fill=_fade(GREEN, rv["stat"]))
+    d.text((pad + int(56 * s), sy + int(20 * s)), stat, font=stat_f,
+           fill=_fade(GREEN, rv["stat"]))
 
     # A shorter canvas (1:1) gives the copy less room than the 4:5 the
     # layout was tuned for. Refuse to emit a card whose content collides
@@ -172,19 +211,20 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None):
             f"{content_bottom}px, CTA bar starts at {h - bar_h}px")
 
     # bottom CTA bar
-    d.rectangle([0, h - bar_h, w, h], fill=CTA_BAR)
+    d.rectangle([0, h - bar_h, w, h], fill=_fade(CTA_BAR, rv["cta"]))
     cta_f = _font(int(40 * s))
     d.text((pad, h - bar_h + int(30 * s)), "Start your free 14-day trial",
-           font=cta_f, fill=WHITE)
+           font=cta_f, fill=_fade(WHITE, rv["cta"]))
     url_f = _font(int(32 * s), bold=False)
     d.text((pad, h - bar_h + int(86 * s)), brand["url"].replace("https://", "")
-           + "  ·  no credit card", font=url_f, fill=MUTED)
+           + "  ·  no credit card", font=url_f, fill=_fade(MUTED, rv["cta"]))
     # arrow button
     bx = w - pad - int(96 * s)
     d.ellipse([bx, h - bar_h + int(28 * s), bx + int(94 * s),
-               h - bar_h + int(122 * s)], fill=VIOLET)
+               h - bar_h + int(122 * s)], fill=_fade(VIOLET, rv["cta"]))
     ar_f = _font(int(52 * s))
-    d.text((bx + int(28 * s), h - bar_h + int(40 * s)), "→", font=ar_f, fill=WHITE)
+    d.text((bx + int(28 * s), h - bar_h + int(40 * s)), "→", font=ar_f,
+           fill=_fade(WHITE, rv["cta"]))
 
     if out_path:
         os.makedirs(os.path.dirname(out_path), exist_ok=True)

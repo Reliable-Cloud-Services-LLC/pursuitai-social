@@ -24,6 +24,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import approval
+import brand as brand_tokens
 import cards
 import captions
 import compliance
@@ -33,8 +34,14 @@ STATE = os.path.join(ROOT, "content", "state.json")
 PENDING = os.path.join(ROOT, "content", "pending.json")
 APPROVED = os.path.join(ROOT, "content", "approved.json")
 LOG = os.path.join(ROOT, "logs", "posted.jsonl")
+# 1:1 travels furthest — it is native on LinkedIn, and both X and Instagram
+# render it without cropping. preview.py emits 9:16 and 16:9 alongside.
+AD_RATIO = "square"
 METRICS = os.path.join(ROOT, "logs", "metrics.jsonl")
-FORMATS = ["card", "screenshot", "card", "video"]
+# 5 slots against 18 publishable topics: gcd(18, 5) = 1, so every topic
+# eventually appears in every format. "ad" is the animated spot (adspot.py);
+# "video" is the older slide-based clip.
+FORMATS = ["card", "screenshot", "card", "video", "ad"]
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -51,14 +58,19 @@ def select_format(run_count, topic_count):
     """Pick the format for a run, without locking a topic to one format.
 
     topic_index and run_count advance together, so a naive
-    FORMATS[run_count % 4] over 24 topics gives gcd(24, 4) = 4 and every
-    topic renders in the same format forever (fit-scoring was always a
-    card, subaward-intel always a video). Offsetting by the completed-cycle
-    count shifts the phase each time round, so each topic works through all
-    four formats over four cycles.
+    FORMATS[run_count % len(FORMATS)] locks every topic to one format
+    whenever the counts share a factor — fit-scoring was always a card,
+    subaward-intel always a video.
+
+    Offset the topic's own index by the completed-cycle count. Note this
+    must use the INDEX, not run_count: `(run_count + cycle)` expands to
+    `i + cycle*(topic_count + 1)`, which silently re-locks whenever
+    topic_count + 1 is a multiple of len(FORMATS) — 24 topics against 5
+    formats did exactly that, and a test caught it when `ad` was added.
     """
+    index = run_count % topic_count
     cycle = run_count // topic_count
-    return FORMATS[(run_count + cycle) % len(FORMATS)]
+    return FORMATS[(index + cycle) % len(FORMATS)]
 
 def publishable_topics(cal):
     """Topics that can actually go out today.
@@ -81,6 +93,11 @@ def publishable_topics(cal):
             "x": captions.build_x(topic, cal["brand"], fmt="card", fresh=False),
             "ig": captions.build_ig(topic, cal["brand"], fresh=False),
         }
+        # The card renders headline/body/stat as pixels, which the caption
+        # check never saw — a claim living in `body` shipped on every card
+        # unexamined until the ad work surfaced it.
+        if compliance.check_rendered(topic):
+            continue
         if not any(compliance.check_claims(topic, c) for c in drafts.values()):
             out.append(topic)
 
@@ -127,6 +144,27 @@ def prepare():
     cards.render_card(topic, brand, (1600, 900), card_x)
     cards.render_card(topic, brand, (1080, 1350), card_ig)
 
+    ad_path = None
+    if fmt == "ad":
+        try:
+            import adspot
+            import narration
+            import voice
+            script = narration.build(topic, brand)
+            ad_dir = os.path.join(ROOT, "assets", "video")
+            wav = os.path.join(ad_dir, f"{topic['id']}_vo.wav")
+            secs = voice.synthesize(script, wav)
+            ad_path = os.path.join(ad_dir, f"{topic['id']}_ad.mp4")
+            adspot.make_ad(topic, brand, ad_path,
+                           size=brand_tokens.size(AD_RATIO),
+                           voice_wav=wav if secs else None,
+                           narration=script)
+        except Exception as e:
+            # An ad is the richest format and the most ways to fail. Falling
+            # back to the card keeps the day's post rather than losing it.
+            print(f"[prepare] ad build failed ({e}); using card")
+            ad_path, fmt = None, "card"
+
     video_path = None
     if fmt == "video":
         try:
@@ -138,7 +176,9 @@ def prepare():
             print(f"[prepare] video build failed ({e}); using card")
             video_path, fmt = None, "card"
 
-    if fmt == "screenshot" and shot_x:
+    if fmt == "ad" and ad_path:
+        media_x, media_ig = ad_path, ad_path
+    elif fmt == "screenshot" and shot_x:
         media_x, media_ig = shot_x, shot_ig
     elif fmt == "video" and video_path:
         media_x, media_ig = video_path, video_path
