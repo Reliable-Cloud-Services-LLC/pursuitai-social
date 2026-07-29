@@ -178,6 +178,33 @@ Attach **one**, listed most-recommended first. Video ships with a `_poster.jpg`
 beside it — set that as the cover rather than accepting the platform default,
 which is frame 0 and on these spots is a bare gradient.
 
+### Pronunciation
+
+Narration runs through a lexicon before synthesis — `content/pronunciations.json`,
+applied by `engine/pronounce.py`. Kokoro spells NAICS out letter by letter,
+reads USAspending as "you-ESS ASS-pending", and turns GovCon into "GAHV KAHN";
+each rule respells a term phonetically **for the synthesizer only**, so
+on-screen text and captions still show the real spelling.
+
+Before adding a term, look at what the synthesizer actually does with it —
+do not guess a respelling:
+
+```bash
+.venv/bin/python scripts/check_pronunciation.py GovCon      # one term
+.venv/bin/python scripts/check_pronunciation.py             # the whole sheet
+.venv/bin/python scripts/check_pronunciation.py --scripts   # every ad narration
+.venv/bin/python scripts/check_pronunciation.py --drift     # vs the main app
+```
+
+The list is seeded from the main app's `video/narrate.py`, which was validated
+by ear across the instructional-video catalogue, and vendored rather than
+imported — the import pointed at a sibling checkout that does not exist on a
+CI runner, so it silently did nothing there. `--drift` reports terms the main
+app has picked up since.
+
+A test fails if any acronym in any ad narration reaches the synthesizer
+without either a rule or an explicit "reads correctly as-is" entry.
+
 ### Notes on the animated format
 
 * It needs the **voice model** (`requirements-voice.txt`, ~1 GB, torch from
