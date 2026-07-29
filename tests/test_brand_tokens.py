@@ -123,6 +123,26 @@ def test_render_all_emits_the_linkedin_variants(tmp_path):
 
 # ---------- layout overflow ----------
 
+# The overflow tests measure TEXT, so they measure the FONT. cards.py prefers
+# DejaVu and falls back to Arial, which is what a macOS dev box has — and
+# DejaVu is wider, so copy that fits locally can overflow on the runner.
+# That is not hypothetical: it shipped a green local suite and a red CI twice
+# in one session, on two different topics.
+#
+# Skipping is the honest outcome. A pass measured against the wrong font is a
+# lie, and it is the lie that let the second overflow through — the first was
+# "fixed" locally, against Arial, and the fix was never checked in DejaVu.
+CI_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+def requires_ci_font():
+    if not os.path.exists(CI_FONT):
+        pytest.skip(
+            "DejaVu is absent, so this would measure Arial instead — a "
+            "different width, and a pass here would say nothing about CI. "
+            "Install DejaVu locally to make this meaningful.")
+
+
 def test_no_topic_overflows_at_any_ratio():
     """Every 16:9 card the engine ever produced was broken: the scale factor
     came from width alone, so a 1600x900 canvas got 1.48x sizing inside
@@ -130,6 +150,7 @@ def test_no_topic_overflows_at_any_ratio():
     copy and stat chip never rendered at all. Image size alone could not
     catch it — the PNG was the right dimensions and over 20KB throughout.
     """
+    requires_ci_font()
     cal = json.load(open(os.path.join(ROOT, "content", "calendar.json")))
     failures = []
     for topic in cal["topics"]:

@@ -31,9 +31,9 @@
       "id": "fit-scoring",
       "feature": "AI Fit Scoring",
       "headline": "Stop guessing which bids fit.",
-      "body": "Claude AI scores the opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — grounded in YOUR incumbency and win/loss history.",
+      "body": "Claude AI scores the opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — and it reads YOUR incumbency and win/loss history into the call.",
       "hook_x": "Most small GovCon firms chase the wrong bids. PursuitAI scores your matching opportunities across 5 dimensions — specific to YOUR firm, not a generic match %. Know your real fit before you spend a single capture dollar.",
-      "hook_ig": "Bid/no-bid shouldn't be a gut call.\n\nPursuitAI scores the SAM.gov opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — grounded in your actual incumbency and win/loss history.\n\nEvery score comes with the reasoning behind it.",
+      "hook_ig": "Bid/no-bid shouldn't be a gut call.\n\nPursuitAI scores the SAM.gov opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — and it reads your actual incumbency and win/loss history into the call.\n\nEvery score comes with the reasoning behind it.",
       "stat": "5-dimension scoring, tuned to your firm",
       "page": "/",
       "media": "card",
@@ -42,7 +42,7 @@
         "source_type": "code",
         "source_ref": "apps/backend/app/services/fit_scoring.py:75-81 (DIRECT_FIT_WEIGHTS); apps/backend/app/services/ai_scorer.py:153-161 (the five prompt dimensions), :529,:566 (win/loss + sub-agency incumbency grounding); apps/backend/app/api/opportunities.py:656-670 (the auto-score cost cap)",
         "verified_on": "2026-07-29",
-        "note": "Copy named the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience at 0.15; vehicle_eligibility belongs to FORECAST_FIT_WEIGHTS, a separate rubric. Tracing also surfaced a SECOND defect the original note missed: 'scores every opportunity' overstates the automatic pass, which is capped per org per ingest event and gated on the company's NAICS codes — the remainder are scored on demand. Both corrected here. pursuit-ai fixed the same two claims on its own surfaces in #1990/#1991 (on develop; NOT yet in prod, which still reports 2.114.0). 'Every score comes with the evidence behind it' softened to 'the reasoning behind it': reasoning is required in the response schema, but the fit_grounding block is explicitly best-effort."
+        "note": "Copy named the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience at 0.15; vehicle_eligibility belongs to FORECAST_FIT_WEIGHTS, a separate rubric. Tracing also surfaced a SECOND defect the original note missed: 'scores every opportunity' overstates the automatic pass, which is capped per org per ingest event and gated on the company's NAICS codes — the remainder are scored on demand. Both corrected here. pursuit-ai fixed the same two claims on its own surfaces in #1990/#1991 (on develop; NOT yet in prod, which still reports 2.114.0). 'Every score comes with the evidence behind it' softened to 'the reasoning behind it': reasoning is required in the response schema, but the fit_grounding block is explicitly best-effort. AMBER (2026-07-29 audit): 'grounded in' promised every score. Both grounding blocks are best-effort (ai_scorer.py:568 'except Exception: grounding = {\"text\": \"\"}'), so a score is still produced without them. Softened to 'reads ... into the call'."
       },
       "icon": "gauge"
     },
@@ -107,18 +107,18 @@
       "id": "price-to-win",
       "feature": "Price-to-Win Analyzer",
       "headline": "Price against what the government actually paid.",
-      "body": "Per-contract recommendations anchored to USAspending obligations, GSA CALC + eLibrary labor rates, and BLS wage data — with an AI read on whether to bid aggressive, at-market, or premium.",
+      "body": "Per-contract recommendations anchored to USAspending obligations, GSA CALC labor rates, and BLS wage data — with an AI read on whether to bid aggressive, at-market, or premium.",
       "hook_x": "Don't price against a market average. Price against what the government actually paid the incumbent. PursuitAI anchors your number to USAspending obligations + GSA CALC rates + BLS wages — then recommends a bid posture with the risks spelled out.",
-      "hook_ig": "The incumbent's price is public data — if you know where to look.\n\nPrice-to-Win anchors your bid to what the government actually paid: USAspending obligations, GSA CALC labor ceilings, eLibrary schedule rates, and BLS OEWS wages across 30 GovCon occupations.\n\nTweak your undercut %, model scope reductions, and drop real rates straight into your cost narrative.",
+      "hook_ig": "The incumbent's price is public data — if you know where to look.\n\nPrice-to-Win anchors your bid to what the government actually paid: USAspending obligations, GSA CALC labor ceilings, and BLS OEWS wages across 30 GovCon occupations.\n\nTweak your undercut %, model scope reductions, and drop real rates straight into your cost narrative.",
       "stat": "Anchored to real incumbent pricing",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/services/bls_oews.py:62",
+        "source_ref": "apps/backend/app/services/price_to_win.py (spending_by_award); apps/backend/app/services/gsa_calc.py (search_by_vendor -- and :441,:512 _elibrary_search_url, a LINK not a feed); apps/backend/app/services/bls_oews.py:62 (SOC_CROSSWALK, exactly 30 keys)",
         "verified_on": "2026-07-29",
-        "note": "Independent audit (2026-07-29). 'eLibrary schedule rates' is not a data feed. USAspending, GSA CALC and BLS OEWS are all real (30 occupations confirmed: bls_oews.py SOC_CROSSWALK has exactly 30 keys). eLibrary appears only as gsa_calc.py:_elibrary_search_url() — a link the user clicks. The KB says so explicitly: rates come via CALC 'instead of looking them up on eLibrary'. Three feeds, not four."
+        "note": "'eLibrary schedule rates' claimed a fourth data feed that does not exist. eLibrary appears only as _elibrary_search_url(), a link the user clicks; schedule rates come via GSA CALC -- the KB says so outright ('instead of looking them up on eLibrary'). Three feeds, not four. USAspending, CALC, BLS OEWS and the 30-occupation figure all hold. The first pass's source_ref cited the 30-occupation constant and never checked the feed list around it."
       },
       "icon": "trending-up"
     },
@@ -239,18 +239,18 @@
       "id": "forecasts",
       "feature": "21-Agency Forecast Coverage",
       "headline": "One search across SAM.gov + 21 agency forecasts.",
-      "body": "Auto-import from SAM.gov, DHS APFS, HHS, DOE, DOT, NASA, EPA, HUD, State, USACE and more — plus GSA eBuy RFQs. Weekly automated ingest keeps everything fresh.",
-      "hook_x": "SAM.gov is where opportunities END up. Agency forecasts are where they START. PursuitAI merges SAM.gov + 21 agency forecast systems + GSA eBuy into one scored feed — refreshed automatically every week.",
-      "hook_ig": "If you only watch SAM.gov, you're seeing opportunities last.\n\nPursuitAI pulls agency procurement forecasts from DHS APFS and 20 more federal agencies — HHS, DOE, DOT, NASA, EPA, HUD, State, USACE — plus GSA eBuy RFQs, into one searchable, scored feed.\n\nFilter by agency, set-aside, notice type, deadline, and place of performance.",
+      "body": "Auto-import from SAM.gov, DHS APFS, DOE, NASA, EPA, HUD, State and USACE — plus GSA eBuy RFQs. Nightly ingest keeps them fresh; the rest load as agencies publish.",
+      "hook_x": "SAM.gov is where opportunities END up. Agency forecasts are where they START. PursuitAI merges SAM.gov + 21 agency forecast systems + GSA eBuy into one scored feed — refreshed automatically every night.",
+      "hook_ig": "If you only watch SAM.gov, you're seeing opportunities last.\n\nPursuitAI pulls agency procurement forecasts from DHS APFS and 20 more federal agencies — DOE, NASA, EPA, HUD, State, USACE, Justice, Education — plus GSA eBuy RFQs, into one searchable, scored feed.\n\nFilter by agency, set-aside, notice type, deadline, and place of performance.",
       "stat": "22 sources · one scored feed",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/services/agency_forecast_ingest/acquisition_gateway.py:1-13",
+        "source_ref": "apps/backend/app/main.py:326-341 (_AUTO_FETCH_AGENCY_SCHEDULE: doe/state/nasa/doj/epa/doed/hud/ssa/usace/sec), :348 (CronTrigger(hour, minute) -- NO day_of_week, so nightly); apps/backend/app/services/agency_forecast_ingest/__init__.py (_IMPORTERS, 21 keys; +DHS APFS = 22 systems)",
         "verified_on": "2026-07-29",
-        "note": "Independent audit (2026-07-29). Two defects. (1) 'Weekly' is wrong: main.py's agency ingests use CronTrigger(hour, minute) with NO day_of_week, so they run NIGHTLY. The job ids still read '<agency>_weekly_ingest' and a nearby comment still says '07:00-07:30 Monday' — legacy names that read as evidence. (2) Only 10 of the 21 importers are on the nightly auto-fetch (doe, state, nasa, doj, epa, doed, hud, ssa, usace, sec) + DHS APFS; the rest are manual upload — and the copy NAMES HHS and DOT, which are not automated."
+        "note": "Two defects, both fixed. (1) 'Weekly' was wrong -- the trigger carries no day_of_week, so the ingests run NIGHTLY. The job ids still read '<agency>_weekly_ingest' and a nearby comment still says '07:00-07:30 Monday'; those legacy names are what the first pass read as evidence. Correcting it improves the pitch. (2) The copy named HHS and DOT beside 'auto-import', but only 10 of the 21 importers are on the nightly fetch and neither is among them -- both are upload-only. Replaced with agencies that ARE auto-fetched. The 21/22 counts were always right."
       },
       "icon": "radar"
     },
@@ -296,18 +296,18 @@
       "id": "solicitation-analysis",
       "feature": "Solicitation Analysis & Q&A Extractor",
       "headline": "RFP packet in. Compliance matrix out.",
-      "body": "Upload the PDF cover + XLSX pricing template + DOCX amendments — get a structured compliance matrix, evaluation criteria, key personnel, contract terms, and Q&A pairs in one pass.",
-      "hook_x": "Reading a 200-page RFP packet by hand is how requirements get missed. Upload the whole packet — PDF, XLSX, DOCX — and PursuitAI returns the compliance matrix, eval criteria, key personnel, and Q&A pairs in one pass.",
-      "hook_ig": "Every lost proposal has one missed requirement in it somewhere.\n\nUpload an RFP, RFQ, or RFI packet — PDF cover, XLSX pricing template, DOCX amendments — and PursuitAI returns a structured compliance matrix, evaluation criteria, key personnel requirements, contract terms, and Q&A pairs. One pass.\n\nThen draft against it, section by section.",
+      "body": "Upload the whole packet — PDF, XLSX, DOCX — and get a compliance matrix, evaluation criteria, key personnel and deliverables in one pass. Q&A extracts separately.",
+      "hook_x": "Reading a 200-page RFP packet by hand is how requirements get missed. Upload the whole packet — PDF, XLSX, DOCX — and PursuitAI returns the compliance matrix, eval criteria, key personnel and deliverables in one pass.",
+      "hook_ig": "Every lost proposal has one missed requirement in it somewhere.\n\nUpload an RFP, RFQ, or RFI packet — PDF cover, XLSX pricing template, DOCX amendments — and PursuitAI returns a structured compliance matrix, evaluation criteria, key personnel requirements, deliverables and risks. One pass. A Q&A packet extracts on its own pass.\n\nThen draft against it, section by section.",
       "stat": "Multi-file packet → one compliance matrix",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/api/proposals/compliance_generate.py:204-250",
+        "source_ref": "apps/backend/app/api/proposals/compliance_generate.py (forced tool_use schema: requirements / requirements_matrix / evaluation_criteria / key_personnel_required / deliverables / risks -- no Q&A field); apps/backend/app/api/proposals/extract_qa.py:19 (POST /qa-extract/{opportunity_id}, a separate Claude call, 2 credits)",
         "verified_on": "2026-07-29",
-        "note": "Independent audit (2026-07-29). 'Q&A pairs' is not part of the one pass. compliance_generate.py's forced tool_use schema returns requirements / requirements_matrix / evaluation_criteria / key_personnel_required / deliverables / risks — no Q&A field. Q&A is a separate endpoint (extract_qa.py:19 POST /qa-extract/{opportunity_id}), a distinct Claude call costing 2 credits. Everything else in the sentence does come in one pass."
+        "note": "'Q&A pairs ... in one pass' bundled a separate endpoint into the compliance extraction. Everything else in the sentence does come back in the single forced tool_use call; Q&A is its own pass and its own charge. Named as a separate step rather than deleted -- it is still a feature. The first pass's source_ref cited the accepted file types and never the schema's field list."
       },
       "icon": "file-text"
     },
@@ -372,16 +372,16 @@
       "headline": "Résumé in. Proposal-ready write-up out.",
       "body": "A tailored bio plus a requirement→evidence qualifications matrix — every solicitation requirement marked meets, partial, or gap, with the résumé line that proves it.",
       "hook_x": "Key personnel volumes fail on unproven claims. PursuitAI maps every solicitation requirement to the exact résumé line that proves it — meets / partial / gap — and drafts the bio. Grounded strictly in the résumé, never invented.",
-      "hook_ig": "Evaluators don't grade résumés. They grade evidence.\n\nThe Key-Personnel Deep-Dive turns a résumé into a tailored bio plus a requirement→evidence matrix: every solicitation requirement marked meets, partial, or gap — with the résumé line that proves it, and an honest list of gaps to shore up.\n\nSave to a reusable library. Export a combined volume to Word.",
+      "hook_ig": "Evaluators don't grade résumés. They grade evidence.\n\nThe Key-Personnel Deep-Dive turns a résumé into a tailored bio plus a requirement→evidence matrix: every solicitation requirement marked meets, partial, or gap — with the résumé line that proves it, and an honest list of gaps to shore up.\n\nSave to a reusable library. Export a candidate's write-up to Word, ready to drop into your Key Personnel volume.",
       "stat": "Requirement→evidence matrix, zero invention",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/api/proposals/resume_deep_dive.py:12-21",
+        "source_ref": "apps/backend/app/api/proposals/resume_deep_dive_export.py:46-60 (selects a SINGLE AIOutput by opportunity+company+output_type, renders one candidate_name)",
         "verified_on": "2026-07-29",
-        "note": "Independent audit (2026-07-29). 'Export a combined volume' is wrong. resume_deep_dive_export.py:46 selects a SINGLE AIOutput (opportunity+company+output_type) and renders one candidate_name; the deep-dive is overwritten per type, so two candidates cannot coexist to be combined. The matrix, the never-invent prompt constraint and save-to-library are all real."
+        "note": "'Export a combined volume to Word' was wrong: the export renders ONE candidate, and because the deep-dive is overwritten per type two candidates cannot coexist to be combined. Now describes a single candidate write-up to drop into a Key Personnel volume. The matrix, the meets/partial/gap statuses and the never-invent prompt constraint were always real -- which is what the first pass's source_ref checked, while the export clause went unexamined."
       },
       "icon": "clipboard-check"
     },
@@ -389,18 +389,18 @@
       "id": "secure-docs",
       "feature": "Secure File Storage",
       "headline": "Encrypted per file. Bound to your org.",
-      "body": "NDAs, teaming agreements, proposal drafts — each file encrypted before storage with its own key, and the ciphertext cryptographically bound to your organization. Platform staff see metadata, never contents. Full access audit log.",
-      "hook_x": "Where do your teaming agreements and proposal drafts live right now? PursuitAI's vault encrypts every file with its own key and binds the ciphertext to your org — platform staff see metadata, never contents — with role-gated downloads and a full audit log.",
-      "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document before it's stored — each with its own key, and the ciphertext cryptographically bound to your organization, so a file encrypted for one tenant can't be unwrapped for another. Platform staff can see that a file exists, never what's inside.\n\nIn-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
+      "body": "NDAs, teaming agreements, proposal drafts — each file encrypted before storage with its own key, and the ciphertext cryptographically bound to your organization. No admin screen can open a file: the download and preview endpoints do not exist on that surface. Full access audit log.",
+      "hook_x": "Where do your teaming agreements and proposal drafts live right now? PursuitAI's vault encrypts every file with its own key and binds the ciphertext to your org. The admin surface has no download or preview endpoint at all — with role-gated access and a full audit log.",
+      "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document before it's stored — each with its own key, and the ciphertext cryptographically bound to your organization, so a file encrypted for one tenant can't be unwrapped for another. The super-admin surface is metadata-only by construction — the download and preview endpoints simply do not exist on it.\n\nIn-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
       "stat": "Per-file keys, tenant-bound + audit log",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/services/file_storage.py:1-22 (envelope encryption, per-file data key, org_id as EncryptionContext + AES-GCM AAD); apps/backend/app/api/files.py:10-22,69,164 (role gates, no presigned URLs, FileAccessLog)",
+        "source_ref": "apps/backend/app/api/admin_files.py:1-8 (metadata-only by construction: 'download/preview endpoints deliberately DO NOT EXIST on this router (absence, not 403)... wrapped_dek/nonce are never selected into a response'); apps/backend/app/services/file_storage.py:103-116 (per-file data key, org_id as EncryptionContext), :270 (org_id as AES-GCM AAD); apps/backend/app/api/files.py:69,164 (role-gated download, FileAccessLog on every access)",
         "verified_on": "2026-07-29",
-        "note": "Independent audit (2026-07-29). 'Platform staff see metadata, never contents' is not a capability claim we can make. The crypto is real (per-file DEK, org_id as EncryptionContext + AES-GCM AAD, no admin download/preview route — admin_files.py never selects wrapped_dek/nonce) but it is ONE shared KMS CMK (file_storage.py:64 self.kms_key_id). An operator with AWS access to that CMK plus S3 plus the DB can decrypt out-of-band, so 'never' overstates it at the layer a security reviewer cares about. Decisive: pursuit-ai REMOVED this exact sentence from its own landing copy in #1975 (50e137c6) — I preserved it while rewriting the adjacent 'your own key' clause."
+        "note": "Now claims the APPLICATION layer, which is the strong and checkable claim, and makes none about the operator layer. The previous wording -- 'platform staff see metadata, never contents' -- reads as a capability guarantee, and it is not one: file_storage.py:64 is ONE shared KMS CMK, so an operator with AWS access to it plus S3 plus the DB can decrypt out-of-band. pursuit-ai had already removed that exact sentence from its own landing copy in #1975 (50e137c6); I preserved it in PR #28 while rewriting the adjacent 'your own key' clause, and an independent audit caught it. NB apps/web/src/features/files/components/FilesTab.js:21 still carries the old sentence in-product -- a pursuit-ai defect, reported separately."
       },
       "icon": "shield-check"
     },
@@ -465,9 +465,9 @@
       "id": "mobile-app",
       "feature": "iOS, iPad & Android Apps",
       "headline": "Capture doesn't stop at your desk.",
-      "body": "Get an RFP in Mail or Slack? Share → PursuitAI and the right Claude analyzer fires automatically. Generate outlines, share past performance, biometric unlock.",
+      "body": "Get an RFP in Mail or Slack? Share → PursuitAI, pick the pursuit, and the right Claude analyzer runs on it — no separate Analyze step. Generate outlines, share past performance, biometric unlock.",
       "hook_x": "An RFP lands in your inbox at the airport. Tap Share → PursuitAI — the compliance matrix is waiting when you land. Native iOS, iPad & Android apps with biometric unlock. GovCon capture, pocket-sized.",
-      "hook_ig": "The RFP doesn't wait for you to get back to your desk.\n\nWith PursuitAI's native iOS, iPad & Android apps, you tap Share on any document in Mail, Slack, or Files — and the right analyzer fires automatically: compliance matrix for RFPs, Q&A extractor for Q&A packets.\n\nGenerate outlines, share your capability statement from the share sheet, unlock with Face ID.",
+      "hook_ig": "The RFP doesn't wait for you to get back to your desk.\n\nWith PursuitAI's native iOS, iPad & Android apps, you tap Share on any document in Mail, Slack, or Files — pick the pursuit, and the right analyzer runs on it: compliance matrix for RFPs, Q&A extractor for Q&A packets.\n\nGenerate outlines, share your capability statement from the share sheet, unlock with Face ID.",
       "stat": "Share-sheet → instant RFP analysis",
       "page": "/",
       "media": "card",
@@ -476,7 +476,7 @@
         "source_type": "code",
         "source_ref": "apps/backend/app/api/correspondence.py:140-143",
         "verified_on": "2026-07-28",
-        "note": "mobile_share_extension is a first-class correspondence source; analyzer_required drives the downstream extractor automatically."
+        "note": "mobile_share_extension is a first-class correspondence source; analyzer_required drives the downstream extractor automatically. AMBER (2026-07-29 audit): 'fires automatically' glossed a step. Routing does auto-fire with no separate Analyze tap, but the share flow needs the user to pick the opportunity and confirm the doc type first, and the chain is best-effort. Reworded to name the pick."
       },
       "icon": "smartphone"
     }
