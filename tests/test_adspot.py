@@ -1,6 +1,7 @@
 """Animated ads — icons, narration, and the fifth format slot."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -183,9 +184,16 @@ def test_supersampling_is_on():
 
 # ---------- the Slack review needs an image, not a video ----------
 
-def test_video_formats_get_a_poster_still(tmp_path, cal):
+def test_video_poster_is_written_beside_the_clip(tmp_path, cal):
     """Slack image blocks reject a non-image URL, which kills the whole
-    review notification and turns the approval gate into a silent stall."""
+    review notification and turns the approval gate into a silent stall.
+
+    Name carries "video" deliberately: ffmpeg is quarantined to the `video`
+    job in test.yml, which selects on `-k video`. A render test that the
+    quarantined job does not select would skip in BOTH jobs and never run.
+    """
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not available")
     out = str(tmp_path / "spot.mp4")
     adspot.make_ad(cal["topics"][0], cal["brand"], out, size=(320, 320),
                    scenes=[("cta", 0.5)])

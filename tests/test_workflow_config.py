@@ -97,11 +97,16 @@ def test_the_voice_model_is_cached():
     assert "actions/cache" in daily and "huggingface" in daily
 
 
-def _daily():
-    import yaml
+# The workflow is read as text, like everything else here — a YAML parser
+# would be a dependency the runtime never needs, carried solely for tests.
+# The format input is written in flow style on one line so this stays a
+# simple match rather than a hand-rolled block parser.
+_FORMAT_OPTIONS = re.compile(r"^\s*options:\s*\[(.+)\]\s*$", re.M)
+
+
+def _daily_text():
     with open(os.path.join(ROOT, ".github", "workflows", "daily.yml")) as f:
-        # PyYAML resolves the bare key `on:` to the boolean True.
-        return yaml.safe_load(f)[True]
+        return f.read()
 
 
 def test_dispatch_can_select_every_format():
@@ -111,7 +116,9 @@ def test_dispatch_can_select_every_format():
     import sys
     sys.path.insert(0, os.path.join(ROOT, "engine"))
     import run
-    options = _daily()["workflow_dispatch"]["inputs"]["format"]["options"]
+    m = _FORMAT_OPTIONS.search(_daily_text())
+    assert m, "format input is not a one-line flow-style options list"
+    options = [o.strip().strip('"\'') for o in m.group(1).split(",")]
     for fmt in set(run.FORMATS):
         assert fmt in options, f"{fmt} is not dispatchable"
 
@@ -119,6 +126,54 @@ def test_dispatch_can_select_every_format():
 def test_dispatch_format_defaults_to_the_rotation():
     """A sticky override would silently freeze the format for every later
     run, including the scheduled ones."""
-    fmt = _daily()["workflow_dispatch"]["inputs"]["format"]
-    assert fmt["default"] == ""
-    assert fmt["required"] is False
+    text = _daily_text()
+    block = text[text.index("      format:"):text.index("permissions:")]
+    assert re.search(r'^\s*default:\s*""\s*$', block, re.M), block
+    assert re.search(r"^\s*required:\s*false\s*$", block, re.M), block
+
+
+def _calls_which_ffmpeg(node):
+    import ast
+    for sub in ast.walk(node):
+        if not isinstance(sub, ast.Call) or not sub.args:
+            continue
+        func = sub.func
+        target = func.attr if isinstance(func, ast.Attribute) else getattr(
+            func, "id", None)
+        arg = sub.args[0]
+        if (target == "which" and isinstance(arg, ast.Constant)
+                and arg.value == "ffmpeg"):
+            return True
+    return False
+
+
+def test_every_ffmpeg_test_is_selected_by_the_quarantined_job():
+    """ffmpeg lives only in the `video` job, which selects on `-k video`.
+
+    A render test that skips without ffmpeg AND is not matched by `-k video`
+    skips in the main job and is never collected by the video job — so it
+    passes everywhere by never running. That is how the poster render test
+    first landed, and a green suite said nothing about it.
+    """
+    import ast
+    here = os.path.dirname(__file__)
+    offenders = []
+    for name in sorted(os.listdir(here)):
+        if not name.startswith("test_") or not name.endswith(".py"):
+            continue
+        source = open(os.path.join(here, name)).read()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+            # The skip idiom is the signal. A test that needs ffmpeg and
+            # does NOT guard fails loudly in CI, which is fine; the silent
+            # one is the test that skips itself out of both jobs.
+            # Matched on the AST, not the text, so this check does not
+            # match its own description of what it looks for.
+            if _calls_which_ffmpeg(node) and "video" not in node.name:
+                offenders.append(f"{name}::{node.name}")
+    assert not offenders, (
+        "these tests need ffmpeg but `-k video` will not select them, so "
+        f"they never run in CI: {offenders}")
