@@ -1,6 +1,7 @@
 """Animated ads — icons, narration, and the fifth format slot."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -179,3 +180,122 @@ def test_supersampling_is_on():
     """PIL shape primitives have no antialiasing; without this the icons
     and pill outlines render jagged."""
     assert adspot.SS >= 2
+
+
+# ---------- the Slack review needs an image, not a video ----------
+
+def test_video_poster_is_written_beside_the_clip(tmp_path, cal):
+    """Slack image blocks reject a non-image URL, which kills the whole
+    review notification and turns the approval gate into a silent stall.
+
+    Name carries "video" deliberately: ffmpeg is quarantined to the `video`
+    job in test.yml, which selects on `-k video`. A render test that the
+    quarantined job does not select would skip in BOTH jobs and never run.
+    """
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not available")
+    out = str(tmp_path / "spot.mp4")
+    adspot.make_ad(cal["topics"][0], cal["brand"], out, size=(320, 320),
+                   scenes=[("cta", 0.5)])
+    poster = os.path.splitext(out)[0] + "_poster.png"
+    assert os.path.exists(poster), "no poster written beside the clip"
+
+
+def test_poster_frame_is_not_the_cta():
+    """Every spot ends on the same CTA hold, so a still from the end is a
+    picture of nothing — the reviewer cannot tell which post it is."""
+    at = adspot.poster_time(adspot.SCENES)
+    elapsed = 0.0
+    for name, secs in adspot.SCENES:
+        if elapsed <= at < elapsed + secs:
+            assert name != "cta", f"poster lands on the {name} scene"
+            break
+        elapsed += secs
+    else:
+        raise AssertionError(f"poster time {at} is outside the clip")
+
+
+def test_poster_frame_is_past_the_entrance_animation():
+    """A frame from the first moments of a scene is a motion-blurred
+    half-transition."""
+    at = adspot.poster_time(adspot.SCENES)
+    elapsed = 0.0
+    for name, secs in adspot.SCENES:
+        if elapsed <= at < elapsed + secs:
+            assert at - elapsed > secs * 0.3
+            break
+        elapsed += secs
+
+
+def test_poster_time_handles_a_cta_only_clip():
+    """Degenerate scene lists must still yield a timestamp inside the clip."""
+    at = adspot.poster_time([("cta", 3.0)])
+    assert 0 <= at < 3.0
+
+
+def test_poster_for_leaves_an_image_alone():
+    import media
+    assert media.poster_for("assets/cards/x_ig.png") == "assets/cards/x_ig.png"
+    assert media.poster_for("assets/video/x_ad.mp4") == \
+        "assets/video/x_ad_poster.png"
+
+
+def test_notify_pending_swaps_a_video_for_its_poster(tmp_path, monkeypatch):
+    """The review must not be handed an .mp4 URL."""
+    import notify
+    import run as engine_run
+    sent = {}
+
+    class Resp:
+        status_code = 200
+
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setenv("NOTIFY_WEBHOOK_URL", "https://hooks.slack.test/x")
+    monkeypatch.setattr(notify.requests, "post",
+                        lambda url, json=None, timeout=None: (
+                            sent.update(json=json), Resp())[1])
+    monkeypatch.setattr(engine_run, "ROOT", str(tmp_path))
+
+    media_dir = tmp_path / "assets" / "video"
+    media_dir.mkdir(parents=True)
+    (media_dir / "t_ad_poster.png").write_bytes(b"x")
+    pending = {"topic": "t", "format": "ad", "text_x": "a",
+               "text_x_reply": "b", "text_ig": "c",
+               "media_x": "assets/video/t_ad.mp4"}
+    monkeypatch.setattr(engine_run, "load_json", lambda p, d: pending)
+    engine_run.notify_pending()
+
+    urls = [b.get("image_url") for b in sent["json"]["blocks"]
+            if b.get("type") == "image"]
+    assert urls, "no image block in the review"
+    assert all(u.endswith(".png") for u in urls), urls
+
+
+def test_a_missing_poster_omits_the_image_rather_than_breaking(tmp_path, monkeypatch):
+    """No poster is a degraded review; a rejected block is no review."""
+    import notify
+    import run as engine_run
+    sent = {}
+
+    class Resp:
+        status_code = 200
+
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setenv("NOTIFY_WEBHOOK_URL", "https://hooks.slack.test/x")
+    monkeypatch.setattr(notify.requests, "post",
+                        lambda url, json=None, timeout=None: (
+                            sent.update(json=json), Resp())[1])
+    monkeypatch.setattr(engine_run, "ROOT", str(tmp_path))
+    monkeypatch.setattr(engine_run, "load_json", lambda p, d: {
+        "topic": "t", "format": "ad", "text_x": "a", "text_x_reply": "b",
+        "text_ig": "c", "media_x": "assets/video/gone.mp4"})
+    engine_run.notify_pending()
+    assert not [b for b in sent["json"]["blocks"] if b.get("type") == "image"]
+    assert sent["json"]["text"], "still sends the review"
+
+
+def test_format_override_exists():
+    """A manual run needs to be able to preview a format without waiting
+    for the rotation to reach it."""
+    import inspect
+    assert "force_format" in inspect.signature(run.prepare).parameters

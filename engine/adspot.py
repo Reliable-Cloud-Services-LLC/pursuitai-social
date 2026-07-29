@@ -269,7 +269,27 @@ def make_ad(topic, brand_cfg, out_path, size=(1080, 1080), scenes=None,
     cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
             "-crf", "20", "-movflags", "+faststart", out_path]
     subprocess.run(cmd, check=True, capture_output=True)
+    import media
+    media.write_poster(out_path, at=poster_time(scenes))
     return out_path
+
+
+def poster_time(scenes):
+    """Timestamp of the still that best represents the spot.
+
+    The midpoint of the longest scene that is not the CTA. The CTA hold is
+    byte-identical across every topic, so a frame from it tells a reviewer
+    nothing about what they are approving; a midpoint is past the entrance
+    animation, so the composition is settled rather than motion-blurred.
+    """
+    body = [(n, s) for n, s in scenes if n != "cta"] or list(scenes)
+    target = max(body, key=lambda x: x[1])[0]
+    elapsed = 0.0
+    for name, secs in scenes:
+        if name == target:
+            return elapsed + secs / 2
+        elapsed += secs
+    return elapsed / 2
 
 
 def _wav_seconds(path):
