@@ -43,7 +43,8 @@
         "source_ref": "apps/backend/app/services/fit_scoring.py:75-81",
         "verified_on": "2026-07-28",
         "note": "Copy names the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience; vehicle_eligibility exists only in FORECAST_FIT_WEIGHTS, a different rubric. landing/page.js:294 repeats the same error."
-      }
+      },
+      "icon": "gauge"
     },
     {
       "id": "recompete-radar",
@@ -61,7 +62,8 @@
         "source_ref": "apps/backend/app/api/recompete.py:288",
         "verified_on": "2026-07-28",
         "note": "Copy says 6-36 months. months_ahead is Query(18, ge=3, le=36) — the range is 3-36."
-      }
+      },
+      "icon": "radar"
     },
     {
       "id": "fifty-percent-rule",
@@ -79,7 +81,8 @@
         "source_url": "https://www.acquisition.gov/far/52.219-14",
         "verified_on": "2026-07-28",
         "note": "50% for services and supplies; similarly-situated entities excluded. The clause also sets 85%/75% construction limits the '50% Rule' shorthand elides."
-      }
+      },
+      "icon": "shield-check"
     },
     {
       "id": "subaward-intel",
@@ -97,7 +100,8 @@
         "source_ref": "apps/backend/app/services/sub_awards.py:179-197",
         "verified_on": "2026-07-28",
         "note": "Aggregates real SubAward.amount by prime with small-business and 8a/sdvosb/wosb/hubzone flags, so 'ranked by real sub-award dollars, filterable by set-aside' holds. Teaming email grounded in past performance via services/teaming_email.py."
-      }
+      },
+      "icon": "users"
     },
     {
       "id": "price-to-win",
@@ -115,7 +119,8 @@
         "source_ref": "apps/backend/app/services/bls_oews.py:62",
         "verified_on": "2026-07-28",
         "note": "SOC_CROSSWALK contains exactly 30 occupations."
-      }
+      },
+      "icon": "trending-up"
     },
     {
       "id": "proposal-drafting",
@@ -133,13 +138,14 @@
         "source_ref": "apps/backend/app/api/proposals/draft.py:143-153",
         "verified_on": "2026-07-28",
         "note": "Section-by-section drafting keyed by SECTION KEY, capped at 12 sections. Compliance matrix, outline, and capture plan are sibling endpoints in the same package."
-      }
+      },
+      "icon": "file-text"
     },
     {
       "id": "8a-copilot",
       "feature": "8(a) Program Lifecycle Copilot",
       "headline": "Know exactly where you stand in your 9-year term.",
-      "body": "Developmental vs transitional stage badge, term progress clock, next SBA annual-review date, and stage-aware alerts — the 8(a) lifecycle no competitor tracks.",
+      "body": "Developmental vs transitional stage badge, term progress clock, next SBA annual-review date, and stage-aware alerts across the full 9-year term.",
       "hook_x": "Your 8(a) term is a 9-year clock — and most firms don't plan the back half. PursuitAI tracks your stage, your next SBA review, and alerts you to line up backup set-asides before time runs out.",
       "hook_ig": "The 8(a) program is a 9-year window. Are you managing it like one?\n\nThe 8(a) Lifecycle Copilot shows your developmental vs transitional stage, term progress, eligibility time remaining, and your next SBA annual-review date — with alerts that get louder as graduation approaches.\n\nUnder 2 years left? It nudges you to line up backup set-asides. That's planning, not panic.",
       "stat": "Stage-aware 8(a) term tracking",
@@ -151,7 +157,8 @@
         "source_ref": "apps/backend/app/services/eight_a_lifecycle.py:26-27",
         "verified_on": "2026-07-28",
         "note": "PROGRAM_YEARS=9, DEVELOPMENTAL_YEARS=4, transitional years 5-9."
-      }
+      },
+      "icon": "clock"
     },
     {
       "id": "sole-source",
@@ -169,7 +176,8 @@
         "source_url": "https://www.acquisition.gov/far/19.805-1",
         "verified_on": "2026-07-28",
         "note": "Copy says $4.5M services / $7.0M manufacturing. FAR 19.805-1(a)(2) is $5.5M / $8.5M. The product carries the same stale figures (eight_a_sole_source.py:27-28), so this is a code defect too."
-      }
+      },
+      "icon": "file-text"
     },
     {
       "id": "teaming",
@@ -185,7 +193,8 @@
         "status": "UNVERIFIED",
         "verified_on": "2026-07-28",
         "note": "SAM exclusion screening IS verified (teaming_partner_detail.py:405-421 -> sam_exclusions.check_exclusions). The two NUMBERS are not: '14 GWACs' matches no counting rule in vehicle_keys.py, and '9,000+ holders' is a data volume needing a production query."
-      }
+      },
+      "icon": "users"
     },
     {
       "id": "get-found",
@@ -203,7 +212,8 @@
         "source_ref": "apps/backend/app/models/_seg2_opportunities.py:544-548",
         "verified_on": "2026-07-28",
         "note": "listed_as_subcontractor is an explicit opt-in, default False — 'no firm is exposed without consent'. state/city columns support discovery by state."
-      }
+      },
+      "icon": "search"
     },
     {
       "id": "mpjv",
@@ -221,7 +231,8 @@
         "source_url": "https://www.sba.gov/federal-contracting/contracting-assistance-programs/sba-mentor-protege-program",
         "verified_on": "2026-07-28",
         "note": "SBA: the JV may pursue any set-aside the protege qualifies for. The >=40% workshare floor is 13 CFR 125.8(c), not 125.9 as the copy implies (see limitations_constants.py:38)."
-      }
+      },
+      "icon": "users"
     },
     {
       "id": "forecasts",
@@ -239,7 +250,8 @@
         "source_ref": "apps/backend/app/services/agency_forecast_ingest/acquisition_gateway.py:1-13",
         "verified_on": "2026-07-28",
         "note": "14 named agency modules + acquisition_gateway (GSA, DOL, VA, USDA, NSF, NRC, DOI) = 21 agencies. Confirm the counting rule behind '22 sources'."
-      }
+      },
+      "icon": "radar"
     },
     {
       "id": "awards-tracker",
@@ -257,7 +269,8 @@
         "source_ref": "apps/backend/app/services/contract_award_matches.py:95-103",
         "verified_on": "2026-07-28",
         "note": "SCORE table has exactly 7 signals."
-      }
+      },
+      "icon": "trophy"
     },
     {
       "id": "pipeline",
@@ -275,7 +288,8 @@
         "source_ref": "apps/backend/app/models/_seg2_opportunities.py:345-354",
         "verified_on": "2026-07-28",
         "note": "Stage names now match the PipelineStage enum. The previous copy named 'Qualified' and 'Bidding', neither of which exists, and omitted four real stages including the Go/No-Go gate. The no-bid lock is app/services/no_bid.py."
-      }
+      },
+      "icon": "layout-list"
     },
     {
       "id": "solicitation-analysis",
@@ -293,7 +307,8 @@
         "source_ref": "apps/backend/app/api/proposals/compliance_generate.py:204-250",
         "verified_on": "2026-07-28",
         "note": "Accepts pdf/docx/xlsx in one upload and extracts to a structured matrix in a single pass."
-      }
+      },
+      "icon": "file-text"
     },
     {
       "id": "capability-statement",
@@ -309,7 +324,8 @@
         "status": "UNVERIFIABLE",
         "verified_on": "2026-07-28",
         "note": "'8 seconds' is a performance claim with no benchmark behind it."
-      }
+      },
+      "icon": "file-text"
     },
     {
       "id": "agency-affinity",
@@ -327,7 +343,8 @@
         "source_ref": "apps/backend/app/services/agency_affinity.py:96-107",
         "verified_on": "2026-07-28",
         "note": "Clamped 0-100, pure arithmetic, no model call."
-      }
+      },
+      "icon": "gauge"
     },
     {
       "id": "pricing-boe",
@@ -345,7 +362,8 @@
         "source_ref": "apps/backend/app/services/boe.py:144-148",
         "verified_on": "2026-07-28",
         "note": "_CEILING_SOURCE_LABEL validates against solicitation, pipeline_value and sam_estimate. The previous copy claimed GSA CALC ceilings; gsa_calc is used in api/price_to_win.py and api/gsa_calc.py but nowhere in the BOE path. The rate x hours x escalation x wrap x ODC math is api/proposals/pricing_boe.py:190."
-      }
+      },
+      "icon": "trending-up"
     },
     {
       "id": "resume-deepdive",
@@ -363,7 +381,8 @@
         "source_ref": "apps/backend/app/api/proposals/resume_deep_dive.py:12-21",
         "verified_on": "2026-07-28",
         "note": "Emits a requirement->evidence matrix with status meets|partial|gap plus a gap action list; evidence is quoted resume lines."
-      }
+      },
+      "icon": "clipboard-check"
     },
     {
       "id": "secure-docs",
@@ -381,7 +400,8 @@
         "source_ref": "apps/backend/app/services/file_storage.py:1-16",
         "verified_on": "2026-07-28",
         "note": "Copy says 'your organization's own key - not ours'. Implementation is ONE KMS CMK with per-FILE data keys and org_id as EncryptionContext/AAD. No per-org CMK, and the key is ours. Security claim; must not ship."
-      }
+      },
+      "icon": "shield-check"
     },
     {
       "id": "exec-analytics",
@@ -399,7 +419,8 @@
         "source_ref": "apps/backend/app/api/dashboard.py:205-227",
         "verified_on": "2026-07-28",
         "note": "coverage_ratio = probability-weighted pipeline / goal; win_rate from won/submitted; at-risk pursuits and win-loss cohorts at :257-258."
-      }
+      },
+      "icon": "trending-up"
     },
     {
       "id": "post-award",
@@ -417,7 +438,8 @@
         "source_ref": "apps/backend/app/models/_seg8_post_award.py:187-192",
         "verified_on": "2026-07-28",
         "note": "CparsAssessment carries exactly six factor ratings: quality, schedule, cost_control, management, small_business, regulatory."
-      }
+      },
+      "icon": "clipboard-check"
     },
     {
       "id": "pricing-plans",
@@ -435,7 +457,8 @@
         "source_ref": "apps/web/src/features/billing/components/BillingTab.js:275",
         "verified_on": "2026-07-28",
         "note": "$249/mo agrees across billing UI, terms page, and landing. GovWin price comparison removed."
-      }
+      },
+      "icon": "trending-up"
     },
     {
       "id": "mobile-app",
@@ -453,7 +476,8 @@
         "source_ref": "apps/backend/app/api/correspondence.py:140-143",
         "verified_on": "2026-07-28",
         "note": "mobile_share_extension is a first-class correspondence source; analyzer_required drives the downstream extractor automatically."
-      }
+      },
+      "icon": "smartphone"
     }
   ]
 }

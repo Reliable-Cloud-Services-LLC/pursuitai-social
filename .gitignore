@@ -13,3 +13,7 @@ assets/video/
 assets/preview/
 assets/linkedin/
 assets/instagram/
+
+# assets/icons/ IS committed: it is a source asset (rasterised once by
+# scripts/build_icons.py), not generated media. Committing it keeps the
+# engine free of any SVG/cairo runtime dependency.
