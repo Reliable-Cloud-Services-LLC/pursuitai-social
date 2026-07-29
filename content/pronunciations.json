@@ -29,31 +29,39 @@
     "before that script is ever synthesized."
   ],
   "reads_correctly": [
+    "ACTUALLY",
     "AI",
-    "SBA",
-    "JV",
-    "ODC",
-    "CDRL",
-    "MPA",
-    "BLS",
-    "CALC",
-    "FAR",
-    "CFR",
-    "PDF",
-    "XLSX",
-    "DOCX",
-    "NDA",
-    "NDAs",
-    "USA",
-    "SAM",
-    "DHS",
-    "DoD",
-    "YOUR",
+    "AI-drafted",
     "AND",
     "ANY",
-    "ACTUALLY",
+    "BLS",
+    "CALC",
+    "CDRL",
+    "CFR",
+    "CIO",
+    "DHS",
+    "DOCX",
+    "DoD",
+    "END",
+    "EPA",
+    "FAR",
+    "HUD",
+    "JV",
+    "MAS",
+    "MPA",
+    "NASA",
+    "NDA",
+    "NDAs",
     "NOT",
-    "AI-drafted"
+    "ODC",
+    "PDF",
+    "SAM",
+    "SBA",
+    "SP3",
+    "USA",
+    "USACE",
+    "XLSX",
+    "YOUR"
   ],
   "rules": [
     {
@@ -90,6 +98,26 @@
       "term": "\\bGovCon\\b",
       "say": "Guv-Con",
       "why": "'GUV-con', one compound word. Raw gives a hard-A 'GAHV KAHN' as two stressed words."
+    },
+    {
+      "term": "\\bSEWP\\s+VI\\b",
+      "say": "Sewp Six",
+      "why": "NASA SEWP is said 'soop'; raw spells out S-E-W-P and reads VI as 'vee-eye'."
+    },
+    {
+      "term": "\\bSEWP\\s+V\\b",
+      "say": "Sewp Five",
+      "why": "as SEWP VI; raw reads the roman numeral as the letter 'vee'."
+    },
+    {
+      "term": "\\bSEWP\\b",
+      "say": "Sewp",
+      "why": "'soop'. Raw gives S-E-W-P letter by letter. Numbered forms first."
+    },
+    {
+      "term": "\\bDOE\\b",
+      "say": "D O E",
+      "why": "Department of Energy. Raw phonemizes to dˈO — 'doe', the deer."
     },
     {
       "term": "\\bGAO\\b",

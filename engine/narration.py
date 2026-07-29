@@ -23,11 +23,27 @@ SPOKEN_URL = "pursuit A.I. dot net"
 MAX_WORDS = 60          # ~22 seconds at a natural pace
 
 
+# A period only ends a sentence when whitespace or the end of the string
+# follows it. Splitting on a bare "." truncates at the first abbreviation:
+# "Auto-import from SAM." (forecasts), "...against SAM." (teaming),
+# "...built-in FAR 19." (sole-source), "...13 CFR 125." (mpjv). All four
+# shipped as complete-sounding scripts that stopped mid-clause.
+#
+# Deliberately not splitting on ? or ! — several topics open with a
+# rhetorical question that belongs to the sentence after it, and treating
+# those as boundaries makes the script shorter, not more correct.
+_SENTENCE_END = re.compile(r"\.(?:\s|$)")
+
+
+def _first_sentence(text):
+    return _SENTENCE_END.split(text.strip(), 1)[0].strip().rstrip(".")
+
+
 def fallback(topic, brand):
     """Deterministic script from the topic's own fields. Always available."""
-    hook = topic["hook_x"].split(".")[0].strip() + "."
+    hook = _first_sentence(topic["hook_x"]) + "."
     body = re.sub(r"\s*—\s*", ", ", topic["body"])
-    body = body.split(".")[0].strip() + "."
+    body = _first_sentence(body) + "."
     return f"{hook} {body} Start a free trial at {SPOKEN_URL}."
 
 

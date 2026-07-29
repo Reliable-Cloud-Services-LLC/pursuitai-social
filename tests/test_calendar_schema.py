@@ -43,13 +43,40 @@ def test_status_is_from_the_enum(cal):
 # sole-source quotes a FAR dollar threshold (external) AND asserts we
 # implement a check against it (code). Splitting that into one or the
 # other would drop half the evidence, so it must carry both refs.
-SOURCE_TYPES = ("code", "external", "external+code")
+# "code+operator" is for a claim that code CANNOT confirm — a production
+# data volume. teaming's "8,000+ vehicle holders" is the case: the rosters
+# load from S3 CSVs, so no source read can count them and only an operator
+# query can. Recording it as plain "code" would be the exact failure an
+# independent audit found five times in this calendar — a source_ref that
+# proves the easy half of a sentence. A separate type forces the provenance
+# to be written down, and a test below forces it to say WHO measured WHAT
+# and WHEN, so the figure can be re-checked rather than trusted forever.
+SOURCE_TYPES = ("code", "external", "external+code", "code+operator")
 
 
 def _assert_code_ref(topic, verification):
     assert verification.get("source_ref"), f"{topic['id']} missing source_ref"
     assert ":" in verification["source_ref"], (
         f"{topic['id']} source_ref must be <path>:<line range>")
+
+
+def _assert_operator_source(topic, verification):
+    """An operator-reported figure must say what was measured and when.
+
+    A bare number with no provenance is unfalsifiable — nobody can tell a
+    year later whether it is stale, or where it came from.
+    """
+    src = verification.get("operator_source", "")
+    assert src, f"{topic['id']} claims operator evidence but records none"
+    assert re.search(r"\d{4}-\d{2}-\d{2}", src), (
+        f"{topic['id']} operator_source states no date — a production "
+        f"volume goes stale and nobody can tell when")
+    # Strip the date before looking for the measurement, or the date's own
+    # digits satisfy the check and a provenance line with no number passes.
+    without_date = re.sub(r"\d{4}-\d{2}-\d{2}", "", src)
+    assert re.search(r"\d", without_date), (
+        f"{topic['id']} operator_source states a date but no measured "
+        f"value")
 
 
 def _assert_external_ref(topic, verification):
@@ -68,6 +95,8 @@ def test_verified_topics_carry_evidence_and_a_date(cal):
             _assert_code_ref(t, v)
         if "external" in v["source_type"]:
             _assert_external_ref(t, v)
+        if "operator" in v["source_type"]:
+            _assert_operator_source(t, v)
         assert ISO_DATE.match(v.get("verified_on", "")), t["id"]
 
 
@@ -179,3 +208,15 @@ def test_the_engine_has_something_clean_to_post(cal):
     clean = [t["id"] for t in cal["topics"]
              if compliance.is_publishable(t) and not caption_violations(cal, t)]
     assert clean, "nothing can publish — the rotation would stall"
+
+
+def test_an_operator_figure_is_never_passed_off_as_code(cal):
+    """The failure this type exists to prevent: a production data volume
+    filed as a code reference. No source read can count rows in a table
+    seeded from S3, so citing a module for it proves nothing."""
+    for t in cal["topics"]:
+        v = t["verification"]
+        if v.get("operator_source") and v["status"] == "VERIFIED":
+            assert "operator" in v.get("source_type", ""), (
+                f"{t['id']} carries operator evidence but its source_type "
+                f"is {v.get('source_type')!r}")
