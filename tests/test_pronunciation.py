@@ -47,7 +47,7 @@ def test_lexicon_does_not_depend_on_a_sibling_checkout(monkeypatch, tmp_path):
     spoken = voice._spoken("PursuitAI scores NAICS for GovCon firms.")
     assert "Pursuit A.I." in spoken
     assert "nayks" in spoken
-    assert "Guv-Con" in spoken
+    assert "Guv Con" in spoken
 
 
 def test_voice_delegates_to_the_lexicon():
@@ -59,12 +59,17 @@ def test_voice_delegates_to_the_lexicon():
 # ---------- the reported defect ----------
 
 @pytest.mark.parametrize("raw,expected", [
-    ("GovCon", "Guv-Con"),
-    ("govcon", "Guv-Con"),
+    ("GovCon", "Guv Con"),
+    ("govcon", "Guv Con"),
     ("GovCons", "Guv Cons"),
-    ("the GovCon market", "the Guv-Con market"),
+    ("the GovCon market", "the Guv Con market"),
 ])
 def test_govcon_is_respelled(raw, expected):
+    """Two words, 'GUV CON' (ɡˈʌv kˈɑn) — chosen BY EAR from four
+    synthesized candidates on 2026-07-29. The first fix ('Guv-Con', one
+    compound) had the right vowel but put the stress on -CON, and the
+    operator heard it as wrong. Phoneme checks prove a rule changes the
+    sound; only listening proves it changes it to the right one."""
     assert expected in pronounce.spoken(raw)
 
 
