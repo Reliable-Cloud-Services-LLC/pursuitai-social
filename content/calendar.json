@@ -31,18 +31,18 @@
       "id": "fit-scoring",
       "feature": "AI Fit Scoring",
       "headline": "Stop guessing which bids fit.",
-      "body": "Claude AI scores every opportunity across 5 dimensions — NAICS match, set-aside eligibility, vehicle status, technical alignment, and competitive position — grounded in YOUR incumbency and win/loss history.",
-      "hook_x": "Most small GovCon firms chase the wrong bids. PursuitAI scores every opportunity across 5 dimensions — specific to YOUR firm, not a generic match %. Know your real fit before you spend a single capture dollar.",
-      "hook_ig": "Bid/no-bid shouldn't be a gut call.\n\nPursuitAI scores every SAM.gov opportunity across 5 dimensions — NAICS match, set-aside eligibility, vehicle holder status, technical alignment, and competitive position — grounded in your actual incumbency and win/loss history.\n\nEvery score comes with the evidence behind it.",
+      "body": "Claude AI scores the opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — grounded in YOUR incumbency and win/loss history.",
+      "hook_x": "Most small GovCon firms chase the wrong bids. PursuitAI scores your matching opportunities across 5 dimensions — specific to YOUR firm, not a generic match %. Know your real fit before you spend a single capture dollar.",
+      "hook_ig": "Bid/no-bid shouldn't be a gut call.\n\nPursuitAI scores the SAM.gov opportunities in your NAICS space across 5 dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, and competitive position — grounded in your actual incumbency and win/loss history.\n\nEvery score comes with the reasoning behind it.",
       "stat": "5-dimension scoring, tuned to your firm",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/services/fit_scoring.py:75-81",
-        "verified_on": "2026-07-28",
-        "note": "Copy names the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience; vehicle_eligibility exists only in FORECAST_FIT_WEIGHTS, a different rubric. landing/page.js:294 repeats the same error."
+        "source_ref": "apps/backend/app/services/fit_scoring.py:75-81 (DIRECT_FIT_WEIGHTS); apps/backend/app/services/ai_scorer.py:153-161 (the five prompt dimensions), :529,:566 (win/loss + sub-agency incumbency grounding); apps/backend/app/api/opportunities.py:656-670 (the auto-score cost cap)",
+        "verified_on": "2026-07-29",
+        "note": "Copy named the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience at 0.15; vehicle_eligibility belongs to FORECAST_FIT_WEIGHTS, a separate rubric. Tracing also surfaced a SECOND defect the original note missed: 'scores every opportunity' overstates the automatic pass, which is capped per org per ingest event and gated on the company's NAICS codes — the remainder are scored on demand. Both corrected here. pursuit-ai fixed the same two claims on its own surfaces in #1990/#1991 (on develop; NOT yet in prod, which still reports 2.114.0). 'Every score comes with the evidence behind it' softened to 'the reasoning behind it': reasoning is required in the response schema, but the fit_grounding block is explicitly best-effort."
       },
       "icon": "gauge"
     },
@@ -50,18 +50,18 @@
       "id": "recompete-radar",
       "feature": "Recompete Radar",
       "headline": "Start capture 12+ months before the RFP drops.",
-      "body": "Scan USASpending for contracts expiring in 6–36 months in your NAICS space. Spot the incumbent, see the award value, and get in early.",
-      "hook_x": "The winners of next year's contracts started capture this year. Recompete Radar scans USASpending for contracts expiring in 6–36 months in your NAICS — so you're building relationships before the RFP ever drops.",
-      "hook_ig": "By the time an RFP hits SAM.gov, the winner has usually been working it for a year.\n\nRecompete Radar scans USASpending for federal contracts expiring in 6–36 months in your NAICS space — filter by agency, spot the incumbent, and start capture while there's still time to shape the deal.\n\nZero AI credits. Pure signal.",
-      "stat": "6–36 month expiring-contract lookahead",
+      "body": "Scan USASpending for contracts expiring in the next 6 to 36 months in your NAICS space. Spot the incumbent, see the award value, and get in early.",
+      "hook_x": "The winners of next year's contracts started capture this year. Recompete Radar scans USASpending for contracts expiring in the next 6 to 36 months in your NAICS — so you're building relationships before the RFP ever drops.",
+      "hook_ig": "By the time an RFP hits SAM.gov, the winner has usually been working it for a year.\n\nRecompete Radar scans USASpending for federal contracts expiring in the next 6 to 36 months in your NAICS space — filter by agency, spot the incumbent, and start capture while there's still time to shape the deal.\n\nZero AI credits. Pure signal.",
+      "stat": "6–36 month recompete lookahead",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/api/recompete.py:288",
-        "verified_on": "2026-07-28",
-        "note": "Copy says 6-36 months. months_ahead is Query(18, ge=3, le=36) — the range is 3-36."
+        "source_ref": "apps/web/src/features/recompete/components/RecompeteTab.js:199-203 + apps/mobile/app/(app)/recompete.tsx:35 (MONTH_OPTIONS = [6, 12, 18, 24, 36]); apps/backend/app/api/recompete.py:158 (m_away <= months_ahead), :288 (no AI, no tier gate)",
+        "verified_on": "2026-07-29",
+        "note": "The previous MISMATCH note was WRONG. It read the API signature -- months_ahead: Query(18, ge=3, le=36) -- and concluded the range was 3-36. Both UIs offer exactly 6/12/18/24/36, so the user-facing range really is 6-36 and the copy's figures were always correct. The real inaccuracy was subtler: months_ahead is a lookahead CAP, not a band (m_away <= months_ahead), so 'expiring in 6-36 months' implies a floor that does not exist -- 'Next 6 months' includes a contract ending next month. Reworded to 'the next 6 to 36 months', matching the UI's own 'Next N months' labels and the KB's 'hard cap' wording. 'Zero AI credits' holds: the endpoint docstring is 'No AI calls, no tier gate -- pure data analysis over public USASpending records.'"
       },
       "icon": "radar"
     },
