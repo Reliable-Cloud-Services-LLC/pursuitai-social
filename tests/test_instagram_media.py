@@ -175,3 +175,27 @@ def test_the_image_route_is_unaffected_by_the_cover_field(monkeypatch):
     run._post_ig({"media_ig": "assets/cards/t_ig.jpg", "text_ig": "c",
                   "cover_ig": None})
     assert seen["path"] == "assets/cards/t_ig.jpg"
+
+
+# ---------- the pre-flight validator must test what actually ships ----------
+
+def test_validator_tests_a_jpeg_not_a_png():
+    """scripts/validate_ig.py is the one check run before trusting the
+    automation. It hardcoded a .png — the format Meta does not accept and
+    the pipeline stopped sending. Worse than useless: the PNG is still in
+    the bucket beside the JPEG, so the check would PASS and give false
+    confidence about a path that never runs.
+    """
+    src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
+    body = src[src.index("--container"):]
+    assert "_ig.jpg" in body, "validator no longer tests the JPEG variant"
+    assert "_ig.png" not in body, "validator still tests a PNG"
+
+
+def test_validator_does_not_hardcode_a_topic_id():
+    """A hardcoded topic breaks silently the day it stops being
+    publishable — the validator would 404 on an asset that was never
+    rendered, and read as a credentials problem."""
+    src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
+    assert "is_publishable" in src, (
+        "the test asset should be derived from the calendar, not fixed")
