@@ -95,3 +95,30 @@ def test_torch_comes_from_the_cpu_index():
 def test_the_voice_model_is_cached():
     daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
     assert "actions/cache" in daily and "huggingface" in daily
+
+
+def _daily():
+    import yaml
+    with open(os.path.join(ROOT, ".github", "workflows", "daily.yml")) as f:
+        # PyYAML resolves the bare key `on:` to the boolean True.
+        return yaml.safe_load(f)[True]
+
+
+def test_dispatch_can_select_every_format():
+    """A format the rotation can produce but a manual run cannot select is
+    a format nobody can preview until it comes round on its own — which is
+    up to four runs and four burned topics away."""
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "engine"))
+    import run
+    options = _daily()["workflow_dispatch"]["inputs"]["format"]["options"]
+    for fmt in set(run.FORMATS):
+        assert fmt in options, f"{fmt} is not dispatchable"
+
+
+def test_dispatch_format_defaults_to_the_rotation():
+    """A sticky override would silently freeze the format for every later
+    run, including the scheduled ones."""
+    fmt = _daily()["workflow_dispatch"]["inputs"]["format"]
+    assert fmt["default"] == ""
+    assert fmt["required"] is False

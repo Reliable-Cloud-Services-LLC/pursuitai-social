@@ -6,9 +6,11 @@ name: Daily social post
 # approves. That pause is the gate — it is enforced by GitHub, not by our
 # code, so no env var or flag here can bypass it.
 
-# SCHEDULE HELD (W5). Only 8 of 24 topics have claims traced to a source,
-# so a Mon–Sat cadence would cycle the same eight posts every 8 days. The
-# cron stays commented out until the verified rotation is large enough;
+# SCHEDULE HELD. 18 of 24 topics are publishable (claims traced to a source
+# AND a clean rendered card), which is a large enough rotation — but the
+# cron stays commented out until all three channels publish. Instagram is
+# still blocked on Meta developer verification, and a scheduled run that
+# posts to two of three every day is not what this is for.
 # workflow_dispatch still works for a manual, reviewed post.
 #
 # To resume: uncomment the schedule below.
@@ -17,6 +19,16 @@ on:
   #   # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
   #   - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
+    inputs:
+      format:
+        description: >-
+          Override the rotation's format for this run (preview a format
+          without waiting for it to come round). Leave blank for normal
+          rotation. The topic still advances, so use it sparingly.
+        required: false
+        type: choice
+        options: ["", "card", "screenshot", "video", "ad"]
+        default: ""
 
 permissions:
   contents: write
@@ -69,7 +81,11 @@ jobs:
       - name: Prepare assets + captions
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python engine/run.py --prepare
+          FORMAT: ${{ inputs.format }}
+        run: |
+          args=""
+          [ -n "$FORMAT" ] && args="--format $FORMAT"
+          python engine/run.py --prepare $args
 
       # Rendered media goes to object storage, not into git (W8). Instagram
       # fetches by public URL and the repo was only ever standing in as that

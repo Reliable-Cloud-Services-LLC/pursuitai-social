@@ -28,6 +28,7 @@ import brand as brand_tokens
 import cards
 import captions
 import compliance
+import media
 import rotation
 
 STATE = os.path.join(ROOT, "content", "state.json")
@@ -110,7 +111,7 @@ def publishable_topics(cal):
     return rotation.build_rotation(out, scores)
 
 
-def prepare():
+def prepare(force_format=None):
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     brand = cal["brand"]
     topics = publishable_topics(cal)
@@ -120,7 +121,7 @@ def prepare():
         sys.exit(1)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
     topic = topics[state["topic_index"] % len(topics)]
-    fmt = select_format(state["run_count"], len(topics))
+    fmt = force_format or select_format(state["run_count"], len(topics))
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
 
@@ -172,6 +173,7 @@ def prepare():
             video_path = os.path.join(ROOT, "assets", "video",
                                       f"{topic['id']}.mp4")
             video.make_video(topic, video_path, screenshot=shot_x)
+            media.write_poster(video_path)
         except Exception as e:
             print(f"[prepare] video build failed ({e}); using card")
             video_path, fmt = None, "card"
@@ -359,8 +361,15 @@ def notify_pending():
         sys.exit(1)
     import notify
     base = os.environ.get("MEDIA_BASE_URL")
-    media_url = (f"{base.rstrip('/')}/{pending['media_x'].lstrip('/')}"
-                 if base else None)
+    # Slack image blocks need an image. For a video format, point at the
+    # poster still written beside the clip — an .mp4 URL gets the block
+    # rejected and the whole review notification fails.
+    rel = media.poster_for(pending["media_x"])
+    if rel != pending["media_x"] and not os.path.exists(os.path.join(ROOT, rel)):
+        rel = None  # no poster: send the review without an image, not with
+                    # a block Slack will reject
+    media_url = (f"{base.rstrip('/')}/{rel.lstrip('/')}"
+                 if base and rel else None)
     sent = notify.pending_review(pending, media_url=media_url,
                                  review_url=os.environ.get("REVIEW_URL"))
     if sent:
@@ -382,6 +391,8 @@ def main():
     ap.add_argument("--skip-ig", action="store_true")
     ap.add_argument("--force", action="store_true",
                     help="LOCAL DEV ONLY: publish without approval")
+    ap.add_argument("--format", dest="fmt", choices=FORMATS,
+                    help="override the rotation's format for this run")
     args = ap.parse_args()
 
     if args.dry_run:
@@ -390,7 +401,7 @@ def main():
         print("--- IG ---\n" + p["text_ig"])
         return
     if args.prepare:
-        prepare()
+        prepare(force_format=args.fmt)
         return
     if args.approve:
         approve()
