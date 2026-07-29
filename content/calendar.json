@@ -165,17 +165,18 @@
       "feature": "8(a) Sole-Source Justification Drafter",
       "headline": "The directed-award play, automated.",
       "body": "Generate the package you send a CO to support a directed 8(a) sole-source award — with a built-in FAR 19.805-1 threshold check so it never claims authority you don't have.",
-      "hook_x": "8(a) firms: sole-source awards don't just happen — you make the case. PursuitAI drafts the full CO package (regulatory basis, responsible source, agency benefit) with a FAR 19.805-1 threshold check built in. No competitor automates this.",
-      "hook_ig": "The best 8(a) contract is the one that was never competed.\n\nPursuitAI drafts the package you send a contracting officer to support a directed 8(a) sole-source award: the regulatory-basis narrative, responsible-source case, agency-benefit story, and a draft CO letter — grounded in your real past performance.\n\nBuilt-in FAR 19.805-1 threshold check ($4.5M services / $7.0M manufacturing) keeps every package honest.",
+      "hook_x": "8(a) firms: sole-source awards don't just happen — you make the case. PursuitAI drafts the full CO package (regulatory basis, responsible source, agency benefit) with a FAR 19.805-1 threshold check built in. Know before you pitch whether a directed award is even on the table.",
+      "hook_ig": "The best 8(a) contract is the one that was never competed.\n\nPursuitAI drafts the package you send a contracting officer to support a directed 8(a) sole-source award: the regulatory-basis narrative, responsible-source case, agency-benefit story, and a draft CO letter — grounded in your real past performance.\n\nBuilt-in FAR 19.805-1 threshold check ($5.5M services / $8.5M manufacturing) keeps every package honest.",
       "stat": "Full CO package, FAR-checked",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
-        "source_type": "external",
+        "status": "VERIFIED",
+        "source_type": "external+code",
         "source_url": "https://www.acquisition.gov/far/19.805-1",
-        "verified_on": "2026-07-28",
-        "note": "Copy says $4.5M services / $7.0M manufacturing. FAR 19.805-1(a)(2) is $5.5M / $8.5M. The product carries the same stale figures (eight_a_sole_source.py:27-28), so this is a code defect too."
+        "source_ref": "apps/backend/app/services/eight_a_sole_source.py:29-30 (SOLE_SOURCE_CEILING_STANDARD/_MANUFACTURING), called from apps/backend/app/api/proposals/sole_source.py:181",
+        "verified_on": "2026-07-29",
+        "note": "FAR 19.805-1(a)(2), verbatim: 'will exceed $8.5 million for acquisitions assigned manufacturing NAICS codes and $5.5 million for all other acquisitions.' The product carried $4.5M/$7.0M; fixed in pursuit-ai a58d866c (#1972), shipped in v2.114.0, prod / reports 2.114.0. The threshold check is pure and deterministic and IS wired into the drafter, so 'built-in FAR 19.805-1 threshold check' is accurate. Our own hook_ig carried the stale figures until this change."
       },
       "icon": "file-text"
     },
@@ -387,19 +388,19 @@
     {
       "id": "secure-docs",
       "feature": "Secure File Storage",
-      "headline": "Encrypted with YOUR key — not ours.",
-      "body": "NDAs, teaming agreements, proposal drafts — each file encrypted with your organization's own key before storage. Platform staff see metadata, never contents. Full access audit log.",
-      "hook_x": "Where do your teaming agreements and proposal drafts live right now? PursuitAI's vault encrypts every file with YOUR org's key — platform staff see metadata, never contents — with role-gated downloads and a full audit log.",
-      "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document with your organization's own key before it's stored — platform staff can see metadata, never contents. In-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
-      "stat": "Per-org encryption keys + audit log",
+      "headline": "Encrypted per file. Bound to your org.",
+      "body": "NDAs, teaming agreements, proposal drafts — each file encrypted before storage with its own key, and the ciphertext cryptographically bound to your organization. Platform staff see metadata, never contents. Full access audit log.",
+      "hook_x": "Where do your teaming agreements and proposal drafts live right now? PursuitAI's vault encrypts every file with its own key and binds the ciphertext to your org — platform staff see metadata, never contents — with role-gated downloads and a full audit log.",
+      "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document before it's stored — each with its own key, and the ciphertext cryptographically bound to your organization, so a file encrypted for one tenant can't be unwrapped for another. Platform staff can see that a file exists, never what's inside.\n\nIn-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
+      "stat": "Per-file keys, tenant-bound + audit log",
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "MISMATCH",
+        "status": "VERIFIED",
         "source_type": "code",
-        "source_ref": "apps/backend/app/services/file_storage.py:1-16",
-        "verified_on": "2026-07-28",
-        "note": "Copy says 'your organization's own key - not ours'. Implementation is ONE KMS CMK with per-FILE data keys and org_id as EncryptionContext/AAD. No per-org CMK, and the key is ours. Security claim; must not ship."
+        "source_ref": "apps/backend/app/services/file_storage.py:1-22 (envelope encryption, per-file data key, org_id as EncryptionContext + AES-GCM AAD); apps/backend/app/api/files.py:10-22,69,164 (role gates, no presigned URLs, FileAccessLog)",
+        "verified_on": "2026-07-29",
+        "note": "Previous copy claimed 'your organization's own key — not ours'. The architecture is one shared KMS CMK with a per-FILE data key and org_id as EncryptionContext/AAD, and it did NOT change: pursuit-ai closed #1973 by correcting its copy (PR #1975, 50e137c6), not the build. Copy now tracks the implementation. The secondary claims were checked in code, not against that corrected marketing text: role-gated download (_DOWNLOAD_ROLES + per-file download_min_role), preview without download (no S3 presigned URLs exist), FileAccessLog on every upload/preview/download/delete/restore, and plaintext data keys confined to request locals."
       },
       "icon": "shield-check"
     },

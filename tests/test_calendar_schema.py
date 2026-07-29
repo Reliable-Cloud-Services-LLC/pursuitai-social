@@ -39,20 +39,48 @@ def test_status_is_from_the_enum(cal):
         assert status in VALID_STATUSES, f"{t['id']} has status {status!r}"
 
 
+# "external+code" is for a topic that makes BOTH kinds of claim — e.g.
+# sole-source quotes a FAR dollar threshold (external) AND asserts we
+# implement a check against it (code). Splitting that into one or the
+# other would drop half the evidence, so it must carry both refs.
+SOURCE_TYPES = ("code", "external", "external+code")
+
+
+def _assert_code_ref(topic, verification):
+    assert verification.get("source_ref"), f"{topic['id']} missing source_ref"
+    assert ":" in verification["source_ref"], (
+        f"{topic['id']} source_ref must be <path>:<line range>")
+
+
+def _assert_external_ref(topic, verification):
+    assert verification.get("source_url", "").startswith("https://"), \
+        topic["id"]
+
+
 def test_verified_topics_carry_evidence_and_a_date(cal):
     """A VERIFIED claim must point at something checkable."""
     for t in cal["topics"]:
         v = t["verification"]
         if v["status"] != "VERIFIED":
             continue
-        assert v.get("source_type") in ("code", "external"), t["id"]
-        if v["source_type"] == "code":
-            assert v.get("source_ref"), f"{t['id']} missing source_ref"
-            assert ":" in v["source_ref"], (
-                f"{t['id']} source_ref must be <path>:<line range>")
-        else:
-            assert v.get("source_url", "").startswith("https://"), t["id"]
+        assert v.get("source_type") in SOURCE_TYPES, t["id"]
+        if "code" in v["source_type"]:
+            _assert_code_ref(t, v)
+        if "external" in v["source_type"]:
+            _assert_external_ref(t, v)
         assert ISO_DATE.match(v.get("verified_on", "")), t["id"]
+
+
+def test_a_dual_claim_carries_both_kinds_of_evidence(cal):
+    """The whole point of external+code: a regulation cited without the
+    implementation that honours it, or the reverse, is half a verification.
+    sole-source was MISMATCH precisely because the two disagreed."""
+    for t in cal["topics"]:
+        v = t["verification"]
+        if v.get("source_type") != "external+code":
+            continue
+        _assert_code_ref(t, v)
+        _assert_external_ref(t, v)
 
 
 def test_code_evidence_points_at_implementation_not_prose(cal):
