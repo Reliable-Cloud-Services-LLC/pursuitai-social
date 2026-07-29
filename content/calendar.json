@@ -114,11 +114,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "VERIFIED",
+        "status": "MISMATCH",
         "source_type": "code",
         "source_ref": "apps/backend/app/services/bls_oews.py:62",
-        "verified_on": "2026-07-28",
-        "note": "SOC_CROSSWALK contains exactly 30 occupations."
+        "verified_on": "2026-07-29",
+        "note": "Independent audit (2026-07-29). 'eLibrary schedule rates' is not a data feed. USAspending, GSA CALC and BLS OEWS are all real (30 occupations confirmed: bls_oews.py SOC_CROSSWALK has exactly 30 keys). eLibrary appears only as gsa_calc.py:_elibrary_search_url() — a link the user clicks. The KB says so explicitly: rates come via CALC 'instead of looking them up on eLibrary'. Three feeds, not four."
       },
       "icon": "trending-up"
     },
@@ -246,11 +246,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "VERIFIED",
+        "status": "MISMATCH",
         "source_type": "code",
         "source_ref": "apps/backend/app/services/agency_forecast_ingest/acquisition_gateway.py:1-13",
-        "verified_on": "2026-07-28",
-        "note": "14 named agency modules + acquisition_gateway (GSA, DOL, VA, USDA, NSF, NRC, DOI) = 21 agencies. Confirm the counting rule behind '22 sources'."
+        "verified_on": "2026-07-29",
+        "note": "Independent audit (2026-07-29). Two defects. (1) 'Weekly' is wrong: main.py's agency ingests use CronTrigger(hour, minute) with NO day_of_week, so they run NIGHTLY. The job ids still read '<agency>_weekly_ingest' and a nearby comment still says '07:00-07:30 Monday' — legacy names that read as evidence. (2) Only 10 of the 21 importers are on the nightly auto-fetch (doe, state, nasa, doj, epa, doed, hud, ssa, usace, sec) + DHS APFS; the rest are manual upload — and the copy NAMES HHS and DOT, which are not automated."
       },
       "icon": "radar"
     },
@@ -303,11 +303,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "VERIFIED",
+        "status": "MISMATCH",
         "source_type": "code",
         "source_ref": "apps/backend/app/api/proposals/compliance_generate.py:204-250",
-        "verified_on": "2026-07-28",
-        "note": "Accepts pdf/docx/xlsx in one upload and extracts to a structured matrix in a single pass."
+        "verified_on": "2026-07-29",
+        "note": "Independent audit (2026-07-29). 'Q&A pairs' is not part of the one pass. compliance_generate.py's forced tool_use schema returns requirements / requirements_matrix / evaluation_criteria / key_personnel_required / deliverables / risks — no Q&A field. Q&A is a separate endpoint (extract_qa.py:19 POST /qa-extract/{opportunity_id}), a distinct Claude call costing 2 credits. Everything else in the sentence does come in one pass."
       },
       "icon": "file-text"
     },
@@ -377,11 +377,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "VERIFIED",
+        "status": "MISMATCH",
         "source_type": "code",
         "source_ref": "apps/backend/app/api/proposals/resume_deep_dive.py:12-21",
-        "verified_on": "2026-07-28",
-        "note": "Emits a requirement->evidence matrix with status meets|partial|gap plus a gap action list; evidence is quoted resume lines."
+        "verified_on": "2026-07-29",
+        "note": "Independent audit (2026-07-29). 'Export a combined volume' is wrong. resume_deep_dive_export.py:46 selects a SINGLE AIOutput (opportunity+company+output_type) and renders one candidate_name; the deep-dive is overwritten per type, so two candidates cannot coexist to be combined. The matrix, the never-invent prompt constraint and save-to-library are all real."
       },
       "icon": "clipboard-check"
     },
@@ -396,11 +396,11 @@
       "page": "/",
       "media": "card",
       "verification": {
-        "status": "VERIFIED",
+        "status": "MISMATCH",
         "source_type": "code",
         "source_ref": "apps/backend/app/services/file_storage.py:1-22 (envelope encryption, per-file data key, org_id as EncryptionContext + AES-GCM AAD); apps/backend/app/api/files.py:10-22,69,164 (role gates, no presigned URLs, FileAccessLog)",
         "verified_on": "2026-07-29",
-        "note": "Previous copy claimed 'your organization's own key — not ours'. The architecture is one shared KMS CMK with a per-FILE data key and org_id as EncryptionContext/AAD, and it did NOT change: pursuit-ai closed #1973 by correcting its copy (PR #1975, 50e137c6), not the build. Copy now tracks the implementation. The secondary claims were checked in code, not against that corrected marketing text: role-gated download (_DOWNLOAD_ROLES + per-file download_min_role), preview without download (no S3 presigned URLs exist), FileAccessLog on every upload/preview/download/delete/restore, and plaintext data keys confined to request locals."
+        "note": "Independent audit (2026-07-29). 'Platform staff see metadata, never contents' is not a capability claim we can make. The crypto is real (per-file DEK, org_id as EncryptionContext + AES-GCM AAD, no admin download/preview route — admin_files.py never selects wrapped_dek/nonce) but it is ONE shared KMS CMK (file_storage.py:64 self.kms_key_id). An operator with AWS access to that CMK plus S3 plus the DB can decrypt out-of-band, so 'never' overstates it at the layer a security reviewer cares about. Decisive: pursuit-ai REMOVED this exact sentence from its own landing copy in #1975 (50e137c6) — I preserved it while rewriting the adjacent 'your own key' clause."
       },
       "icon": "shield-check"
     },
