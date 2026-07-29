@@ -111,7 +111,7 @@ def publishable_topics(cal):
     return rotation.build_rotation(out, scores)
 
 
-def prepare(force_format=None):
+def prepare(force_format=None, force_topic=None):
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     brand = cal["brand"]
     topics = publishable_topics(cal)
@@ -120,7 +120,15 @@ def prepare(force_format=None):
               "calendar.json is untraced, mismatched, or unverifiable.")
         sys.exit(1)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
-    topic = topics[state["topic_index"] % len(topics)]
+    if force_topic:
+        topic = next((t for t in topics if t["id"] == force_topic), None)
+        if topic is None:
+            known = any(t["id"] == force_topic for t in cal["topics"])
+            print(f"[prepare] REFUSED: {force_topic!r} is "
+                  + ("not publishable" if known else "not a known topic"))
+            sys.exit(1)
+    else:
+        topic = topics[state["topic_index"] % len(topics)]
     fmt = force_format or select_format(state["run_count"], len(topics))
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
@@ -211,6 +219,10 @@ def prepare(force_format=None):
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
         "cover_ig": os.path.relpath(cover_ig, ROOT) if cover_ig else None,
+        # An out-of-band post — a correction, or a one-off. It must NOT
+        # move the rotation: advancing past a forced topic would silently
+        # skip whatever was actually next.
+        "out_of_band": bool(force_topic),
     }
     # Last check before a human is asked to review it. A Claude-rewritten
     # caption can introduce a claim the source topic never made, so the
@@ -323,8 +335,12 @@ def publish(skip_x=False, skip_ig=False, force=False):
         return [c for c in POSTERS if results[c]["status"] == status]
     posted, failed, skipped = by("posted"), by("failed"), by("skipped")
 
-    # A topic is only consumed once it has actually reached an audience.
-    if posted:
+    # A topic is only consumed once it has actually reached an audience —
+    # and never by an out-of-band post, which is a correction or a one-off
+    # rather than the rotation's turn.
+    if posted and pending.get("out_of_band"):
+        print("[publish] out-of-band post - rotation NOT advanced")
+    elif posted:
         state["topic_index"] = ((state["topic_index"] + 1)
                                 % max(1, len(publishable_topics(cal))))
         state["run_count"] = state.get("run_count", 0) + 1
@@ -410,6 +426,11 @@ def main():
                     help="LOCAL DEV ONLY: publish without approval")
     ap.add_argument("--format", dest="fmt", choices=FORMATS,
                     help="override the rotation's format for this run")
+    ap.add_argument("--topic", dest="topic_id",
+                    help="post THIS topic instead of the rotation's next. "
+                         "Out-of-band: the rotation does not advance, so a "
+                         "correction post cannot skip the topic that was "
+                         "actually due.")
     args = ap.parse_args()
 
     if args.dry_run:
@@ -418,7 +439,7 @@ def main():
         print("--- IG ---\n" + p["text_ig"])
         return
     if args.prepare:
-        prepare(force_format=args.fmt)
+        prepare(force_format=args.fmt, force_topic=args.topic_id)
         return
     if args.approve:
         approve()
