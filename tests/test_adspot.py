@@ -107,7 +107,18 @@ def test_voice_is_optional(tmp_path, monkeypatch):
 
 
 def test_synthesis_failure_is_not_fatal(tmp_path, monkeypatch):
+    """A TTS blow-up must cost the ad its audio, not the day's post.
+
+    Forces a real failure inside the try block rather than just claiming
+    the engine is absent — with kokoro installed, faking availability is
+    not enough because synthesis then genuinely succeeds.
+    """
     monkeypatch.setattr(voice, "available", lambda: True)
+
+    def explode(_):
+        raise RuntimeError("model blew up")
+
+    monkeypatch.setattr(voice, "_spoken", explode)
     assert voice.synthesize("hello", str(tmp_path / "a.wav")) is None
 
 
