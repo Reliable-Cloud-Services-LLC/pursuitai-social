@@ -21,11 +21,13 @@ Usage:
 Exit code 0 = ready for autonomous posting.
 """
 import argparse
+import json
 import os
 import sys
 
 import requests
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GRAPH = "https://graph.facebook.com/v21.0"
 
 def fail(msg):
@@ -90,7 +92,23 @@ def main():
     if args.container:
         print("[5] container creation (fetch test — will NOT publish)")
         base = os.environ.get("MEDIA_BASE_URL") or fail("MEDIA_BASE_URL not set")
-        test_asset = "assets/cards/fit-scoring_ig.png"
+        # JPEG, and derived rather than hardcoded. Meta's content-publishing
+        # reference: "JPEG is the only image format supported." Every card is
+        # rendered as PNG and converted for Instagram (media.as_jpeg), so a
+        # validator pointed at the .png would test a format we deliberately
+        # stopped sending — and pass, giving false confidence, because the
+        # PNG is still in the bucket alongside it.
+        #
+        # Derived from the calendar so it cannot rot: the hardcoded topic id
+        # would break silently the day that topic stops being publishable.
+        sys.path.insert(0, os.path.join(ROOT, "engine"))
+        import compliance
+        with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+            topics = json.load(f)["topics"]
+        publishable = [t for t in topics if compliance.is_publishable(t)]
+        if not publishable:
+            fail("no publishable topic to test with")
+        test_asset = f"assets/cards/{publishable[0]['id']}_ig.jpg"
         url = f"{base.rstrip('/')}/{test_asset}"
         head = requests.head(url, timeout=30)
         if head.status_code != 200:
