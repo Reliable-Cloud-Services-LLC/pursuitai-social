@@ -118,7 +118,8 @@ python engine/run.py                    # prepare only, then tell you what's nex
 
 python scripts/preview.py               # visual review sheet for every post
 python scripts/preview.py --linkedin    # next LinkedIn post: PNGs + copy
-python scripts/preview.py --posted <id> # mark it posted, advance the queue
+python scripts/preview.py --instagram   # same, for the Instagram queue
+python scripts/preview.py --posted <id> --channel linkedin|instagram
 python engine/links.py                  # print the Instagram bio link
 python engine/notify.py --heartbeat     # weekly liveness report
 pytest tests/ -v                        # 73 tests
@@ -154,7 +155,7 @@ environment, the Instagram bio link, and the daily review routine.
 | Channel | How it publishes |
 |---|---|
 | X | API, automated — body plus a threaded CTA reply |
-| Instagram | API, automated — Graph API fetches media by public URL |
+| Instagram | API when credentials exist; **manual paste** meanwhile — `--instagram` |
 | **LinkedIn** | **Manual paste — `python scripts/preview.py --linkedin`.** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). |
 | Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 

@@ -26,8 +26,17 @@ Prints the post text and writes real PNGs to `assets/linkedin/` — both the
 python scripts/preview.py --posted <topic-id>
 ```
 
+Instagram can be posted the same way while its API credentials are pending:
+
+```bash
+python scripts/preview.py --instagram
+python scripts/preview.py --posted <topic-id> --channel instagram
+```
+
 The queue is `logs/linkedin_posted.jsonl`, append-only and **independent of
-`content/state.json`**. LinkedIn should not stall because X is out of API
+`content/state.json`**. Each channel keeps its OWN cursor within that file,
+so LinkedIn posting a topic does not make Instagram skip it — they are
+separate audiences reached on separate days. LinkedIn should not stall because X is out of API
 credits, and should not skip ahead because X published. It walks the
 calendar in order, then the least recently posted once everything has been
 round once.

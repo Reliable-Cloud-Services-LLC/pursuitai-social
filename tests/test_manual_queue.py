@@ -83,3 +83,41 @@ def test_a_retired_topic_in_the_log_is_ignored(tmp_path):
 
 def test_no_topics_returns_none(tmp_path):
     assert manual_queue.next_unposted([], str(tmp_path / "q.jsonl")) is None
+
+
+# ---------- each manual channel keeps its own cursor ----------
+
+def test_channels_do_not_share_a_cursor(tmp_path):
+    """LinkedIn posting a topic must not make Instagram skip it. They are
+    separate audiences reached on separate days."""
+    log = str(tmp_path / "q.jsonl")
+    manual_queue.mark_posted("a", log, channel="linkedin")
+    assert manual_queue.next_unposted(topics("a", "b"), log,
+                                      channel="linkedin")["id"] == "b"
+    assert manual_queue.next_unposted(topics("a", "b"), log,
+                                      channel="instagram")["id"] == "a"
+
+
+def test_posted_ids_filters_by_channel(tmp_path):
+    log = str(tmp_path / "q.jsonl")
+    manual_queue.mark_posted("a", log, channel="linkedin")
+    manual_queue.mark_posted("b", log, channel="instagram")
+    assert manual_queue.posted_ids(log, "linkedin") == ["a"]
+    assert manual_queue.posted_ids(log, "instagram") == ["b"]
+    assert sorted(manual_queue.posted_ids(log)) == ["a", "b"]
+
+
+def test_channel_is_recorded_on_every_entry(tmp_path):
+    log = str(tmp_path / "q.jsonl")
+    manual_queue.mark_posted("a", log, channel="instagram")
+    row = json.loads(open(log).read().strip())
+    assert row["channel"] == "instagram"
+
+
+def test_legacy_entries_without_a_channel_count_as_linkedin(tmp_path):
+    """The log predates multi-channel support; those rows are LinkedIn."""
+    log = str(tmp_path / "q.jsonl")
+    open(log, "w").write(json.dumps({"topic": "a",
+                                     "posted_at": "2026-07-28T00:00:00+00:00"}) + "\n")
+    assert manual_queue.posted_ids(log, "linkedin") == ["a"]
+    assert manual_queue.posted_ids(log, "instagram") == []

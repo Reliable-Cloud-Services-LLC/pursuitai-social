@@ -1,4 +1,4 @@
-"""Cursor for hand-posted channels.
+"""Cursors for hand-posted channels.
 
 LinkedIn is pasted by a person (see docs/LINKEDIN_ACCESS.md), so it can
 never confirm a post back to the engine — and the automated rotation only
@@ -14,8 +14,17 @@ import json
 import os
 
 
-def posted_ids(log_path):
-    """Topic ids already posted, oldest first."""
+# Entries written before multi-channel support carry no channel field.
+LEGACY_CHANNEL = "linkedin"
+
+
+def posted_ids(log_path, channel=None):
+    """Topic ids already posted, oldest first. Filtered by channel when given.
+
+    Each manual channel keeps its OWN cursor: LinkedIn posting a topic must
+    not make Instagram skip it. They are separate audiences reached on
+    separate days.
+    """
     if not os.path.exists(log_path):
         return []
     out = []
@@ -25,13 +34,17 @@ def posted_ids(log_path):
             if not line:
                 continue
             try:
-                out.append(json.loads(line)["topic"])
+                row = json.loads(line)
+                topic = row["topic"]
             except (ValueError, KeyError):
                 continue
+            if channel and row.get("channel", LEGACY_CHANNEL) != channel:
+                continue
+            out.append(topic)
     return out
 
 
-def next_unposted(topics, log_path):
+def next_unposted(topics, log_path, channel=None):
     """The next topic to post by hand, or None if there are none at all.
 
     Calendar order until everything has been posted once, then the least
@@ -40,7 +53,7 @@ def next_unposted(topics, log_path):
     """
     if not topics:
         return None
-    history = posted_ids(log_path)
+    history = posted_ids(log_path, channel)
     seen = set(history)
 
     for topic in topics:
@@ -56,11 +69,11 @@ def next_unposted(topics, log_path):
     return topics[0]
 
 
-def mark_posted(topic_id, log_path, now=None):
-    """Record that a topic was posted by hand."""
+def mark_posted(topic_id, log_path, channel="linkedin", now=None):
+    """Record that a topic was posted by hand to a given channel."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     with open(log_path, "a") as f:
         f.write(json.dumps({"topic": topic_id,
                             "posted_at": now.isoformat(),
-                            "channel": "linkedin"}) + "\n")
+                            "channel": channel}) + "\n")
