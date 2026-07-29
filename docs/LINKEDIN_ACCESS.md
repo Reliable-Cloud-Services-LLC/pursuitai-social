@@ -16,21 +16,21 @@ finding about LinkedIn's review process.
 ## The daily routine
 
 ```bash
-python scripts/preview.py --linkedin
+.venv/bin/python scripts/preview.py --linkedin
 ```
 
 Prints the post text and writes real PNGs to `assets/linkedin/` — both the
 1:1 and 4:5 cards. Attach one, paste the copy, post. Then:
 
 ```bash
-python scripts/preview.py --posted <topic-id>
+.venv/bin/python scripts/preview.py --posted <topic-id>
 ```
 
 Instagram can be posted the same way while its API credentials are pending:
 
 ```bash
-python scripts/preview.py --instagram
-python scripts/preview.py --posted <topic-id> --channel instagram
+.venv/bin/python scripts/preview.py --instagram
+.venv/bin/python scripts/preview.py --posted <topic-id> --channel instagram
 ```
 
 The queue is `logs/linkedin_posted.jsonl`, append-only and **independent of
