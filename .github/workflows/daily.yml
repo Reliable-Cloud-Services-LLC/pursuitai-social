@@ -6,18 +6,23 @@ name: Daily social post
 # approves. That pause is the gate — it is enforced by GitHub, not by our
 # code, so no env var or flag here can bypass it.
 
-# SCHEDULE HELD. 23 of 24 topics are publishable (claims traced to a source
-# AND a clean rendered card), which is a large enough rotation — but the
-# cron stays commented out until all three channels publish. Instagram is
-# still blocked on Meta developer verification, and a scheduled run that
-# posts to two of three every day is not what this is for.
-# workflow_dispatch still works for a manual, reviewed post.
+# SCHEDULE LIVE (2026-07-29). Enabled once every hold cleared: 23 of 24
+# topics verified against source, X and Instagram both publishing via API
+# on a never-expiring System User token, and the rotation freshness-guarded
+# against repeats. LinkedIn stays manual (preview.py --linkedin) — that is
+# LinkedIn's API tier, not a hold on this schedule.
 #
-# To resume: uncomment the schedule below.
+# The cron only PREPARES. Every run still parks at the social-publish
+# environment until a human approves — the schedule automates the proposal,
+# never the decision. A run nobody approves simply expires; the topic is
+# not consumed and comes round again.
+#
+# To pause: comment out the schedule block (the kill switch in the README —
+# disabling the workflow in the Actions tab — also works and is faster).
 on:
-  # schedule:
-  #   # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
-  #   - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
+  schedule:
+    # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
+    - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
     inputs:
       format:
