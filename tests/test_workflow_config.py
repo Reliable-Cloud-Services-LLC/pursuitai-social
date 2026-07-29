@@ -61,3 +61,37 @@ def test_publish_job_receives_every_credential_it_needs(secret):
     publish = daily.split("Publish to X + Instagram", 1)[1].split("run:", 1)[0]
     assert f"secrets.{secret}" in publish, \
         f"publish step is missing {secret}"
+
+
+# ---------- voice deps stay out of the test job ----------
+
+def test_voice_deps_are_not_in_the_main_requirements():
+    """torch + the Kokoro model are ~1 GB. The test job installs
+    requirements.txt and never synthesizes audio, so pulling them there
+    would undo the CI work that got a run to 84 seconds."""
+    main = open(os.path.join(ROOT, "requirements.txt")).read().lower()
+    for pkg in ("torch", "kokoro"):
+        assert pkg not in main, f"{pkg} belongs in requirements-voice.txt"
+
+
+def test_only_the_prepare_job_installs_voice():
+    daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
+    prepare, publish = daily.split("  publish:", 1)
+    assert "requirements-voice.txt" in prepare
+    assert "requirements-voice.txt" not in publish, \
+        "publish re-renders nothing; it has no use for a TTS engine"
+    for name in ("test.yml", "analytics.yml", "heartbeat.yml"):
+        assert "requirements-voice" not in open(
+            os.path.join(WORKFLOWS, name)).read(), name
+
+
+def test_torch_comes_from_the_cpu_index():
+    """The default index resolves the CUDA build — ~2.5 GB of wheels for a
+    GPU no runner has."""
+    daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
+    assert "download.pytorch.org/whl/cpu" in daily
+
+
+def test_the_voice_model_is_cached():
+    daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
+    assert "actions/cache" in daily and "huggingface" in daily

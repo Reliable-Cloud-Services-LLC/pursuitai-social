@@ -1,0 +1,12 @@
+# Voice for animated ads. Installed ONLY by the prepare job, never by the
+# test job — tests never synthesize audio, and this pulls ~1 GB.
+#
+# torch MUST come from the CPU index or pip resolves the CUDA build (~2.5 GB
+# of wheels for a GPU no runner has):
+#     pip install --index-url https://download.pytorch.org/whl/cpu torch
+#
+# Kokoro also downloads its model (~450 MB) and a spaCy English model on
+# first use; the workflow caches both. Without any of this the engine still
+# renders ads — silently — because voice.py degrades rather than failing.
+kokoro>=0.9
+soundfile>=0.12

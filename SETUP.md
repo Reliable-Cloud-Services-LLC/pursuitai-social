@@ -171,6 +171,39 @@ To generate a post locally without any of this:
 .venv/bin/python engine/run.py --dry-run     # renders and prints, posts nothing
 ```
 
+## Voice on animated ads
+
+The `ad` format narrates with Kokoro `af_heart` — the same voice as the
+main app's instructional-video catalogue, whose README makes mixing
+engines a documented mistake.
+
+It is installed **only in the prepare job**, from `requirements-voice.txt`:
+
+| | |
+|---|---|
+| torch (CPU wheel) | ~529 MB |
+| Kokoro model + HF cache | ~454 MB |
+| Synthesis | ~8s for a 21s clip |
+
+Both caches are keyed on `requirements-voice.txt`, so a warm run pays
+almost nothing and only a dependency change re-downloads.
+
+Two things worth knowing:
+
+- **torch must come from the CPU index.** The default resolves the CUDA
+  build — about 2.5 GB of wheels for a GPU no runner has.
+- **Voice is optional, by design.** If any of it is unavailable the ad
+  still renders, silently, and the run continues. Every platform autoplays
+  muted and the on-screen text carries the message, so a silent ad is a
+  complete ad.
+
+Locally:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu torch
+pip install -r requirements-voice.txt
+```
+
 ## Ongoing operations
 
 - **Content**: 24 topics × 4 format slots ≈ 96 topic+format pairs, roughly 4 months at 6 posts/week before any pair repeats. With `ANTHROPIC_API_KEY` set, wording is regenerated every time.

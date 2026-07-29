@@ -44,6 +44,28 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # Voice for the animated-ad format. ~1 GB, so it is cached and lives
+      # in its own requirements file — the test job must never pull it.
+      # torch from the CPU index: the default resolves the CUDA build, which
+      # is ~2.5 GB of wheels for a GPU no runner has.
+      - name: Cache voice model
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/torch
+          key: voice-model-${{ hashFiles('requirements-voice.txt') }}
+
+      - name: Install voice dependencies
+        timeout-minutes: 10
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements-voice.txt
+          # Pre-download the spaCy model misaki needs, so it does not happen
+          # mid-render where a failure would lose the day's post.
+          python -m spacy download en_core_web_sm || \
+            echo "::warning::spaCy model unavailable — ads will be silent"
+
       - name: Prepare assets + captions
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
