@@ -134,6 +134,11 @@ to run in CI**, so it cannot become a production bypass.
 `--format` overrides the rotation's choice for one run. The topic still
 advances, so use it to preview a format, not to pin one.
 
+`--topic <id>` posts a specific topic instead of the rotation's next — a
+correction, or a one-off. It is **out-of-band**: the rotation does not
+advance, so it cannot skip whatever was actually due. It bypasses the
+cursor, never compliance.
+
 ---
 
 ## Posting by hand

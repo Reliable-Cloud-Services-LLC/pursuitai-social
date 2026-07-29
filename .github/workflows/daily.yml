@@ -29,6 +29,14 @@ on:
         type: choice
         options: ["", "card", "screenshot", "video", "ad"]
         default: ""
+      topic:
+        description: >-
+          Post THIS topic id instead of the rotation's next (e.g. a
+          correction). Out-of-band: the rotation does not advance, so it
+          cannot skip the topic that was actually due. Leave blank normally.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -82,9 +90,11 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORMAT: ${{ inputs.format }}
+          TOPIC: ${{ inputs.topic }}
         run: |
           args=""
-          [ -n "$FORMAT" ] && args="--format $FORMAT"
+          [ -n "$FORMAT" ] && args="$args --format $FORMAT"
+          [ -n "$TOPIC" ] && args="$args --topic $TOPIC"
           python engine/run.py --prepare $args
 
       # Rendered media goes to object storage, not into git (W8). Instagram
