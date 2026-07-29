@@ -26,24 +26,15 @@ def available():
 
 
 def _spoken(text):
-    """Apply the GovCon pronunciation lexicon if the main app is present.
+    """Apply the pronunciation lexicon before synthesis.
 
-    USASpending, NAICS, GWAC, 8(a) and friends are mangled by a generic
-    grapheme-to-phoneme pass. The main app already curated these for its
-    video catalogue; reuse rather than re-derive, and fall back to the raw
-    text when that repo is not checked out alongside.
+    Owned here now (``engine/pronounce.py`` + ``content/pronunciations.json``).
+    This used to import the main app's ``video/narrate.py`` from a sibling
+    checkout — which does not exist on a CI runner, so it returned the raw
+    text and every ad the pipeline rendered shipped with NO lexicon at all.
     """
-    path = os.path.expanduser("~/code/pursuit-ai/video/narrate.py")
-    if not os.path.exists(path):
-        return text
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("_narrate", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod._spoken(text)
-    except Exception:
-        return text
+    import pronounce
+    return pronounce.spoken(text)
 
 
 def synthesize(text, out_path):
