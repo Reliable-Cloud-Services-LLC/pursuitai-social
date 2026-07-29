@@ -67,12 +67,17 @@ def write_poster(video_path, at=None):
     Returns the poster path, or None if it could not be made — a degraded
     review (text, no image) is fine; a rejected block is not.
     """
-    poster = os.path.splitext(video_path)[0] + "_poster.png"
+    poster = os.path.splitext(video_path)[0] + "_poster.jpg"
     if at is None:
         at = (duration_seconds(video_path) or 8.0) * 0.55
+    # JPEG, not PNG: this same still is the Instagram Reels cover, and
+    # Meta's content-publishing reference states "JPEG is the only image
+    # format supported." q:v 2 is visually indistinguishable here and a
+    # third of the bytes. Slack renders JPEG in an image block equally well,
+    # so one file serves both and the two cannot drift apart.
     subprocess.run(
         ["ffmpeg", "-y", "-v", "error", "-i", video_path,
-         "-ss", f"{max(0.0, at):.2f}", "-frames:v", "1", poster],
+         "-ss", f"{max(0.0, at):.2f}", "-frames:v", "1", "-q:v", "2", poster],
         check=False, capture_output=True)
     return poster if os.path.exists(poster) else None
 
@@ -83,7 +88,7 @@ def poster_for(rel_path):
     if not rel_path:
         return None
     if rel_path.lower().endswith((".mp4", ".mov")):
-        return os.path.splitext(rel_path)[0] + "_poster.png"
+        return os.path.splitext(rel_path)[0] + "_poster.jpg"
     return rel_path
 
 
@@ -96,3 +101,32 @@ def duration_seconds(path):
         return float(out)
     except Exception:
         return None
+
+
+# Meta's content-publishing reference: "JPEG is the only image format
+# supported. Extended JPEG formats such as MPO and JPS are not supported."
+# Every image we render is a PNG, so anything bound for Instagram — the
+# card, the screenshot, the Reels cover — needs converting first.
+IG_JPEG_QUALITY = 92
+
+
+def as_jpeg(path):
+    """A JPEG sibling of an image, for Instagram. Returns the JPEG path.
+
+    A no-op for a file that is already JPEG. Raises rather than falling back
+    to the PNG: a silent fallback would hand Meta a format its own reference
+    says it does not support, and the resulting container error arrives
+    later and says nothing useful.
+    """
+    if path.lower().endswith((".jpg", ".jpeg")):
+        return path
+    from PIL import Image
+    out = os.path.splitext(path)[0] + ".jpg"
+    with Image.open(path) as img:
+        # Cards are RGBA; JPEG has no alpha channel. The designs are drawn
+        # on an opaque background, so flattening onto black changes nothing
+        # visible and avoids a save error.
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+        img.save(out, "JPEG", quality=IG_JPEG_QUALITY, optimize=True)
+    return out

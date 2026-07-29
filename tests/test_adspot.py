@@ -197,7 +197,7 @@ def test_video_poster_is_written_beside_the_clip(tmp_path, cal):
     out = str(tmp_path / "spot.mp4")
     adspot.make_ad(cal["topics"][0], cal["brand"], out, size=(320, 320),
                    scenes=[("cta", 0.5)])
-    poster = os.path.splitext(out)[0] + "_poster.png"
+    poster = os.path.splitext(out)[0] + "_poster.jpg"
     assert os.path.exists(poster), "no poster written beside the clip"
 
 
@@ -236,8 +236,10 @@ def test_poster_time_handles_a_cta_only_clip():
 def test_poster_for_leaves_an_image_alone():
     import media
     assert media.poster_for("assets/cards/x_ig.png") == "assets/cards/x_ig.png"
+    # JPEG because this same still is the Instagram Reels cover, and Meta
+    # accepts JPEG only. See tests/test_instagram_media.py.
     assert media.poster_for("assets/video/x_ad.mp4") == \
-        "assets/video/x_ad_poster.png"
+        "assets/video/x_ad_poster.jpg"
 
 
 def test_notify_pending_swaps_a_video_for_its_poster(tmp_path, monkeypatch):
@@ -258,7 +260,7 @@ def test_notify_pending_swaps_a_video_for_its_poster(tmp_path, monkeypatch):
 
     media_dir = tmp_path / "assets" / "video"
     media_dir.mkdir(parents=True)
-    (media_dir / "t_ad_poster.png").write_bytes(b"x")
+    (media_dir / "t_ad_poster.jpg").write_bytes(b"x")
     pending = {"topic": "t", "format": "ad", "text_x": "a",
                "text_x_reply": "b", "text_ig": "c",
                "media_x": "assets/video/t_ad.mp4"}
@@ -268,7 +270,7 @@ def test_notify_pending_swaps_a_video_for_its_poster(tmp_path, monkeypatch):
     urls = [b.get("image_url") for b in sent["json"]["blocks"]
             if b.get("type") == "image"]
     assert urls, "no image block in the review"
-    assert all(u.endswith(".png") for u in urls), urls
+    assert all(u.endswith((".png", ".jpg")) for u in urls), urls
 
 
 def test_a_missing_poster_omits_the_image_rather_than_breaking(tmp_path, monkeypatch):

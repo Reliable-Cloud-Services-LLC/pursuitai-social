@@ -188,6 +188,21 @@ def prepare(force_format=None):
         fmt = "card"
         media_x, media_ig = card_x, card_ig
 
+    # Instagram fetches by URL and accepts JPEG only (Meta's
+    # content-publishing reference). Everything we render is PNG, so the
+    # IG variant is converted here, at prepare time — the prepare job is
+    # what syncs assets/ to the bucket, so a file created at publish time
+    # would never be uploaded for Instagram to fetch.
+    cover_ig = None
+    if media_ig.lower().endswith((".mp4", ".mov")):
+        # Meta defaults a Reels cover to thumb_offset=0, the first frame.
+        # Our spots open on a bare gradient, so the profile grid would show
+        # a blank square. The poster we already render is the cover.
+        poster = media.poster_for(media_ig)
+        cover_ig = poster if os.path.exists(poster) else None
+    else:
+        media_ig = media.as_jpeg(media_ig)
+
     pending = {
         "date": today, "topic": topic["id"], "format": fmt,
         "text_x": captions.build_x(topic, brand, fmt=fmt),
@@ -195,6 +210,7 @@ def prepare(force_format=None):
         "text_ig": captions.build_ig(topic, brand),
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
+        "cover_ig": os.path.relpath(cover_ig, ROOT) if cover_ig else None,
     }
     # Last check before a human is asked to review it. A Claude-rewritten
     # caption can introduce a claim the source topic never made, so the
@@ -229,7 +245,8 @@ def _post_x(pending):
 def _post_ig(pending):
     import post_ig
     if pending["media_ig"].endswith(".mp4"):
-        return post_ig.post_reel(pending["media_ig"], pending["text_ig"])
+        return post_ig.post_reel(pending["media_ig"], pending["text_ig"],
+                                 cover_rel_path=pending.get("cover_ig"))
     return post_ig.post_image(pending["media_ig"], pending["text_ig"])
 
 # channel -> (env var proving credentials are present, poster)
