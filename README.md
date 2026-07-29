@@ -178,7 +178,23 @@ Attach **one**, listed most-recommended first. Video ships with a `_poster.jpg`
 beside it — set that as the cover rather than accepting the platform default,
 which is frame 0 and on these spots is a bare gradient.
 
-### Pronunciation
+### Notes on the animated format
+
+* It needs the **voice model** (`requirements-voice.txt`, ~1 GB, torch from
+  the CPU index) and **ffmpeg**. Without the voice model it still renders,
+  silent, and says so.
+* Budget roughly **2–3 minutes per ratio** on a laptop. The voiceover is
+  synthesised once and shared across ratios — rendering it per ratio would
+  give each spot a different edit, since scene lengths stretch to the
+  narration.
+* The copy is the deterministic variant (no Claude call), so the same topic
+  produces the same caption every time.
+
+---
+
+---
+
+## Pronunciation
 
 Narration runs through a lexicon before synthesis — `content/pronunciations.json`,
 applied by `engine/pronounce.py`. Kokoro spells NAICS out letter by letter,
@@ -204,18 +220,6 @@ app has picked up since.
 
 A test fails if any acronym in any ad narration reaches the synthesizer
 without either a rule or an explicit "reads correctly as-is" entry.
-
-### Notes on the animated format
-
-* It needs the **voice model** (`requirements-voice.txt`, ~1 GB, torch from
-  the CPU index) and **ffmpeg**. Without the voice model it still renders,
-  silent, and says so.
-* Budget roughly **2–3 minutes per ratio** on a laptop. The voiceover is
-  synthesised once and shared across ratios — rendering it per ratio would
-  give each spot a different edit, since scene lengths stretch to the
-  narration.
-* The copy is the deterministic variant (no Claude call), so the same topic
-  produces the same caption every time.
 
 ---
 
