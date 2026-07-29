@@ -10,6 +10,13 @@ lays them out next to the copy that ships with them.
     python scripts/preview.py --all      # include blocked topics, with reasons
     python scripts/preview.py --topic mpjv
 
+Hand-posting to the channels without API access yet:
+
+    python scripts/preview.py --linkedin                  # next card
+    python scripts/preview.py --instagram --format ad     # next animated spot
+    python scripts/preview.py --linkedin --format ad --topic mpjv
+    python scripts/preview.py --posted mpjv --channel instagram
+
 Writes a single self-contained HTML file (images inlined as data URIs) so
 it can be opened anywhere or attached to a review.
 """
@@ -27,6 +34,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 import brand         # noqa: E402
 import manual_queue  # noqa: E402
+import media         # noqa: E402
 import captions     # noqa: E402
 import cards        # noqa: E402
 import compliance    # noqa: E402
@@ -39,13 +47,22 @@ OUT = os.path.join(ROOT, "assets", "preview", "index.html")
 MANUAL_LOG = os.path.join(ROOT, "logs", "linkedin_posted.jsonl")
 
 # Per-channel manual posting. Each keeps its own cursor in MANUAL_LOG.
+#
+# `ratios` are the still-card canvases, `video_ratios` the animated-spot
+# ones, most-recommended first — the operator attaches one. They differ
+# because a still and a spot are consumed differently on the same channel:
+# LinkedIn video plays inline in the feed at 1:1, while Instagram's reach
+# format is Reels at 9:16.
 MANUAL = {
     "linkedin": {"ratios": ["square", "portrait"],
-                 "caption": lambda t, b: captions.build_linkedin(
-                     t, b, fmt="card", fresh=False),
+                 "video_ratios": ["square", "video"],
+                 "caption": lambda t, b, fmt: captions.build_linkedin(
+                     t, b, fmt=fmt, fresh=False),
                  "limit": 3000},
     "instagram": {"ratios": ["ig"],
-                  "caption": lambda t, b: captions.build_ig(t, b, fresh=False),
+                  "video_ratios": ["video", "square"],
+                  "caption": lambda t, b, fmt: captions.build_ig(
+                      t, b, fresh=False),
                   "limit": 2200},
 }
 
@@ -184,7 +201,43 @@ def build_html(rows, cal):
     return "\n".join(parts)
 
 
-def manual_next(cal, channel):
+def render_manual_ads(topic, cal, channel, out_dir):
+    """Animated spots for one topic, one per channel ratio.
+
+    The voiceover is synthesised ONCE and reused across ratios. Doing it
+    per ratio would be slower and, worse, would produce spots whose scene
+    timings differ from each other — the scene lengths stretch to the
+    narration, so two takes of the same script give two different edits.
+    """
+    import adspot
+    import narration
+    import voice
+
+    script = narration.build(topic, cal["brand"])
+    os.makedirs(out_dir, exist_ok=True)
+    wav = os.path.join(out_dir, f"{topic['id']}_vo.wav")
+    secs = voice.synthesize(script, wav)
+    if not secs:
+        print("  ! no voice model available — rendering silent spots")
+
+    paths = []
+    for name in MANUAL[channel]["video_ratios"]:
+        w, h = brand.size(name)
+        out = os.path.join(out_dir, f"{topic['id']}_{name}.mp4")
+        print(f"  rendering {name} {w}x{h} ...", flush=True)
+        adspot.make_ad(topic, cal["brand"], out, size=(w, h),
+                       voice_wav=wav if secs else None, narration=script)
+        paths.append((out, name, f"{name} {w}x{h}"))
+        # The poster is what Instagram wants as a Reels cover and what
+        # LinkedIn shows before playback. Rendered beside the clip already;
+        # surface it so the operator can set it rather than accept frame 0.
+        poster = media.poster_for(out)
+        if os.path.exists(poster):
+            paths.append((poster, f"{name} cover", "cover image"))
+    return paths
+
+
+def manual_next(cal, channel, fmt="card", topic_id=None):
     """Everything needed for one hand-posted update on `channel`.
 
     Writes real PNG files rather than only embedding them in the HTML —
@@ -194,29 +247,45 @@ def manual_next(cal, channel):
     spec = MANUAL[channel]
     publishable = [t for t in cal["topics"] if compliance.is_publishable(t)]
     clean = [t for t in publishable
-             if not compliance.check_claims(t, spec["caption"](t, cal["brand"]))]
-    topic = manual_queue.next_unposted(clean, MANUAL_LOG, channel)
+             if not compliance.check_claims(
+                 t, spec["caption"](t, cal["brand"], fmt))]
+    if topic_id:
+        # An explicit topic bypasses the cursor but NOT compliance — the
+        # point of naming one is usually to re-post it in another format.
+        topic = next((t for t in clean if t["id"] == topic_id), None)
+        if not topic:
+            blocked = any(t["id"] == topic_id for t in cal["topics"])
+            print(f"[{channel}] {topic_id!r} is "
+                  + ("not publishable" if blocked else "not a known topic"))
+            return
+    else:
+        topic = manual_queue.next_unposted(clean, MANUAL_LOG, channel)
     if not topic:
         print(f"[{channel}] no publishable topics")
         return
 
     out_dir = os.path.join(ROOT, "assets", channel)
     os.makedirs(out_dir, exist_ok=True)
-    paths = []
-    for name in spec["ratios"]:
-        p = os.path.join(out_dir, f"{topic['id']}_{name}.png")
-        cards.render_card(topic, cal["brand"], size=brand.size(name),
-                          out_path=p)
-        w, h = brand.size(name)
-        paths.append((p, name, f"{name} {w}x{h}"))
+    if fmt == "ad":
+        paths = render_manual_ads(topic, cal, channel, out_dir)
+    else:
+        paths = []
+        for name in spec["ratios"]:
+            p = os.path.join(out_dir, f"{topic['id']}_{name}.png")
+            cards.render_card(topic, cal["brand"], size=brand.size(name),
+                              out_path=p)
+            w, h = brand.size(name)
+            paths.append((p, name, f"{name} {w}x{h}"))
 
-    text = spec["caption"](topic, cal["brand"])
+    text = spec["caption"](topic, cal["brand"], fmt)
     bar = "=" * 72
-    print(f"\n{bar}\n  {channel.upper()} — {topic['id']}\n{bar}\n")
+    print(f"\n{bar}\n  {channel.upper()} — {topic['id']} ({fmt})\n{bar}\n")
     print(text)
     print(f"\n  ({len(text)}/{spec['limit']} characters)")
-    print(f"\n{bar}\n  IMAGE"
-          f"{'S — attach ONE of these' if len(paths) > 1 else ''}\n{bar}")
+    label = "VIDEO" if fmt == "ad" else "IMAGE"
+    print(f"\n{bar}\n  {label}"
+          f"{'S — attach ONE (plus its cover)' if len(paths) > 1 else ''}"
+          f"\n{bar}")
     base = os.environ.get("MEDIA_BASE_URL", "").rstrip("/")
     for p, name, label in paths:
         print(f"  {label:<16} {p}")
@@ -237,13 +306,17 @@ def main():
                     help="include topics that cannot publish")
     ap.add_argument("--topic", help="preview a single topic id")
     ap.add_argument("--linkedin", action="store_true",
-                    help="next unposted topic: write real PNGs + print the copy")
+                    help="next unposted topic: write the media files + print the copy")
     ap.add_argument("--instagram", action="store_true",
                     help="same, for the Instagram queue")
     ap.add_argument("--posted", metavar="TOPIC_ID",
                     help="mark a topic as posted")
     ap.add_argument("--channel", default="linkedin",
                     choices=sorted(MANUAL), help="channel for --posted")
+    ap.add_argument("--format", dest="fmt", default="card",
+                    choices=["card", "ad"],
+                    help="artifact for --linkedin/--instagram: a still card "
+                         "or an animated spot with voiceover")
     args = ap.parse_args()
 
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
@@ -255,9 +328,9 @@ def main():
         return
 
     if args.linkedin:
-        return manual_next(cal, "linkedin")
+        return manual_next(cal, "linkedin", args.fmt, args.topic)
     if args.instagram:
-        return manual_next(cal, "instagram")
+        return manual_next(cal, "instagram", args.fmt, args.topic)
 
     topics = cal["topics"]
     if args.topic:
