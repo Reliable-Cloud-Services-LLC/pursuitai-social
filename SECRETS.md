@@ -73,7 +73,7 @@ plus the weekly analytics reads.
 **Verify without posting:**
 ```bash
 export X_API_KEY=... X_API_SECRET=... X_ACCESS_TOKEN=... X_ACCESS_SECRET=...
-python scripts/validate_x.py
+.venv/bin/python scripts/validate_x.py
 ```
 
 ---
@@ -124,7 +124,7 @@ Instagram publishing requires a **Professional (Business)** account linked to a
 **Verify without publishing:**
 ```bash
 export IG_USER_ID=... IG_ACCESS_TOKEN=... MEDIA_BASE_URL=...
-python scripts/validate_ig.py --container
+.venv/bin/python scripts/validate_ig.py --container
 ```
 The `--container` flag creates a real media container to prove Instagram can
 actually *fetch* your media URL, then never publishes it — unpublished
@@ -167,7 +167,7 @@ about the cause.
 **Verify before trusting it:**
 ```bash
 export MEDIA_BASE_URL=... IG_USER_ID=... IG_ACCESS_TOKEN=...
-python scripts/validate_ig.py --container
+.venv/bin/python scripts/validate_ig.py --container
 ```
 That HEADs a real asset URL and creates a container Instagram must fetch —
 it is the only check that proves the bucket is actually reachable.

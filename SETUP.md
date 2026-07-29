@@ -168,7 +168,7 @@ Then:
 To generate a post locally without any of this:
 
 ```bash
-python engine/run.py --dry-run     # renders and prints, posts nothing
+.venv/bin/python engine/run.py --dry-run     # renders and prints, posts nothing
 ```
 
 ## Ongoing operations
@@ -207,7 +207,7 @@ Instagram's only clickable link is the one in the profile bio, so that is
 where IG attribution comes from. Set it once:
 
 ```bash
-python engine/links.py     # prints the exact URL to paste
+.venv/bin/python engine/links.py     # prints the exact URL to paste
 ```
 
 Instagram → Edit profile → Website → paste the printed bio link. It is
@@ -226,7 +226,7 @@ link; the bio link attributes Instagram traffic in aggregate.
 
 ```bash
 pip install -r requirements.txt
-python -m playwright install chromium
-python engine/run.py --dry-run          # generate + print, post nothing
-python engine/run.py --skip-ig          # post to X only (after exporting env vars)
+.venv/bin/python -m playwright install chromium
+.venv/bin/python engine/run.py --dry-run          # generate + print, post nothing
+.venv/bin/python engine/run.py --skip-ig          # post to X only (after exporting env vars)
 ```

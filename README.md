@@ -109,19 +109,19 @@ scheme that misbehaves on thin data is worse than none.
 ## Commands
 
 ```bash
-python engine/run.py --prepare          # pick, render, write pending.json
-python engine/run.py --notify-pending   # send it to Slack for review
-python engine/run.py --approve          # record approval (never automatic)
-python engine/run.py --publish          # verify approval, then post
-python engine/run.py --dry-run          # generate and print, post nothing
-python engine/run.py                    # prepare only, then tell you what's next
+.venv/bin/python engine/run.py --prepare          # pick, render, write pending.json
+.venv/bin/python engine/run.py --notify-pending   # send it to Slack for review
+.venv/bin/python engine/run.py --approve          # record approval (never automatic)
+.venv/bin/python engine/run.py --publish          # verify approval, then post
+.venv/bin/python engine/run.py --dry-run          # generate and print, post nothing
+.venv/bin/python engine/run.py                    # prepare only, then tell you what's next
 
-python scripts/preview.py               # visual review sheet for every post
-python scripts/preview.py --linkedin    # next LinkedIn post: PNGs + copy
-python scripts/preview.py --instagram   # same, for the Instagram queue
-python scripts/preview.py --posted <id> --channel linkedin|instagram
-python engine/links.py                  # print the Instagram bio link
-python engine/notify.py --heartbeat     # weekly liveness report
+.venv/bin/python scripts/preview.py               # visual review sheet for every post
+.venv/bin/python scripts/preview.py --linkedin    # next LinkedIn post: PNGs + copy
+.venv/bin/python scripts/preview.py --instagram   # same, for the Instagram queue
+.venv/bin/python scripts/preview.py --posted <id> --channel linkedin|instagram
+.venv/bin/python engine/links.py                  # print the Instagram bio link
+.venv/bin/python engine/notify.py --heartbeat     # weekly liveness report
 pytest tests/ -v                        # 73 tests
 ```
 
@@ -143,6 +143,21 @@ Failure is injected by overwriting the poster modules inside a throwaway copy of
 the project, so tests exercise the real code path and never touch a network.
 
 ---
+
+## Running it locally
+
+The engine needs Pillow, requests and tweepy. A system `python3` will
+usually be missing at least one of them, and on macOS there is often no
+bare `python` at all — so every command below uses the project venv:
+
+```bash
+python3 -m venv .venv                    # first time only
+./.venv/bin/pip install -r requirements.txt
+```
+
+Prefer plain `python`? `source .venv/bin/activate` first — but activate
+the venv rather than aliasing `python` to `python3`, which points at an
+interpreter without the dependencies and fails confusingly.
 
 ## Setup and operations
 
