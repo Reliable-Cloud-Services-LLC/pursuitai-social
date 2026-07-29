@@ -62,10 +62,11 @@ def main():
     if missing and d.get("type") != "SYSTEM_USER":
         fail(f"missing scopes: {missing} (have: {sorted(scopes)})")
     ok(f"scopes ok ({'system user' if d.get('type')=='SYSTEM_USER' else ', '.join(sorted(needed))})")
+    token_days_left = None
     if d.get("expires_at", 0):
         import datetime
         exp = datetime.datetime.fromtimestamp(d["expires_at"])
-        days = (exp - datetime.datetime.now()).days
+        days = token_days_left = (exp - datetime.datetime.now()).days
         print(f"    note: token expires {exp:%Y-%m-%d} ({days} days) — "
               "use a System User token for never-expiring")
 
@@ -146,6 +147,18 @@ def main():
         ok(f"container {r.json()['id']} created — Instagram fetched your media. "
            "NOT publishing; it expires harmlessly in 24h.")
 
+    # An expiring token passes every CHAIN check and still cannot run a
+    # daily cron — it dies mid-schedule and the failure lands days later,
+    # looking like a regression. The verdict must not say "autonomously"
+    # about a token that will not survive the week. (The operator hit
+    # exactly this: a 0-days token, every check green, rocket emoji.)
+    if token_days_left is not None and token_days_left < 7:
+        print(f"\nChain verified — but this token expires in "
+              f"{token_days_left} day(s), so the engine can NOT post "
+              f"autonomously on it. Mint a System User token "
+              f"(Business Settings → Users → System users) and update "
+              f"IG_ACCESS_TOKEN before relying on the schedule.")
+        sys.exit(1)
     print("\nAll checks passed — the engine can post autonomously. 🚀")
 
 if __name__ == "__main__":
