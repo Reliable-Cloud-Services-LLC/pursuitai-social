@@ -112,6 +112,55 @@ def publishable_topics(cal):
     return rotation.build_rotation(out, scores)
 
 
+# The cursor is a bare index into the publishable list, and that list GROWS
+# as topics get verified — 18 to 23 in one week of audit work. The index
+# stays put while the list shifts under it, so it can land on a topic that
+# already posted days ago. Caught live: slot 2 pointed at fifty-percent-rule
+# ~36h after X carried exactly that card. The rotation had no memory of WHAT
+# posted, only how many.
+REPEAT_COOLDOWN_DAYS = 14
+
+
+def _recently_posted_ids(days=REPEAT_COOLDOWN_DAYS):
+    """Topic ids that reached ANY audience in the last `days` days."""
+    import analytics
+    import datetime
+    cutoff = (datetime.date.today()
+              - datetime.timedelta(days=days)).isoformat()
+    recent = set()
+    for entry in analytics.load_jsonl(LOG):
+        channels = entry.get("channels") or {}
+        posted = any((c or {}).get("status") == "posted"
+                     for c in channels.values()) or entry.get("x")
+        if posted and (entry.get("date") or "") >= cutoff:
+            recent.add(entry.get("topic"))
+    return recent
+
+
+def _next_fresh_topic(topics, state):
+    """The cursor's pick, advanced past anything an audience saw recently.
+
+    Walks forward from the cursor rather than filtering the list — the
+    cursor indexes into the list, so removing entries would shift every
+    other topic's slot and reintroduce the exact bug this fixes. If every
+    topic is recent (tiny calendar, aggressive cadence) the cursor's own
+    pick stands: repeating beats publishing nothing.
+    """
+    recent = _recently_posted_ids()
+    start = state["topic_index"] % len(topics)
+    for offset in range(len(topics)):
+        candidate = topics[(start + offset) % len(topics)]
+        if candidate["id"] not in recent:
+            if offset:
+                print(f"[prepare] slot {start} ({topics[start]['id']}) "
+                      f"posted within {REPEAT_COOLDOWN_DAYS}d — advanced "
+                      f"{offset} to {candidate['id']}")
+            return candidate
+    print(f"[prepare] every topic posted within {REPEAT_COOLDOWN_DAYS}d — "
+          f"repeating {topics[start]['id']}")
+    return topics[start]
+
+
 def prepare(force_format=None, force_topic=None):
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     brand = cal["brand"]
@@ -129,7 +178,7 @@ def prepare(force_format=None, force_topic=None):
                   + ("not publishable" if known else "not a known topic"))
             sys.exit(1)
     else:
-        topic = topics[state["topic_index"] % len(topics)]
+        topic = _next_fresh_topic(topics, state)
     fmt = force_format or select_format(state["run_count"], len(topics))
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
