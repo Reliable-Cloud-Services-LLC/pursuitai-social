@@ -6,7 +6,7 @@ name: Daily social post
 # approves. That pause is the gate — it is enforced by GitHub, not by our
 # code, so no env var or flag here can bypass it.
 
-# SCHEDULE HELD. 20 of 24 topics are publishable (claims traced to a source
+# SCHEDULE HELD. 22 of 24 topics are publishable (claims traced to a source
 # AND a clean rendered card), which is a large enough rotation — but the
 # cron stays commented out until all three channels publish. Instagram is
 # still blocked on Meta developer verification, and a scheduled run that
