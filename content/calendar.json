@@ -296,7 +296,7 @@
       "id": "solicitation-analysis",
       "feature": "Solicitation Analysis & Q&A Extractor",
       "headline": "RFP packet in. Compliance matrix out.",
-      "body": "Upload the PDF cover + XLSX pricing template + DOCX amendments — get a structured compliance matrix, evaluation criteria, key personnel and deliverables in one pass. Q&A packets extract separately.",
+      "body": "Upload the whole packet — PDF, XLSX, DOCX — and get a compliance matrix, evaluation criteria, key personnel and deliverables in one pass. Q&A extracts separately.",
       "hook_x": "Reading a 200-page RFP packet by hand is how requirements get missed. Upload the whole packet — PDF, XLSX, DOCX — and PursuitAI returns the compliance matrix, eval criteria, key personnel and deliverables in one pass.",
       "hook_ig": "Every lost proposal has one missed requirement in it somewhere.\n\nUpload an RFP, RFQ, or RFI packet — PDF cover, XLSX pricing template, DOCX amendments — and PursuitAI returns a structured compliance matrix, evaluation criteria, key personnel requirements, deliverables and risks. One pass. A Q&A packet extracts on its own pass.\n\nThen draft against it, section by section.",
       "stat": "Multi-file packet → one compliance matrix",
