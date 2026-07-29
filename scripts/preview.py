@@ -36,8 +36,18 @@ RATIOS = ["x", "ig", "square"]
 # ratios are called out separately for the person doing the pasting.
 LINKEDIN_RATIOS = ["square", "portrait"]
 OUT = os.path.join(ROOT, "assets", "preview", "index.html")
-LINKEDIN_DIR = os.path.join(ROOT, "assets", "linkedin")
-LINKEDIN_LOG = os.path.join(ROOT, "logs", "linkedin_posted.jsonl")
+MANUAL_LOG = os.path.join(ROOT, "logs", "linkedin_posted.jsonl")
+
+# Per-channel manual posting. Each keeps its own cursor in MANUAL_LOG.
+MANUAL = {
+    "linkedin": {"ratios": ["square", "portrait"],
+                 "caption": lambda t, b: captions.build_linkedin(
+                     t, b, fmt="card", fresh=False),
+                 "limit": 3000},
+    "instagram": {"ratios": ["ig"],
+                  "caption": lambda t, b: captions.build_ig(t, b, fresh=False),
+                  "limit": 2200},
+}
 
 
 def data_uri(image):
@@ -174,42 +184,51 @@ def build_html(rows, cal):
     return "\n".join(parts)
 
 
-def linkedin_next(cal):
-    """Everything needed for one hand-posted LinkedIn update.
+def manual_next(cal, channel):
+    """Everything needed for one hand-posted update on `channel`.
 
     Writes real PNG files rather than only embedding them in the HTML —
-    a data: URI in a browser saves with a junk filename, and LinkedIn's
-    composer wants a file to drag or browse to.
+    a data: URI saves with a junk filename, and a composer wants a file to
+    drag or browse to.
     """
+    spec = MANUAL[channel]
     publishable = [t for t in cal["topics"] if compliance.is_publishable(t)]
     clean = [t for t in publishable
-             if not compliance.check_claims(
-                 t, captions.build_linkedin(t, cal["brand"], fmt="card",
-                                            fresh=False))]
-    topic = manual_queue.next_unposted(clean, LINKEDIN_LOG)
+             if not compliance.check_claims(t, spec["caption"](t, cal["brand"]))]
+    topic = manual_queue.next_unposted(clean, MANUAL_LOG, channel)
     if not topic:
-        print("[linkedin] no publishable topics")
+        print(f"[{channel}] no publishable topics")
         return
 
-    os.makedirs(LINKEDIN_DIR, exist_ok=True)
+    out_dir = os.path.join(ROOT, "assets", channel)
+    os.makedirs(out_dir, exist_ok=True)
     paths = []
-    for name in LINKEDIN_RATIOS:
-        p = os.path.join(LINKEDIN_DIR, f"{topic['id']}_{name}.png")
+    for name in spec["ratios"]:
+        p = os.path.join(out_dir, f"{topic['id']}_{name}.png")
         cards.render_card(topic, cal["brand"], size=brand.size(name),
                           out_path=p)
         w, h = brand.size(name)
-        paths.append((p, f"{name} {w}x{h}"))
+        paths.append((p, name, f"{name} {w}x{h}"))
 
+    text = spec["caption"](topic, cal["brand"])
     bar = "=" * 72
-    print(f"\n{bar}\n  LINKEDIN — {topic['id']}\n{bar}\n")
-    print(captions.build_linkedin(topic, cal["brand"], fmt="card",
-                                  fresh=False))
-    print(f"\n{bar}\n  IMAGES — attach ONE of these\n{bar}")
-    for p, label in paths:
+    print(f"\n{bar}\n  {channel.upper()} — {topic['id']}\n{bar}\n")
+    print(text)
+    print(f"\n  ({len(text)}/{spec['limit']} characters)")
+    print(f"\n{bar}\n  IMAGE"
+          f"{'S — attach ONE of these' if len(paths) > 1 else ''}\n{bar}")
+    base = os.environ.get("MEDIA_BASE_URL", "").rstrip("/")
+    for p, name, label in paths:
         print(f"  {label:<16} {p}")
-    done = len(manual_queue.posted_ids(LINKEDIN_LOG))
+        if base:
+            # Instagram is usually posted from a phone; the public URL is
+            # the easiest way to get the card onto one.
+            print(f"  {'':<16} {base}/assets/{channel}/{os.path.basename(p)}"
+                  "  (upload separately to use)")
+    done = len(manual_queue.posted_ids(MANUAL_LOG, channel))
     print(f"\n  {done} posted so far · {len(clean)} in rotation")
-    print(f"\n  When posted:  python scripts/preview.py --posted {topic['id']}\n")
+    print(f"\n  When posted:  python scripts/preview.py --posted "
+          f"{topic['id']} --channel {channel}\n")
 
 
 def main():
@@ -219,20 +238,26 @@ def main():
     ap.add_argument("--topic", help="preview a single topic id")
     ap.add_argument("--linkedin", action="store_true",
                     help="next unposted topic: write real PNGs + print the copy")
+    ap.add_argument("--instagram", action="store_true",
+                    help="same, for the Instagram queue")
     ap.add_argument("--posted", metavar="TOPIC_ID",
-                    help="mark a topic as posted to LinkedIn")
+                    help="mark a topic as posted")
+    ap.add_argument("--channel", default="linkedin",
+                    choices=sorted(MANUAL), help="channel for --posted")
     args = ap.parse_args()
 
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         cal = json.load(f)
 
     if args.posted:
-        manual_queue.mark_posted(args.posted, LINKEDIN_LOG)
-        print(f"[linkedin] marked {args.posted} as posted")
+        manual_queue.mark_posted(args.posted, MANUAL_LOG, args.channel)
+        print(f"[{args.channel}] marked {args.posted} as posted")
         return
 
     if args.linkedin:
-        return linkedin_next(cal)
+        return manual_next(cal, "linkedin")
+    if args.instagram:
+        return manual_next(cal, "instagram")
 
     topics = cal["topics"]
     if args.topic:
