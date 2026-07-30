@@ -34,6 +34,16 @@ on:
         type: choice
         options: ["", "card", "screenshot", "video", "ad"]
         default: ""
+      skip:
+        description: >-
+          Skip a channel this run. Use to re-post a topic to the channel
+          that FAILED without duplicating on the one that succeeded — the
+          remediation path for a single-channel outage. Leave blank
+          normally.
+        required: false
+        type: choice
+        options: ["", "x", "ig"]
+        default: ""
       topic:
         description: >-
           Post THIS topic id instead of the rotation's next (e.g. a
@@ -210,7 +220,12 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-        run: python engine/run.py --publish
+          SKIP: ${{ inputs.skip }}
+        run: |
+          args=""
+          [ "$SKIP" = "x" ] && args="--skip-x"
+          [ "$SKIP" = "ig" ] && args="--skip-ig"
+          python engine/run.py --publish $args
 
       # always(): publish exits non-zero on failure, and the failure entry
       # in posted.jsonl is the evidence. Without this the fail-loud change

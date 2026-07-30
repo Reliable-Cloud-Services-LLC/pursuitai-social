@@ -177,3 +177,30 @@ def test_every_ffmpeg_test_is_selected_by_the_quarantined_job():
     assert not offenders, (
         "these tests need ffmpeg but `-k video` will not select them, so "
         f"they never run in CI: {offenders}")
+
+
+def test_a_failed_channel_can_be_retried_alone():
+    """A single-channel outage — Meta rejecting while X succeeds — left no
+    way to remediate: re-running posted to BOTH, duplicating on the healthy
+    channel. run.py already had --skip-x/--skip-ig; only the dispatch input
+    was missing. (Live case: 2026-07-30, IG 400 from a blocked developer
+    account while X posted fine.)"""
+    text = _daily_text()
+    block = text[text.index("      skip:"):text.index("      topic:")]
+    for ch in ("x", "ig"):
+        assert f'"{ch}"' in block, f"cannot skip {ch}"
+    assert 'default: ""' in block, "skipping must not be the default"
+
+    publish = text[text.index("--publish"):]
+    assert "--skip-x" in text and "--skip-ig" in text, (
+        "the input is not wired to the publish step")
+
+
+def test_skip_is_wired_to_publish_not_prepare():
+    """Skipping is a PUBLISH-time decision. Wiring it to prepare would
+    change what gets rendered and reviewed, so the human would approve
+    something other than what ships."""
+    text = _daily_text()
+    prepare_half = text[:text.index("  publish:")]
+    assert "--skip-" not in prepare_half, (
+        "skip leaked into the prepare job")
