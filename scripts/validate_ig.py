@@ -95,9 +95,17 @@ def main():
     else:
         print("    (quota endpoint unavailable — not fatal)")
 
+    # Both media modes need this. Binding it inside the --container branch
+    # made --reel crash with UnboundLocalError before it reached a single
+    # Meta call — the mode existed to print Meta's error and could not get
+    # far enough to ask.
+    base = None
+    if args.container or args.reel:
+        base = os.environ.get("MEDIA_BASE_URL") or fail(
+            "MEDIA_BASE_URL not set")
+
     if args.container:
         print("[5] container creation (fetch test — will NOT publish)")
-        base = os.environ.get("MEDIA_BASE_URL") or fail("MEDIA_BASE_URL not set")
         # Test an asset that PROVABLY SHIPPED, not one we hope exists.
         # prepare only syncs the assets it renders that run, so the bucket
         # holds exactly what past runs produced — and S3 answers 403 (not
