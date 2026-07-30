@@ -11,7 +11,7 @@ Two phases (so Instagram can fetch media from committed public URLs):
   python engine/run.py --dry-run   # prepare only, print captions
 
 Rotation: topics round-robin through content/calendar.json; formats cycle
-card -> screenshot -> card -> video so the feed never looks templated.
+card -> screenshot -> card -> ad so the feed never looks templated.
 """
 import argparse
 import datetime
@@ -43,7 +43,7 @@ METRICS = os.path.join(ROOT, "logs", "metrics.jsonl")
 # 5 slots against 18 publishable topics: gcd(18, 5) = 1, so every topic
 # eventually appears in every format. "ad" is the animated spot (adspot.py);
 # "video" is the older slide-based clip.
-FORMATS = ["card", "screenshot", "card", "video", "ad"]
+FORMATS = ["card", "screenshot", "card", "ad"]
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -185,7 +185,7 @@ def prepare(force_format=None, force_topic=None):
 
     narration_script = None
     shot_x = shot_ig = None
-    if fmt in ("screenshot", "video"):
+    if fmt == "screenshot":
         try:
             import screenshots
             screenshots.capture_all()
@@ -228,24 +228,10 @@ def prepare(force_format=None, force_topic=None):
             # was never spoken.
             ad_path, fmt, narration_script = None, "card", None
 
-    video_path = None
-    if fmt == "video":
-        try:
-            import video
-            video_path = os.path.join(ROOT, "assets", "video",
-                                      f"{topic['id']}.mp4")
-            video.make_video(topic, video_path, screenshot=shot_x)
-            media.write_poster(video_path)
-        except Exception as e:
-            print(f"[prepare] video build failed ({e}); using card")
-            video_path, fmt = None, "card"
-
     if fmt == "ad" and ad_path:
         media_x, media_ig = ad_path, ad_path
     elif fmt == "screenshot" and shot_x:
         media_x, media_ig = shot_x, shot_ig
-    elif fmt == "video" and video_path:
-        media_x, media_ig = video_path, video_path
     else:
         fmt = "card"
         media_x, media_ig = card_x, card_ig

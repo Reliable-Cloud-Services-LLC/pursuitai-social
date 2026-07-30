@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 import captions  # noqa: E402
 import links     # noqa: E402
 
-FORMATS = ["card", "screenshot", "video"]
+FORMATS = ["card", "screenshot", "ad"]
 UTM_KEYS = {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
 
 
