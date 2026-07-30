@@ -313,3 +313,80 @@ def test_validator_can_exercise_the_reel_path():
     assert '"--reel"' in src
     assert "REELS" in src
     assert "fbtrace" in src, "the point is printing what Meta said"
+
+
+def test_reel_mode_runs_without_container_mode(monkeypatch, tmp_path, capsys):
+    """--reel alone crashed with UnboundLocalError: `base` was bound inside
+    the --container branch, so the mode whose entire purpose was printing
+    Meta's error could not reach a Meta call to ask.
+
+    This EXECUTES the path with faked HTTP rather than inspecting the
+    source. A first attempt at this test walked the AST for an assignment
+    to `base` — and passed with the bug restored, because the assignment it
+    found was the one inside the --container branch. Running the code is
+    the only thing that proves the code runs.
+    """
+    import importlib.util
+    import sys as _sys
+
+    spec = importlib.util.spec_from_file_location(
+        "validate_ig", os.path.join(ROOT, "scripts", "validate_ig.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    monkeypatch.setenv("IG_USER_ID", "1784100000000")
+    monkeypatch.setenv("IG_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setattr(_sys, "argv", ["validate_ig.py", "--reel"])
+
+    # MUST be logs/posted.jsonl — the path the script actually reads. An
+    # earlier version of this fixture wrote it to the wrong place, so the
+    # script fail()ed out before reaching the line under test and the
+    # test passed against the BUG. The `except SystemExit` below is what
+    # hid it.
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "posted.jsonl").write_text(
+        json.dumps({"date": "2026-07-30", "topic": "t",
+                    "media_ig": "assets/video/t.mp4"}) + "\n")
+    monkeypatch.setattr(mod, "ROOT", str(tmp_path))
+
+    # URL-aware fake: debug_token wants data as a DICT, the quota endpoint
+    # wants it as a LIST. A single shape cannot satisfy both, which is why
+    # the first attempt at this fake kept tripping on the next endpoint.
+    class Resp:
+        def __init__(self, payload):
+            self._payload = payload
+            self.status_code = 200
+            self.ok = True
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, *a, **k):
+        if "debug_token" in url:
+            return Resp({"data": {"scopes": ["instagram_basic",
+                                             "instagram_content_publish"],
+                                  "type": "SYSTEM_USER"}})
+        if "content_publishing_limit" in url:
+            return Resp({"data": [{"quota_usage": 0}]})
+        return Resp({"id": "1", "name": "t", "username": "t",
+                     "followers_count": 0, "media_count": 0,
+                     "status_code": "FINISHED"})
+
+    monkeypatch.setattr(mod.requests, "get", fake_get)
+    monkeypatch.setattr(mod.requests, "post",
+                        lambda *a, **k: Resp({"id": "container-1"}))
+    monkeypatch.setattr(mod.requests, "head", lambda *a, **k: Resp({}))
+
+    try:
+        mod.main()
+    except UnboundLocalError as exc:            # the bug
+        pytest.fail(f"--reel cannot run standalone: {exc}")
+    except SystemExit as exc:
+        # A clean exit is fine, but only AFTER the reel block ran. Exiting
+        # from an earlier fail() would mean this test never touched the
+        # line it exists to protect — which is how it once passed against
+        # the bug.
+        assert "[6]" in capsys.readouterr().out, (
+            f"exited before the reel block ran ({exc}) — the test proves "
+            f"nothing")
