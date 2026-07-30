@@ -189,7 +189,7 @@ def test_format_rotation_cycles(sandbox):
         seen.append(p["format"])
         _run(["--publish"], sandbox)
     # screenshot/video fall back to card offline; card must appear, no crash
-    assert all(f in ("card", "screenshot", "video") for f in seen)
+    assert all(f in ("card", "screenshot", "ad") for f in seen)
     # W1: publishing nothing consumes nothing, so state is never written.
     # Rotation under successful publishes is covered in
     # test_publish_outcomes.py::test_format_is_not_locked_to_topic.

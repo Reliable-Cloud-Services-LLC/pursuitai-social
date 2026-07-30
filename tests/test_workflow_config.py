@@ -204,3 +204,17 @@ def test_skip_is_wired_to_publish_not_prepare():
     prepare_half = text[:text.index("  publish:")]
     assert "--skip-" not in prepare_half, (
         "skip leaked into the prepare job")
+
+
+def test_the_dispatchable_formats_match_the_rotation():
+    """Dropping a format from FORMATS while leaving it dispatchable would
+    let a manual run produce something the rotation can no longer make —
+    including, in the `video` case, a renderer with no audio path."""
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "engine"))
+    import run
+    m = _FORMAT_OPTIONS.search(_daily_text())
+    options = {o.strip().strip('"\'') for o in m.group(1).split(",")}
+    options.discard("")
+    assert options == set(run.FORMATS), (
+        f"dispatch offers {options}, rotation makes {set(run.FORMATS)}")

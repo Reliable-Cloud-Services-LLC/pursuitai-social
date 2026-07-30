@@ -32,7 +32,7 @@ on:
           rotation. The topic still advances, so use it sparingly.
         required: false
         type: choice
-        options: ["", "card", "screenshot", "video", "ad"]
+        options: ["", "card", "screenshot", "ad"]
         default: ""
       skip:
         description: >-
