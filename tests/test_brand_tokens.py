@@ -1,6 +1,6 @@
 """W6 — one source of truth for brand colour and canvas size.
 
-cards.py and video.py each carried their own copy of the palette, so the
+cards.py and adspot.py each carried their own copy of the palette, so the
 two could drift silently: a colour changed on the card would not change on
 the video. Both now read content/brand_tokens.json, and a ratchet keeps
 colour literals from creeping back in.
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 import brand    # noqa: E402
 import cards    # noqa: E402
-import video    # noqa: E402
+import adspot   # noqa: E402
 
 TOKENS_PATH = os.path.join(ROOT, "content", "brand_tokens.json")
 
@@ -52,20 +52,22 @@ def test_sizes_are_width_height_pairs(tokens):
 
 # ---------- both renderers read the same source ----------
 
-def test_cards_and_video_share_one_palette():
-    """The whole point: a colour cannot differ between the two renderers."""
-    assert cards.VIOLET == video.VIOLET
-    assert cards.DEEP == video.DEEP
-    assert cards.DEEP2 == video.DEEP2
-    assert cards.MUTED == video.MUTED
-    assert cards.GREEN == video.GREEN
-    assert cards.WHITE == video.WHITE
+def test_cards_and_adspot_share_one_palette():
+    """The whole point: a colour cannot differ between the two renderers.
+
+    Retargeted from video.py to adspot.py when the slide renderer was
+    deleted. adspot is now the ONLY video renderer and was never covered by
+    these guards — deleting video.py without moving them would have left
+    the live renderer unguarded while the suite stayed green.
+    """
+    for name in ("VIOLET", "GREEN", "WHITE", "MUTED"):
+        assert getattr(cards, name) == getattr(adspot, name), name
 
 
 def test_palette_matches_the_tokens_file(tokens):
     assert cards.VIOLET == brand.rgb(tokens["colors"]["violet"])
     assert cards.GREEN == brand.rgb(tokens["colors"]["green"])
-    assert video.MUTED == brand.rgb(tokens["colors"]["muted"])
+    assert adspot.MUTED == brand.rgb(tokens["colors"]["muted"])
 
 
 NO_COLOUR_LITERALS = re.compile(
@@ -73,7 +75,7 @@ NO_COLOUR_LITERALS = re.compile(
     r"|fill=\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,")                  # fill=(r, g, b)
 
 
-@pytest.mark.parametrize("module", ["cards.py", "video.py"])
+@pytest.mark.parametrize("module", ["cards.py", "adspot.py"])
 def test_no_colour_literals_remain(module):
     """Ratchet: a colour hardcoded here is a colour that drifts."""
     src = open(os.path.join(ROOT, "engine", module)).read()

@@ -113,20 +113,6 @@ def test_all_topics_render(cal, tmp_path):
         img = cards.render_card(t, cal["brand"], size=(1080, 1350))
         assert img.size == (1080, 1350)
 
-# ---------- video ----------
-
-def test_video_builds(cal, tmp_path):
-    if not shutil.which("ffmpeg"):
-        pytest.skip("ffmpeg not available")
-    import video
-    out = str(tmp_path / "t.mp4")
-    video.make_video(cal["topics"][0], out)
-    assert os.path.getsize(out) > 100_000
-    probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "csv=p=0", out], capture_output=True, text=True)
-    assert 10 <= float(probe.stdout.strip()) <= 20
-
 # ---------- orchestrator state machine ----------
 
 def _run(args, cwd, env=None):
