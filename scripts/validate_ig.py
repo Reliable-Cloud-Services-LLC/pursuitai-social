@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import requests
 
@@ -41,6 +42,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--container", action="store_true",
                     help="also create (but never publish) a test container")
+    ap.add_argument("--reel", action="store_true",
+                    help="also create (but never publish) a REELS container. "
+                         "The reel path has different specs from images and "
+                         "reached production untested — this exercises it.")
     args = ap.parse_args()
 
     tok = os.environ.get("IG_ACCESS_TOKEN") or fail("IG_ACCESS_TOKEN not set")
@@ -159,6 +164,66 @@ def main():
               f"(Business Settings → Users → System users) and update "
               f"IG_ACCESS_TOKEN before relying on the schedule.")
         sys.exit(1)
+    if args.reel:
+        print("[6] REELS container (fetch + transcode test — will NOT publish)")
+        rel = None
+        log_path = os.path.join(ROOT, "logs", "posted.jsonl")
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                entries = [json.loads(line) for line in f if line.strip()]
+            for entry in reversed(entries):
+                cand = entry.get("media_ig") or ""
+                if cand.lower().endswith((".mp4", ".mov")):
+                    rel = cand
+                    break
+        if not rel:
+            fail("no video in posted.jsonl to test with — render one first")
+        url = f"{base.rstrip('/')}/{rel.lstrip('/')}"
+        head = requests.head(url, timeout=30)
+        if head.status_code >= 400:
+            fail(f"video not publicly reachable ({head.status_code}): {url}")
+        ok(f"video publicly reachable: {url}")
+
+        payload = {"media_type": "REELS", "video_url": url,
+                   "caption": "[validation container - never published]",
+                   "share_to_feed": "true", "access_token": tok}
+        cover = (os.path.splitext(rel)[0] + "_poster.jpg")
+        if requests.head(f"{base.rstrip('/')}/{cover}",
+                         timeout=30).status_code < 400:
+            payload["cover_url"] = f"{base.rstrip('/')}/{cover}"
+            ok(f"cover reachable: {cover}")
+        r = requests.post(f"{GRAPH}/{uid}/media", data=payload, timeout=120)
+        if r.status_code >= 400:
+            # THE point of this mode: print what Meta actually said. A bare
+            # "400 Bad Request" is what sent the first live reel failure
+            # into a guessing game.
+            try:
+                err = (r.json() or {}).get("error", {})
+            except ValueError:
+                err = {}
+            fail("reel container REJECTED by Meta:\n"
+                 f"       message : {err.get('message')}\n"
+                 f"       user msg: {err.get('error_user_msg')}\n"
+                 f"       subcode : {err.get('error_subcode')}\n"
+                 f"       fbtrace : {err.get('fbtrace_id')}")
+        container = r.json()["id"]
+        ok(f"container {container} accepted — polling transcode…")
+        for _ in range(20):
+            st = requests.get(f"{GRAPH}/{container}",
+                              params={"fields": "status_code,status",
+                                      "access_token": tok},
+                              timeout=60).json()
+            code = st.get("status_code")
+            if code == "FINISHED":
+                ok("transcode FINISHED — the reel path works end to end. "
+                   "NOT publishing; the container expires in 24h.")
+                break
+            if code == "ERROR":
+                fail(f"transcode FAILED: {st.get('status')}")
+            time.sleep(10)
+        else:
+            fail("transcode never finished within 200s")
+
     print("\nAll checks passed — the engine can post autonomously. 🚀")
 
 if __name__ == "__main__":
