@@ -83,6 +83,9 @@ def _container_payload(monkeypatch, **kwargs):
     captured = {}
 
     class Resp:
+        ok = True          # _check() reads .ok, not raise_for_status
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
@@ -224,3 +227,89 @@ def test_validator_does_not_bless_an_expiring_token():
     verdict = src[src.index("token_days_left is not None"):]
     assert "sys.exit(1)" in verdict.split("All checks passed")[0], (
         "an expiring token must fail the verdict, not just warn")
+
+
+# ---------- Meta's error body must survive ----------
+
+def test_meta_errors_are_not_reduced_to_a_bare_status():
+    """The first live Reels failure produced only:
+
+        HTTPError: 400 Client Error: Bad Request for url: .../media
+
+    Meta had said exactly what was wrong in the JSON body — message,
+    error_user_msg, fbtrace_id — and raise_for_status() threw all of it
+    away. A 400 that cannot distinguish a bad aspect ratio from an expired
+    token is unactionable.
+    """
+    import post_ig
+    src = open(os.path.join(ROOT, "engine", "post_ig.py")).read()
+    # the CALL, not the docstring that explains why it is gone
+    assert ".raise_for_status(" not in src, (
+        "raise_for_status discards Meta's explanation — use _check()")
+    assert hasattr(post_ig, "InstagramError")
+
+
+def test_check_surfaces_message_and_trace():
+    import post_ig
+
+    class Resp:
+        ok = False
+        status_code = 400
+        text = ""
+
+        def json(self):
+            return {"error": {"message": "Invalid aspect ratio",
+                              "error_user_msg": "Try 9:16",
+                              "fbtrace_id": "AbCd123"}}
+
+    with pytest.raises(post_ig.InstagramError) as exc:
+        post_ig._check(Resp(), "reel container creation")
+    text = str(exc.value)
+    assert "reel container creation" in text
+    assert "Invalid aspect ratio" in text
+    assert "Try 9:16" in text
+    assert "AbCd123" in text
+
+
+def test_check_falls_back_to_body_when_json_is_unparseable():
+    import post_ig
+
+    class Resp:
+        ok = False
+        status_code = 502
+        text = "<html>gateway timeout</html>"
+
+        def json(self):
+            raise ValueError("not json")
+
+    with pytest.raises(post_ig.InstagramError) as exc:
+        post_ig._check(Resp(), "publish")
+    assert "gateway timeout" in str(exc.value)
+
+
+def test_check_passes_a_good_response_through():
+    import post_ig
+
+    class Resp:
+        ok = True
+
+    assert post_ig._check(Resp(), "x") is not None
+
+
+def test_a_reel_that_never_finishes_is_not_published():
+    """The poll loop had no else-branch: after 40 tries it fell through and
+    published a container that never reached FINISHED — shipping something
+    whose transcode was never confirmed."""
+    src = open(os.path.join(ROOT, "engine", "post_ig.py")).read()
+    loop = src[src.index("for _ in range(40)"):src.index("def _publish")]
+    assert "else:" in loop, "no terminal branch — an unfinished reel publishes"
+    assert "never reached FINISHED" in loop
+
+
+def test_validator_can_exercise_the_reel_path():
+    """The reel path reached production untested because --container only
+    ever built an IMAGE container."""
+    src = open(os.path.join(ROOT, "scripts", "validate_ig.py")).read()
+    assert '"--reel"' in src
+    assert "REELS" in src
+    assert "fbtrace" in src, "the point is printing what Meta said"
