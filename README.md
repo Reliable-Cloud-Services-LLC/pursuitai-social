@@ -49,7 +49,6 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `captions.py` | Turns a topic into platform copy. Optionally asks Claude for a fresh variant, always falls back to the hand-written hook. Enforces X's character limit. |
 | `links.py` | Builds UTM-tagged URLs so the admin dashboard can attribute a visit to a post. Also generates the Instagram bio link. |
 | `cards.py` | Renders branded feature cards (1080×1350 for Instagram, 1600×900 for X) with PIL. No network. |
-| `video.py` | Builds a ~14s vertical 1080×1920 clip from PIL slides via ffmpeg. No external footage. |
 | `adspot.py` | Animated feature spots — real Lucide icons and type flowing through four scenes. No screenshots. |
 | `narration.py` | Claude-drafted voiceover scripts, gated by the same compliance rules; deterministic fallback. |
 | `voice.py` | Kokoro `af_heart` TTS, matching the product's instructional-video catalogue. Optional — ads ship silent without it. |

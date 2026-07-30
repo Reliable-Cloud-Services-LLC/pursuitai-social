@@ -1,6 +1,6 @@
 """Brand tokens — the one place colour and canvas size are defined.
 
-cards.py and video.py each used to carry their own copy of the palette,
+cards.py and adspot.py each used to carry their own copy of the palette,
 which meant a colour could change on the card and not on the video. Both
 now read content/brand_tokens.json through this module, and a test rejects
 any colour literal that creeps back into either renderer.

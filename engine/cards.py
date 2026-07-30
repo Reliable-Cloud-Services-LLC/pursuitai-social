@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 # Palette comes from content/brand_tokens.json — never hardcode a colour
-# here, or it drifts away from video.py (see tests/test_brand_tokens.py).
+# here, or it drifts away from adspot.py (see tests/test_brand_tokens.py).
 VIOLET = brand.rgb("violet")
 DEEP = brand.rgb("deep")
 DEEP2 = brand.rgb("deep2")
