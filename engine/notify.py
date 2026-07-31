@@ -97,6 +97,17 @@ def blocked(topic, fmt, reason):
                  f"topic `{topic}` · format `{fmt}`\n{reason}")
 
 
+def alert(text):
+    """Send an arbitrary operational alert.
+
+    `failure()` is shaped around a post's per-channel results, which a
+    missed RUN has none of — there was no post to report on. This is the
+    plain-text door for that class: something is wrong, here is what, here
+    is where to look.
+    """
+    return _send(text)
+
+
 def failure(topic, fmt, results):
     """Alert that a publish run did not fully succeed.
 

@@ -218,3 +218,29 @@ def test_the_dispatchable_formats_match_the_rotation():
     options.discard("")
     assert options == set(run.FORMATS), (
         f"dispatch offers {options}, rotation makes {set(run.FORMATS)}")
+
+
+def test_the_post_cron_is_off_the_busy_slots():
+    """GitHub: "High load times include the start of every hour" and the
+    mitigation is "schedule your workflow to run at a different time of the
+    hour". :00 and :30 are the two busiest. The 2026-07-30 run queued 118
+    minutes late on :30."""
+    import re
+    m = re.search(r'cron:\s*"(\d+)\s', _daily_text())
+    minute = int(m.group(1))
+    assert minute not in (0, 30), f"cron sits on the busy :{minute:02d} slot"
+
+
+def test_the_commit_step_cannot_lose_the_post_log_silently():
+    """`git pull --rebase || true` swallowed a real failure: the media sync
+    leaves assets/ dirty so rebase refuses, and if develop had also moved
+    the push was rejected and the log vanished — which re-serves the topic
+    later as a duplicate. It survived 2026-07-30 only because develop had
+    not moved that hour."""
+    text = _daily_text()
+    # everything from the step name to EOF — it is the last step in the job
+    step = text[text.index("Commit state + post log"):]
+    assert "git pull --rebase || true" not in step, (
+        "the swallowed-failure form is back")
+    assert "::error::" in step, "a lost post log must fail loudly"
+    assert "exit 1" in step, "a lost post log must fail the step"
