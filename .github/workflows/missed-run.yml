@@ -8,13 +8,22 @@ name: Missed-run alarm
 # the day just passes. The weekly heartbeat cannot see it; a Tuesday that
 # never happened would stay invisible until the next Monday.
 #
-# Runs at 16:05 UTC — well after the 13:37 post window plus the ~2h delay
-# observed on 2026-07-30, so a merely LATE run is not reported as a missing
-# one. Also off the hour, per GitHub's own mitigation.
+# Runs at 17:07 UTC — 210 minutes after the 13:37 post window.
+#
+# That margin is set from OBSERVED delay, not a guess. Two consecutive
+# scheduled runs queued almost identically late:
+#   2026-07-30  13:30 -> 15:28   118 min
+#   2026-07-31  13:30 -> 15:33   123 min
+# So ~2h is the TYPICAL delay here, not the worst case. An alarm at 16:05
+# (the first draft) left only ~25 minutes of headroom over typical — one
+# slower-than-usual morning and it cries wolf. An alarm that cries wolf is
+# worse than no alarm, because the next real one gets dismissed.
+#
+# Also off the hour and off :30, per GitHub's own mitigation.
 
 on:
   schedule:
-    - cron: "5 16 * * 1-6"   # Mon–Sat, matching daily.yml's days
+    - cron: "7 17 * * 1-6"   # Mon–Sat, matching daily.yml's days
   workflow_dispatch:
 
 permissions:
