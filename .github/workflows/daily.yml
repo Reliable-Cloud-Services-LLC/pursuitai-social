@@ -21,8 +21,14 @@ name: Daily social post
 # disabling the workflow in the Actions tab — also works and is faster).
 on:
   schedule:
-    # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
-    - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
+    # 13:37 UTC = 9:37 AM ET — still the B2B engagement window, but OFF the
+    # half hour. GitHub: "The schedule event can be delayed during periods
+    # of high loads... High load times include the start of every hour" and
+    # "If the load is sufficiently high enough, some queued jobs may be
+    # dropped." Their own mitigation is "schedule your workflow to run at a
+    # different time of the hour". :30 is the second-busiest slot after
+    # :00 — the 2026-07-30 run queued 118 minutes late on it.
+    - cron: "37 13 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
     inputs:
       format:
@@ -230,12 +236,44 @@ jobs:
       # always(): publish exits non-zero on failure, and the failure entry
       # in posted.jsonl is the evidence. Without this the fail-loud change
       # would erase its own audit trail.
+      # The post log and rotation state are the ONLY record that a post
+      # happened. Losing them means the topic is re-served later as a
+      # visible duplicate — so this step must not fail quietly.
+      #
+      # It used to run `git pull --rebase || true`, which swallowed a real
+      # failure: the media sync leaves assets/ dirty, so rebase refuses
+      # ("cannot pull with rebase: You have unstaged changes"), and if
+      # develop had ALSO moved the subsequent push was rejected and the log
+      # was lost. It survived 2026-07-30 only because develop happened not
+      # to have moved that hour.
+      #
+      # Now: stage ONLY the tracked state, commit, then rebase just that
+      # commit onto whatever landed meanwhile, and retry the push. A push
+      # that still cannot land fails the step LOUDLY.
       - name: Commit state + post log
         if: always()
         run: |
           git config user.name "pursuitai-bot"
           git config user.email "bot@pursuitai.net"
-          git pull --rebase || true
           git add -A content logs || true
-          git commit -m "post log $(date -u +%F)" || echo "nothing to commit"
-          git push
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "post log $(date -u +%F)"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected — rebasing onto origin/$GITHUB_REF_NAME"
+            git fetch origin "$GITHUB_REF_NAME"
+            git rebase "origin/$GITHUB_REF_NAME" || {
+              echo "::error::rebase failed — the post log could not be"
+              echo "::error::saved. The rotation will re-serve this topic"
+              echo "::error::and duplicate it. Fix the branch by hand."
+              exit 1
+            }
+          done
+          echo "::error::could not push the post log after 3 attempts"
+          exit 1

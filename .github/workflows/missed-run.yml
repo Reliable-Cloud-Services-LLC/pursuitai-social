@@ -1,0 +1,59 @@
+name: Missed-run alarm
+
+# A SEPARATE workflow, for the same reason heartbeat.yml is: if daily.yml's
+# own cron never fires, anything living inside daily.yml is silent too.
+#
+# GitHub: "If the load is sufficiently high enough, some queued jobs may be
+# dropped." A dropped run fails nothing, logs nothing, and sends no review —
+# the day just passes. The weekly heartbeat cannot see it; a Tuesday that
+# never happened would stay invisible until the next Monday.
+#
+# Runs at 16:05 UTC — well after the 13:37 post window plus the ~2h delay
+# observed on 2026-07-30, so a merely LATE run is not reported as a missing
+# one. Also off the hour, per GitHub's own mitigation.
+
+on:
+  schedule:
+    - cron: "5 16 * * 1-6"   # Mon–Sat, matching daily.yml's days
+  workflow_dispatch:
+
+permissions:
+  actions: read           # to ask whether daily.yml ran
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Did today's run fire?
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          import missed_run, notify
+
+          missed, message = missed_run.check(os.environ["REPO"],
+                                             os.environ["GH_TOKEN"])
+          print(f"[missed-run] {message}")
+          if not missed:
+              sys.exit(0)
+
+          # Loud, and actionable. A missed day is recoverable by hand — but
+          # only if somebody is told.
+          notify.alert(
+              f":rotating_light: *No social post ran today*\n{message}\n"
+              f"{os.environ['ACTIONS_URL']}")
+          sys.exit(1)
+          PY
