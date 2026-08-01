@@ -25,11 +25,14 @@ def _footer(img, text="pursuitai.net · free 14-day trial"):
     w, h = img.size
     bar = int(h * 0.055)
     d.rectangle([0, h - bar, w, h], fill=(23, 12, 46, 255))
-    try:
-        f = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(bar * 0.45))
-    except OSError:
-        f = ImageFont.load_default()
+    # Reuse cards.py's font resolution rather than hardcoding one path.
+    # This hardcoded DejaVu with a load_default() fallback, so on any box
+    # without DejaVu (every macOS dev machine) the footer rendered in a
+    # tiny fixed-size bitmap font — legible in CI, illegible in the local
+    # preview an operator actually looks at. Same font-fallback trap that
+    # made card-overflow checks meaningless locally.
+    import cards
+    f = cards._font(int(bar * 0.45), bold=True)
     d.text((int(w * 0.03), h - bar + int(bar * 0.24)), text, font=f,
            fill=(196, 181, 253))
     return img
@@ -40,40 +43,59 @@ def capture_all(out_dir=OUT):
     made = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1600, "height": 1000},
-                                device_scale_factor=2)
+        # Capture TWICE, at the viewport each platform's crop actually
+        # wants. Cropping one desktop capture to 4:5 kept 800px of 1600 —
+        # exactly half the width, centred — which sliced the hero headline
+        # mid-word ("Win More Set-Asides." rendered as "Set-Asides."). The
+        # site is responsive, so a portrait viewport reflows to the mobile
+        # layout, which fits 4:5 by construction and is the right layout
+        # for a mobile-first platform anyway.
+        desktop = browser.new_page(viewport={"width": 1600, "height": 1000},
+                                   device_scale_factor=2)
+        portrait = browser.new_page(viewport={"width": 540, "height": 675},
+                                    device_scale_factor=2)
         for name, url, selector, scroll_y in SECTIONS:
-            try:
-                page.goto(url, wait_until="load", timeout=45000)
-                page.wait_for_timeout(3500)  # let animations settle
-                if scroll_y:
-                    page.mouse.wheel(0, scroll_y)
-                    page.wait_for_timeout(1500)
-                raw = os.path.join(out_dir, f"{name}_raw.png")
-                if selector:
-                    page.locator(selector).first.screenshot(path=raw)
-                else:
-                    page.screenshot(path=raw)
-                made.append(_postprocess(raw, name, out_dir))
-            except Exception as e:  # keep going; screenshots are best-effort
-                print(f"[screenshots] {name} failed: {e}")
+            raws = {}
+            for kind, page in (("x", desktop), ("ig", portrait)):
+                try:
+                    page.goto(url, wait_until="load", timeout=45000)
+                    page.wait_for_timeout(3500)  # let animations settle
+                    if scroll_y:
+                        page.mouse.wheel(0, scroll_y)
+                        page.wait_for_timeout(1500)
+                    raw = os.path.join(out_dir, f"{name}_raw_{kind}.png")
+                    if selector:
+                        page.locator(selector).first.screenshot(path=raw)
+                    else:
+                        page.screenshot(path=raw)
+                    raws[kind] = raw
+                except Exception as e:  # best-effort; keep going
+                    print(f"[screenshots] {name} ({kind}) failed: {e}")
+            if raws:
+                made.append(_postprocess(raws, name, out_dir))
         browser.close()
     return [m for m in made if m]
 
-def _postprocess(raw_path, name, out_dir):
-    img = Image.open(raw_path).convert("RGB")
+def _postprocess(raws, name, out_dir):
+    """raws: {"x": path, "ig": path} — each already at its own viewport."""
     outs = []
-    # X: 16:9
-    x_img = _center_crop(img, 16 / 9).resize((1600, 900), Image.LANCZOS)
-    xp = os.path.join(out_dir, f"{name}_x.png")
-    _footer(x_img).save(xp, quality=92)
-    outs.append(xp)
-    # IG: 4:5
-    ig_img = _center_crop(img, 4 / 5).resize((1080, 1350), Image.LANCZOS)
-    igp = os.path.join(out_dir, f"{name}_ig.png")
-    _footer(ig_img).save(igp, quality=92)
-    outs.append(igp)
-    os.remove(raw_path)
+    if raws.get("x"):
+        img = Image.open(raws["x"]).convert("RGB")
+        x_img = _center_crop(img, 16 / 9).resize((1600, 900), Image.LANCZOS)
+        xp = os.path.join(out_dir, f"{name}_x.png")
+        _footer(x_img).save(xp, quality=92)
+        outs.append(xp)
+    if raws.get("ig"):
+        # A portrait capture is already ~4:5, so this crop trims a little
+        # height rather than half the width.
+        img = Image.open(raws["ig"]).convert("RGB")
+        ig_img = _center_crop(img, 4 / 5).resize((1080, 1350), Image.LANCZOS)
+        igp = os.path.join(out_dir, f"{name}_ig.png")
+        _footer(ig_img).save(igp, quality=92)
+        outs.append(igp)
+    for path in raws.values():
+        if os.path.exists(path):
+            os.remove(path)
     return outs
 
 def _center_crop(img, ratio):
