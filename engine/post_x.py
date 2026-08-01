@@ -7,6 +7,16 @@ Env vars required (create app at https://developer.x.com, Free tier works):
 """
 import os
 
+# The handle lives here once. It was inlined in the log line, which meant
+# the URL we record could silently disagree with the account we post from
+# if the handle ever changed.
+HANDLE = os.environ.get("X_HANDLE", "pursuit_ai")
+
+
+def post_url(tweet_id):
+    return f"https://x.com/{HANDLE}/status/{tweet_id}"
+
+
 def post(text, media_path=None, reply_text=None):
     """Post `text`, then thread `reply_text` beneath it as a reply.
 
@@ -39,7 +49,8 @@ def post(text, media_path=None, reply_text=None):
                            access_token=at, access_token_secret=ats)
     resp = client.create_tweet(text=text, media_ids=media_ids)
     tweet_id = resp.data["id"]
-    print(f"[x] posted https://x.com/pursuit_ai/status/{tweet_id}")
+    url = post_url(tweet_id)
+    print(f"[x] posted {url}")
 
     reply_id = reply_error = None
     if reply_text:
@@ -52,5 +63,5 @@ def post(text, media_path=None, reply_text=None):
             reply_error = f"{type(e).__name__}: {e}"
             print(f"[x] CTA reply FAILED (post itself is live): {reply_error}")
 
-    return {"id": str(tweet_id), "reply_id": reply_id,
+    return {"id": str(tweet_id), "url": url, "reply_id": reply_id,
             "reply_error": reply_error}
