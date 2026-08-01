@@ -353,3 +353,59 @@ def test_format_is_not_locked_at_any_topic_count():
         for topic, formats in seen.items():
             assert formats == every, (
                 f"{n_topics} topics: topic {topic} locked to {sorted(formats)}")
+
+
+# ---------- the post URL reaches the log ----------
+
+def test_instagram_records_its_permalink():
+    """X's URL is derivable from the id; Instagram's is not — a post lives
+    at a shortcode unrelated to its media id, so the URL must be fetched.
+    Without it the log holds an id nobody can turn into a link."""
+    import post_ig
+
+    class R:
+        def __init__(self, payload):
+            self._payload, self.status_code, self.ok = payload, 200, True
+
+        def json(self):
+            return self._payload
+
+    post_ig.requests.post = lambda *a, **k: R({"id": "MEDIA1"})
+    post_ig.requests.get = lambda *a, **k: R(
+        {"permalink": "https://www.instagram.com/p/ABC/"})
+    out = post_ig._publish("u", "t", "c")
+    assert out["url"] == "https://www.instagram.com/p/ABC/"
+    assert out["id"] == "MEDIA1"
+
+
+def test_a_failed_permalink_lookup_does_not_fail_the_post():
+    """The post is already live at this point. Reporting it as failed
+    because a follow-up READ failed would be the worst kind of wrong — it
+    would invite a duplicate repost of something that published fine."""
+    import post_ig
+
+    class R:
+        def __init__(self, payload):
+            self._payload, self.status_code, self.ok = payload, 200, True
+
+        def json(self):
+            return self._payload
+
+    def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    post_ig.requests.post = lambda *a, **k: R({"id": "MEDIA1"})
+    post_ig.requests.get = boom
+    out = post_ig._publish("u", "t", "c")
+    assert out["id"] == "MEDIA1", "the post must still be reported as posted"
+    assert out["url"] is None
+
+
+def test_the_x_handle_lives_in_one_place():
+    """It was inlined in the log line, so the URL we record could disagree
+    with the account we post from if the handle ever changed."""
+    import post_x
+    assert post_x.post_url("123") == f"https://x.com/{post_x.HANDLE}/status/123"
+    src = open(os.path.join(ROOT, "engine", "post_x.py")).read()
+    code = "\n".join(l.split("#")[0] for l in src.splitlines())
+    assert code.count("x.com/") == 1, "the handle is built in more than one place"

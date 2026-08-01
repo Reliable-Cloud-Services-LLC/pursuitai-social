@@ -112,10 +112,30 @@ def post_reel(repo_rel_path, caption, cover_rel_path=None):
             "publishing something unverified")
     return _publish(uid, tok, container)
 
+def _permalink(media_id, tok):
+    """The public URL. Unlike X — where the id slots straight into
+    x.com/<handle>/status/<id> — an Instagram post lives at a SHORTCODE
+    unrelated to its media id, so the only way to get the URL is to ask.
+
+    Best-effort: a post that succeeded must never be reported as failed
+    because a follow-up read did.
+    """
+    try:
+        r = requests.get(f"{GRAPH}/{media_id}",
+                         params={"fields": "permalink", "access_token": tok},
+                         timeout=30)
+        return r.json().get("permalink")
+    except Exception as e:
+        print(f"[ig] permalink lookup failed ({e}) — the post is fine")
+        return None
+
+
 def _publish(uid, tok, creation_id):
     r = requests.post(f"{GRAPH}/{uid}/media_publish", data={
         "creation_id": creation_id, "access_token": tok}, timeout=120)
     _check(r, "publish")
     media_id = r.json()["id"]
-    print(f"[ig] published media id {media_id}")
-    return media_id
+    url = _permalink(media_id, tok)
+    print(f"[ig] posted {url}" if url
+          else f"[ig] published media id {media_id} (no permalink)")
+    return {"id": media_id, "url": url}
