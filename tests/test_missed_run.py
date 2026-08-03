@@ -104,10 +104,12 @@ def test_the_query_is_scoped_to_today():
 
 # ---------- a LATE run is not a MISSING run ----------
 
-def test_the_alarm_runs_after_the_observed_delay():
-    """2026-07-30 queued 118 minutes late. An alarm firing at, say, 14:30
-    would have cried wolf that day — and an alarm that cries wolf is worse
-    than none, because the next real one gets dismissed."""
+def test_the_alarm_runs_well_after_the_observed_delay():
+    """Two consecutive scheduled runs queued almost identically late:
+    118 min (2026-07-30) and 123 min (2026-07-31). So ~2h is TYPICAL here,
+    not the worst case, and the margin must clear typical by a wide band —
+    an alarm that cries wolf is worse than none, because the next real one
+    gets dismissed."""
     import re
     wf = open(os.path.join(ROOT, ".github", "workflows",
                            "missed-run.yml")).read()
@@ -116,7 +118,9 @@ def test_the_alarm_runs_after_the_observed_delay():
                               "daily.yml")).read()
     post_h, post_m = _cron_hm(daily)
     gap = (alarm_h * 60 + alarm_m) - (post_h * 60 + post_m)
-    assert gap >= 120, f"only {gap} min after the post window — too tight"
+    assert gap >= 180, (
+        f"only {gap} min after the post window. Observed delay is ~123 "
+        f"min TYPICAL, so this leaves too little headroom.")
 
 
 def _cron_hm(workflow_text):
