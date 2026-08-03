@@ -40,7 +40,10 @@ out.
 
 - **Missed-run alarm** — `missed-run.yml`, 17:07 UTC Mon–Sat. Alerts if no
   post landed on a day one was due.
-- **Heartbeat** — `heartbeat.yml`, Mondays 10:00 ET. Weekly liveness.
+- **Heartbeat** — `heartbeat.yml`, Mondays 14:23 UTC. Weekly liveness.
+  (UTC like the rest of this section — it used to be written in ET, which
+  made it the one time here you had to convert before comparing it to a
+  cron.)
 
 ---
 
