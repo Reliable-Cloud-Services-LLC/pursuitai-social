@@ -13,7 +13,15 @@ There are two gates on a publish and they defend different things:
 That second question is not academic. The cron prepares daily. If Monday's
 post is never approved, Tuesday's run overwrites pending.json — and a click
 on Monday's Slack notification would then publish Tuesday's content, which
-nobody read. The hash closes that.
+nobody read.
+
+Closing that needs the hash to come from OUTSIDE the publish job. As first
+wired it did not: daily.yml ran --approve and --publish as consecutive steps
+of the same job, so write_approval hashed pending.json and verify_approval
+re-hashed the same file seconds later. It could not fail, and it could not
+see a swap that happened in the hours before the reviewer clicked. The
+prepare job now passes forward the hash of what it actually sent to Slack,
+and --approve refuses anything else.
 
 Approvals expire after 24 hours, and are never granted automatically.
 """
@@ -41,10 +49,29 @@ def compute_hash(pending_path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def write_approval(pending_path, approved_path, actor=None, now=None):
-    """Record an approval for the current pending.json."""
+class ApprovalMismatch(RuntimeError):
+    """The content on disk is not the content that was reviewed."""
+
+
+def write_approval(pending_path, approved_path, actor=None, now=None,
+                   expect=None):
+    """Record an approval for the current pending.json.
+
+    `expect` is the hash taken when the post was SENT for review. Without
+    it this function blesses whatever pending.json happens to say, which is
+    not the same question as "did a human approve this content" — see the
+    module docstring. The verify side then compares approval-time to
+    publish-time, a gap of seconds in the same job, so it cannot catch a
+    swap that happened during the hours before the click.
+    """
     if not os.path.exists(pending_path):
         raise FileNotFoundError("nothing to approve — pending.json is missing")
+    if expect and compute_hash(pending_path) != expect:
+        raise ApprovalMismatch(
+            "pending.json is not what was sent for review — approving it "
+            "would publish content nobody read. Expected sha256 "
+            f"{expect[:12]}…, found {compute_hash(pending_path)[:12]}…. "
+            "Re-run --prepare and review the new post.")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     with open(pending_path) as f:
         pending = json.load(f)

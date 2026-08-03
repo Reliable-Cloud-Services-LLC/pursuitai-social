@@ -269,6 +269,113 @@ def test_approve_records_hash_topic_and_utc_timestamp(sandbox):
     assert stamp.tzinfo is not None, "must be timezone-aware"
 
 
+# ---------- the approval must attach to what was REVIEWED ----------
+#
+# test_publish_refuses_when_pending_changed_after_approval covers a swap
+# between --approve and --publish. In CI those are consecutive steps of one
+# job, seconds apart, so that window is the narrow one. The wide window is
+# the hours BEFORE the click: prepare pushes and notifies, the run parks at
+# the environment gate, and the branch keeps moving. The publish job checks
+# out the branch tip — it has to, because its last step pushes and cannot do
+# that from a detached HEAD — so it can wake up holding a different post.
+#
+# Hashing pending.json at approve time cannot see that: it blesses whatever
+# is there. The expected hash has to come from the prepare job.
+
+def test_approve_refuses_content_that_was_not_the_one_reviewed(sandbox):
+    """Monday's reviewer clicks approve; the file is Tuesday's post."""
+    run(["--prepare"], sandbox)
+    pending, approved = paths(sandbox)
+    reviewed = approval.compute_hash(pending)
+
+    doc = json.load(open(pending))
+    doc["text_x"] = "a completely different tweet nobody reviewed"
+    with open(pending, "w") as f:
+        json.dump(doc, f, indent=2)
+
+    r = run(["--approve", "--expect", reviewed], sandbox)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "REFUSED" in r.stdout.upper()
+    assert not os.path.exists(approved), \
+        "wrote an approval for content nobody reviewed"
+
+
+def test_a_refused_approval_publishes_nothing(sandbox):
+    run(["--prepare"], sandbox)
+    pending, _ = paths(sandbox)
+    reviewed = approval.compute_hash(pending)
+    doc = json.load(open(pending))
+    doc["text_ig"] = "swapped"
+    with open(pending, "w") as f:
+        json.dump(doc, f, indent=2)
+    run(["--approve", "--expect", reviewed], sandbox)
+    r = run(["--publish"], sandbox)
+    assert r.returncode == 1
+    assert not any_channel_called(sandbox)
+
+
+def test_approve_accepts_the_content_that_was_reviewed(sandbox):
+    run(["--prepare"], sandbox)
+    pending, approved = paths(sandbox)
+    r = run(["--approve", "--expect", approval.compute_hash(pending)], sandbox)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert os.path.exists(approved)
+
+
+def test_pending_hash_matches_what_approve_checks(sandbox):
+    """The workflow reads this number out of one job and feeds it to
+    another. If it disagreed with compute_hash, every run would refuse."""
+    run(["--prepare"], sandbox)
+    pending, _ = paths(sandbox)
+    r = run(["--pending-hash"], sandbox)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip() == approval.compute_hash(pending)
+
+
+def test_expect_is_optional_for_local_use(sandbox):
+    """Approving by hand on a laptop has no prepare job to carry a hash."""
+    run(["--prepare"], sandbox)
+    assert run(["--approve"], sandbox).returncode == 0
+
+
+# The unit tests above prove --expect works. These prove it is USED — the
+# flag is worth nothing if the workflow stops passing it, and that removal
+# would leave every test above still green. (Kept here rather than in
+# test_workflow_config.py: this is the approval gate's business.)
+
+def _daily():
+    return open(os.path.join(ROOT, ".github", "workflows", "daily.yml")).read()
+
+
+def test_the_workflow_carries_the_hash_from_prepare_to_publish():
+    text = _daily()
+    prepare, publish = text.split("  publish:", 1)
+    assert "pending_sha256: ${{ steps.review.outputs.pending_sha256 }}" in \
+        prepare, "prepare does not publish the hash as a job output"
+    assert "--pending-hash" in prepare, "nothing computes the hash"
+    assert "needs.prepare.outputs.pending_sha256" in publish, \
+        "publish does not read the hash the prepare job recorded"
+    assert "--expect" in publish, "--approve is not given anything to check"
+
+
+def test_an_absent_hash_fails_the_publish_rather_than_skipping_the_check():
+    """`--expect ""` would be indistinguishable from local use, and
+    --approve would wave it through. An empty output means the wiring
+    broke, and a broken integrity check must not read as a passing one."""
+    publish = _daily().split("  publish:", 1)[1]
+    step = publish[publish.index("Record approval"):publish.index("Publish to")]
+    assert 'if [ -z "$EXPECT" ]' in step
+    assert "exit 1" in step
+
+
+def test_the_hash_is_taken_after_the_reviewer_is_notified():
+    """It must be the hash of the post a human was SHOWN. Computing it
+    before the notification would let a change in between go unnoticed."""
+    prepare = _daily().split("  publish:", 1)[0]
+    step = prepare[prepare.index("Send for review"):]
+    assert step.index("--notify-pending") < step.index("--pending-hash")
+
+
 # ---------- --force is local-only ----------
 
 def test_force_publishes_without_approval_and_warns(sandbox):
