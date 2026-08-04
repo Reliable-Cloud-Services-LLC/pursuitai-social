@@ -7,7 +7,12 @@ name: Weekly heartbeat
 
 on:
   schedule:
-    - cron: "0 14 * * 1"   # Mondays 10:00 ET
+    # Off the hour, for the reason daily.yml moved to :37. GitHub: "High
+    # load times include the start of every hour", mitigated by scheduling
+    # "at a different time of the hour". :00 is the worst slot there is,
+    # and this sat on it — on 2026-08-03, its first Monday since being
+    # added, it did not fire at all.
+    - cron: "23 14 * * 1"   # Mondays 10:23 ET
   workflow_dispatch:
 
 jobs:

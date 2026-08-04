@@ -220,15 +220,39 @@ def test_the_dispatchable_formats_match_the_rotation():
         f"dispatch offers {options}, rotation makes {set(run.FORMATS)}")
 
 
-def test_the_post_cron_is_off_the_busy_slots():
+# Only real schedule entries — the prose in these files says "cron" a lot.
+_CRON = re.compile(r'^\s*-\s*cron:\s*"([^"]+)"', re.M)
+
+
+def crons(path):
+    """(minute, hour) for every schedule entry in one workflow."""
+    out = []
+    for expr in _CRON.findall(open(path).read()):
+        minute, hour = expr.split()[:2]
+        assert minute.isdigit() and hour.isdigit(), (
+            f"{os.path.basename(path)}: {expr!r} — a wildcard or step minute "
+            f"lands on :00 by definition, which is the slot to avoid")
+        out.append((int(minute), int(hour)))
+    return out
+
+
+@pytest.mark.parametrize("path", workflow_files(),
+                         ids=lambda p: os.path.basename(p))
+def test_every_cron_is_off_the_busy_slots(path):
     """GitHub: "High load times include the start of every hour" and the
     mitigation is "schedule your workflow to run at a different time of the
-    hour". :00 and :30 are the two busiest. The 2026-07-30 run queued 118
-    minutes late on :30."""
-    import re
-    m = re.search(r'cron:\s*"(\d+)\s', _daily_text())
-    minute = int(m.group(1))
-    assert minute not in (0, 30), f"cron sits on the busy :{minute:02d} slot"
+    hour". :00 and :30 are the two busiest. The 2026-07-30 post run queued
+    118 minutes late on :30.
+
+    This checked daily.yml alone, which is how heartbeat.yml and
+    analytics.yml both stayed on :00 across two rounds of fixing exactly
+    this problem. heartbeat.yml did not fire on 2026-08-03, its first
+    scheduled Monday.
+    """
+    for minute, hour in crons(path):
+        assert minute not in (0, 30), (
+            f"{os.path.basename(path)} sits on the busy :{minute:02d} slot "
+            f"({minute} {hour} …)")
 
 
 def test_the_commit_step_cannot_lose_the_post_log_silently():

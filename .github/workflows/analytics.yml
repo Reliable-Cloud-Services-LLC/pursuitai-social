@@ -6,7 +6,10 @@ name: Weekly analytics read-back
 
 on:
   schedule:
-    - cron: "0 15 * * 1"   # Mondays 11:00 ET, after the weekend settles
+    # :41, not :00 — see heartbeat.yml. A dropped analytics run is the
+    # mildest of these failures (the next week re-reads the same posts),
+    # but the slot costs nothing to move.
+    - cron: "41 15 * * 1"   # Mondays 11:41 ET, after the weekend settles
   workflow_dispatch:
 
 permissions:

@@ -10,14 +10,19 @@ name: Missed-run alarm
 #
 # Runs at 17:07 UTC — 210 minutes after the 13:37 post window.
 #
-# That margin is set from OBSERVED delay, not a guess. Two consecutive
-# scheduled runs queued almost identically late:
+# That margin is set from OBSERVED delay, not a guess. Consecutive
+# scheduled runs queue late, and consistently:
 #   2026-07-30  13:30 -> 15:28   118 min
 #   2026-07-31  13:30 -> 15:33   123 min
+#   2026-08-03  13:37 -> 16:05   148 min   (:37 did not spare it)
 # So ~2h is the TYPICAL delay here, not the worst case. An alarm at 16:05
 # (the first draft) left only ~25 minutes of headroom over typical — one
 # slower-than-usual morning and it cries wolf. An alarm that cries wolf is
 # worse than no alarm, because the next real one gets dismissed.
+#
+# 08-03 is the slower morning that draft was waiting for: the run was
+# created at 16:05:01Z, one second after the alarm's own slot. 210 minutes
+# absorbed it with an hour to spare, which is what the band is for.
 #
 # Also off the hour and off :30, per GitHub's own mitigation.
 

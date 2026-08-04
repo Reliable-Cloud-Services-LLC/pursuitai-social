@@ -40,9 +40,17 @@ def test_the_format_rotation_is_current():
 
 def test_the_cron_times_are_current():
     """The doc tells an operator when to expect a post and when silence is
-    a problem. Both wrong is worse than both absent."""
+    a problem. Both wrong is worse than both absent.
+
+    heartbeat.yml was missing from this loop, and its line went stale the
+    moment its cron moved off :00 — the exact drift this file exists to
+    stop. It was also the only time here written in ET, so it could not
+    have been checked against a cron without converting first; the doc now
+    states it in UTC like everything else.
+    """
     for wf_name, label in (("daily.yml", "post"),
-                           ("missed-run.yml", "alarm")):
+                           ("missed-run.yml", "alarm"),
+                           ("heartbeat.yml", "heartbeat")):
         m = re.search(r'cron:\s*"(\d+)\s+(\d+)', _wf(wf_name))
         assert m, f"no cron in {wf_name}"
         minute, hour = m.group(1), m.group(2)
