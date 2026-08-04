@@ -59,13 +59,52 @@ def _public_url(repo_rel_path):
     """Delegates to engine/media.py so the host lives in one place."""
     return media.public_url(repo_rel_path)
 
+# Meta builds the container asynchronously and rejects media_publish until
+# it reports FINISHED — "The media is not ready for publishing, please wait
+# for a moment". BOTH routes have to wait for it. An image is only a fetch
+# of one file and is usually ready on the first check, so it polls fast and
+# briefly; a reel is a transcode and gets ten minutes.
+IMAGE_TRIES, IMAGE_DELAY = 20, 3     # 60s
+REEL_TRIES, REEL_DELAY = 40, 15      # 10min
+
+
+def _await_ready(container, tok, tries, delay, what):
+    """Block until Meta says the container can be published.
+
+    Returns on FINISHED; raises on ERROR or on running out of tries. There
+    is deliberately no fall-through: publishing a container whose status was
+    never confirmed is how something unverified ships.
+    """
+    for attempt in range(tries):
+        s = requests.get(f"{GRAPH}/{container}",
+                         params={"fields": "status_code", "access_token": tok},
+                         timeout=60).json()
+        status = s.get("status_code")
+        if status == "FINISHED":
+            return
+        if status == "ERROR":
+            # status_error_message names the complaint; the bare status dict
+            # alone rarely does.
+            raise InstagramError(
+                f"{what} processing failed: "
+                f"{s.get('status_error_message') or s}")
+        if attempt < tries - 1:
+            time.sleep(delay)
+    raise InstagramError(
+        f"{what} processing never reached FINISHED after {tries * delay}s — "
+        f"the container expired unpublished rather than silently publishing "
+        f"something unverified")
+
+
 def post_image(repo_rel_path, caption):
     uid, tok = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     r = requests.post(f"{GRAPH}/{uid}/media", data={
         "image_url": _public_url(repo_rel_path),
         "caption": caption, "access_token": tok}, timeout=120)
     _check(r, "image container creation")
-    return _publish(uid, tok, r.json()["id"])
+    container = r.json()["id"]
+    _await_ready(container, tok, IMAGE_TRIES, IMAGE_DELAY, "image")
+    return _publish(uid, tok, container)
 
 # Where to take the cover from when no poster image is available. Meta's
 # default is 0 — the first frame — and our spots open on a bare gradient
@@ -91,25 +130,7 @@ def post_reel(repo_rel_path, caption, cover_rel_path=None):
     r = requests.post(f"{GRAPH}/{uid}/media", data=payload, timeout=120)
     _check(r, "reel container creation")
     container = r.json()["id"]
-    # videos process asynchronously - poll until FINISHED
-    for _ in range(40):
-        s = requests.get(f"{GRAPH}/{container}",
-                         params={"fields": "status_code", "access_token": tok},
-                         timeout=60).json()
-        if s.get("status_code") == "FINISHED":
-            break
-        if s.get("status_code") == "ERROR":
-            # status_error_message names the transcode complaint; the bare
-            # status dict alone rarely does.
-            raise InstagramError(
-                f"reel processing failed: "
-                f"{s.get('status_error_message') or s}")
-        time.sleep(15)
-    else:
-        raise InstagramError(
-            "reel processing never reached FINISHED after 10 minutes — "
-            "the container expired unpublished rather than silently "
-            "publishing something unverified")
+    _await_ready(container, tok, REEL_TRIES, REEL_DELAY, "reel")
     return _publish(uid, tok, container)
 
 def _permalink(media_id, tok):

@@ -296,14 +296,137 @@ def test_check_passes_a_good_response_through():
     assert post_ig._check(Resp(), "x") is not None
 
 
-def test_a_reel_that_never_finishes_is_not_published():
-    """The poll loop had no else-branch: after 40 tries it fell through and
-    published a container that never reached FINISHED — shipping something
-    whose transcode was never confirmed."""
+# ---------- the container must be FINISHED before publish ----------
+#
+# Meta builds a container asynchronously and rejects media_publish until it
+# says FINISHED. post_reel polled for this from the start; post_image never
+# did — it created the container and published in the next call. That is a
+# race, and images usually won it, so it read as working for nine live
+# posts. On 2026-08-03 the card lost:
+#
+#   publish failed (400): Cannot Publish — The media is not ready for
+#   publishing, please wait for a moment — Media ID is not available
+#
+# X had already posted, so the day went out half-published.
+
+class _Calls(list):
+    """The URLs POSTed, plus how many times the status was polled.
+
+    Both halves are needed. "Did media_publish happen?" alone cannot tell a
+    route that waited from one that never asked — with the pre-fix image
+    route the publish still succeeds, it just succeeds blind.
+    """
+    polls = 0
+
+
+def _fake_graph(monkeypatch, statuses):
+    """Drive a post through a scripted sequence of container statuses."""
+    posted = _Calls()
+    seq = list(statuses)
+
+    class Resp:
+        ok = True
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, data=None, timeout=None):
+        posted.append(url)
+        return Resp({"id": "container-1" if url.endswith("/media")
+                     else "media-1"})
+
+    def fake_get(url, params=None, timeout=None):
+        if "status_code" in (params or {}).get("fields", ""):
+            posted.polls += 1
+            nxt = seq.pop(0)
+            return Resp(nxt if isinstance(nxt, dict) else {"status_code": nxt})
+        return Resp({"permalink": "https://instagram.com/p/abc"})
+
+    monkeypatch.setenv("IG_USER_ID", "1")
+    monkeypatch.setenv("IG_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setattr(post_ig.requests, "post", fake_post)
+    monkeypatch.setattr(post_ig.requests, "get", fake_get)
+    monkeypatch.setattr(post_ig.time, "sleep", lambda s: None)
+    return posted
+
+
+def test_an_image_waits_for_a_container_that_is_not_ready_yet(monkeypatch):
+    """The regression. IN_PROGRESS then FINISHED must publish HAVING
+    WAITED — not fire media_publish at a container Meta has not built.
+
+    The poll count is the assertion that bites: publishing succeeds either
+    way against a fake, so a test that only checks the result passes just
+    as happily against the code that caused the outage.
+    """
+    posted = _fake_graph(monkeypatch, ["IN_PROGRESS", "FINISHED"])
+    result = post_ig.post_image("assets/cards/teaming_ig.jpg", "cap")
+    assert result["id"] == "media-1"
+    assert any(u.endswith("/media_publish") for u in posted)
+    assert posted.polls == 2, \
+        f"published after {posted.polls} status check(s) — it must wait"
+
+
+def test_an_image_that_never_becomes_ready_is_not_published(monkeypatch):
+    """Publishing a container whose status was never confirmed is how
+    something unverified ships. The image route used to do exactly that,
+    unconditionally, because it never asked."""
+    posted = _fake_graph(monkeypatch,
+                         ["IN_PROGRESS"] * post_ig.IMAGE_TRIES)
+    with pytest.raises(post_ig.InstagramError, match="never reached FINISHED"):
+        post_ig.post_image("assets/cards/teaming_ig.jpg", "cap")
+    assert not any(u.endswith("/media_publish") for u in posted), \
+        "published a container that never reported FINISHED"
+
+
+def test_an_image_container_error_says_what_meta_said(monkeypatch):
+    posted = _fake_graph(monkeypatch, [
+        {"status_code": "ERROR", "status_error_message": "image is not JPEG"}])
+    with pytest.raises(post_ig.InstagramError, match="image is not JPEG"):
+        post_ig.post_image("assets/cards/teaming_ig.jpg", "cap")
+    assert not any(u.endswith("/media_publish") for u in posted)
+
+
+def test_a_reel_that_never_finishes_is_not_published(monkeypatch):
+    """Was a source-text check for an `else:` in the poll loop. Now that
+    both routes share one helper, ask the behaviour instead — the reel path
+    must keep the guarantee it already had."""
+    posted = _fake_graph(monkeypatch, ["IN_PROGRESS"] * post_ig.REEL_TRIES)
+    with pytest.raises(post_ig.InstagramError, match="never reached FINISHED"):
+        post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert not any(u.endswith("/media_publish") for u in posted)
+
+
+def test_a_reel_still_waits_for_its_transcode(monkeypatch):
+    posted = _fake_graph(monkeypatch, ["IN_PROGRESS", "IN_PROGRESS",
+                                       "FINISHED"])
+    post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert any(u.endswith("/media_publish") for u in posted)
+    assert posted.polls == 3
+
+
+def test_both_routes_wait_through_the_same_helper():
+    """Two copies of this loop is how the image route ended up without one.
+    A second copy would drift the same way."""
     src = open(os.path.join(ROOT, "engine", "post_ig.py")).read()
-    loop = src[src.index("for _ in range(40)"):src.index("def _publish")]
-    assert "else:" in loop, "no terminal branch — an unfinished reel publishes"
-    assert "never reached FINISHED" in loop
+    assert src.count("def _await_ready") == 1
+    assert src.count("_await_ready(") == 3, \
+        "expected one definition and one call from each of the two routes"
+
+
+def test_an_image_does_not_wait_as_long_as_a_transcode():
+    """A card is one fetch; a reel is a transcode. Giving the image route
+    the reel's ten minutes would hold the publish job open through an
+    outage that a minute would have settled."""
+    assert post_ig.IMAGE_TRIES * post_ig.IMAGE_DELAY < \
+        post_ig.REEL_TRIES * post_ig.REEL_DELAY
 
 
 def test_validator_can_exercise_the_reel_path():
