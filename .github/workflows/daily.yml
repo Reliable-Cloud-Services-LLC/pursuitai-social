@@ -70,6 +70,12 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The hash of the post this job sends for review. The publish job is a
+    # separate run, gated on a human, and may start hours later against a
+    # branch that has moved — so the only trustworthy statement of "what was
+    # reviewed" is the one carried forward from here.
+    outputs:
+      pending_sha256: ${{ steps.review.outputs.pending_sha256 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -163,11 +169,18 @@ jobs:
 
       # After the push, so Slack can actually fetch the card image.
       - name: Send for review
+        id: review
         env:
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
           MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
           REVIEW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python engine/run.py --notify-pending
+        run: |
+          python engine/run.py --notify-pending
+          # Recorded AFTER the notification, so it is the hash of the post a
+          # human was actually shown — not of whatever prepare happened to
+          # leave on disk.
+          echo "pending_sha256=$(python engine/run.py --pending-hash)" \
+            >> "$GITHUB_OUTPUT"
 
   publish:
     needs: prepare
@@ -209,12 +222,28 @@ jobs:
           ls -la assets/cards | head -3
 
       # Reaching this step means a required reviewer already approved in the
-      # GitHub UI. This records WHAT was approved so publish can verify the
-      # content did not change in between.
+      # GitHub UI. This records WHAT was approved.
+      #
+      # --expect is what makes that record mean anything. This job checks
+      # out `ref`, the tip of the branch as it stands NOW, because the final
+      # step has to push and cannot do that from a detached HEAD. So if the
+      # branch moved while the run waited — another prepare, a merge — the
+      # pending.json here is not the one the reviewer was sent. Without
+      # --expect, --approve would hash that file and --publish would verify
+      # it against itself moments later: a check that cannot fail, on the
+      # wrong content. The hash comes from the prepare job instead.
       - name: Record approval
         env:
           GITHUB_ACTOR: ${{ github.actor }}
-        run: python engine/run.py --approve
+          EXPECT: ${{ needs.prepare.outputs.pending_sha256 }}
+        run: |
+          if [ -z "$EXPECT" ]; then
+            echo "::error::the prepare job published no pending_sha256, so"
+            echo "::error::there is nothing to check this post against."
+            echo "::error::Refusing to publish unverified content."
+            exit 1
+          fi
+          python engine/run.py --approve --expect "$EXPECT"
 
       - name: Publish to X + Instagram
         env:

@@ -417,12 +417,25 @@ def publish(skip_x=False, skip_ig=False, force=False):
         sys.exit(1)
     print(f"[publish] done - posted to {', '.join(posted)}")
 
-def approve():
+def pending_hash():
+    """Print the hash of the post being sent for review.
+
+    The prepare job hands this to the publish job, which is the only way
+    the two can be compared: they are separate runs hours apart, and by
+    then the file on the branch may be a different post entirely.
+    """
+    print(approval.compute_hash(PENDING))
+
+
+def approve(expect=None):
     """Record human approval of the prepared post. Never automatic."""
     try:
-        record = approval.write_approval(PENDING, APPROVED)
+        record = approval.write_approval(PENDING, APPROVED, expect=expect)
     except FileNotFoundError as e:
         print(f"[approve] {e}")
+        sys.exit(1)
+    except approval.ApprovalMismatch as e:
+        print(f"[approve] REFUSED: {e}")
         sys.exit(1)
     print(f"[approve] approved {record['topic']} ({record['format']}) "
           f"by {record['approved_by']} at {record['approved_at']}")
@@ -464,6 +477,12 @@ def main():
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--approve", action="store_true",
                     help="record human approval of the prepared post")
+    ap.add_argument("--expect", metavar="SHA256",
+                    help="refuse to approve unless pending.json hashes to "
+                         "this. The prepare job supplies it, so approval "
+                         "attaches to the post that was actually reviewed.")
+    ap.add_argument("--pending-hash", action="store_true",
+                    help="print the hash of pending.json and exit")
     ap.add_argument("--notify-pending", action="store_true",
                     help="send the prepared post to Slack for review")
     ap.add_argument("--publish", action="store_true")
@@ -489,8 +508,11 @@ def main():
     if args.prepare:
         prepare(force_format=args.fmt, force_topic=args.topic_id)
         return
+    if args.pending_hash:
+        pending_hash()
+        return
     if args.approve:
-        approve()
+        approve(expect=args.expect)
         return
     if args.notify_pending:
         notify_pending()
