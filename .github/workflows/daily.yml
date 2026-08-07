@@ -308,7 +308,13 @@ jobs:
             fi
             echo "push rejected — rebasing onto origin/$GITHUB_REF_NAME"
             git fetch origin "$GITHUB_REF_NAME"
-            git rebase "origin/$GITHUB_REF_NAME" || {
+            # --autostash because the publish job syncs the bucket INTO the
+            # working tree before this runs. Any tracked file that sync
+            # touches leaves the tree dirty, and a plain rebase then aborts
+            # with "cannot rebase: You have unstaged changes" — which is how
+            # the 2026-07-30 run lost its push. The retry must not depend on
+            # the tree being clean, because this job deliberately dirties it.
+            git rebase --autostash "origin/$GITHUB_REF_NAME" || {
               echo "::error::rebase failed — the post log could not be"
               echo "::error::saved. The rotation will re-serve this topic"
               echo "::error::and duplicate it. Fix the branch by hand."

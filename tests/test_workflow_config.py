@@ -288,3 +288,37 @@ def test_every_apt_step_is_time_boxed():
                 offenders.append(f"{os.path.basename(path)}:{i + 1}")
     assert not offenders, (
         f"apt install with no step timeout: {offenders}")
+
+
+def test_no_tracked_file_sits_under_a_gitignored_path():
+    """A file tracked despite matching .gitignore is a trap: the publish
+    job syncs the bucket INTO the tree, so any tracked file the sync
+    touches leaves it dirty, and the post-log rebase then aborts with
+    "cannot rebase: You have unstaged changes" — which is how the
+    2026-07-30 run lost its push.
+
+    Four assets/linkedin/*.png were tracked from before that ignore rule
+    existed; .gitignore does not untrack what is already tracked.
+    """
+    import subprocess
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT,
+                             capture_output=True, text=True).stdout.split()
+    if not tracked:
+        pytest.skip("not a git checkout")
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--no-index"] + tracked,
+        cwd=ROOT, capture_output=True, text=True).stdout.split()
+    assert not ignored, (
+        f"tracked despite being gitignored — untrack with "
+        f"`git rm --cached`: {ignored}")
+
+
+def test_the_post_log_rebase_survives_a_dirty_tree():
+    """The publish job dirties the working tree on purpose (it syncs the
+    bucket down for X's byte upload). A plain rebase in the push-retry
+    would abort on exactly the state this job creates."""
+    daily = _daily_text()
+    retry = daily[daily.index("push rejected"):]
+    assert "rebase --autostash" in retry, (
+        "the push retry rebases without --autostash, so it aborts on the "
+        "dirty tree this job itself creates")
