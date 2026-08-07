@@ -143,6 +143,32 @@ def _fit_font(d, text, max_w, start, floor=22):
     return cards._font(floor)
 
 
+# Persistent corner wordmark. The poster still handed to Slack is taken
+# from a non-CTA scene on purpose (see media.write_poster) — every spot
+# ends on the same branded CTA, so a frame from there identifies nothing.
+# The cost was that the review thumbnail carried no branding at all, which
+# the operator flagged on the 2026-08-07 post. This puts the mark on every
+# scene that is not the CTA, so the review reads as PursuitAI and so does
+# any frame someone screenshots mid-play.
+WORDMARK = "PursuitAI"
+WORDMARK_ALPHA = 150          # quiet; must not compete with the headline
+
+
+def _watermark(d, w, h, s):
+    """Top-right, on every scene except the CTA.
+
+    The CTA already carries the full lockup and two marks on one frame
+    reads as a mistake. Top-right because hook / feature / stat all lay
+    their content out from the LEFT edge downward, making it the one
+    region reliably clear at every ratio (1:1, 9:16, 16:9) — verified by
+    rendering all three, not assumed.
+    """
+    f = cards._font(int(34 * s), bold=True)
+    tw = d.textlength(WORDMARK, font=f)
+    d.text((w - int(w * 0.09) - tw, int(h * 0.055)), WORDMARK, font=f,
+           fill=brand.rgba("white", WORDMARK_ALPHA))
+
+
 def render_scene(topic, brand_cfg, size, scene, p, t=0.0):
     """One frame. `scene` selects what is on screen; `p` is 0..1 within it.
 
@@ -165,6 +191,9 @@ def render_scene(topic, brand_cfg, size, scene, p, t=0.0):
     glow = glow.filter(ImageFilter.GaussianBlur(int(w * 0.10)))
     img.paste(Image.new("RGB", (w, h), VIOLET), (0, 0), glow)
     d = ImageDraw.Draw(img, "RGBA")
+
+    if scene != "cta":
+        _watermark(d, w, h, s)
 
     if scene == "hook":
         f = cards._font(int(78 * s))
