@@ -68,6 +68,49 @@ than no alarm: the next real one gets dismissed.
 
 **Do not "fix" a late run.** Only a *missing* one is a problem.
 
+### An `ad` takes 9–13 minutes to prepare, and that is not a hang
+
+Observed: **8.8 min** on the first successful ad run (2026-07-29),
+**~13 min** on 2026-08-07. A `card` finishes in well under a minute, so
+the contrast reads as a stall when it is not.
+
+The cost is real work: ~550 frames rendered in PIL at **3× supersampling**
+(a 3240×3240 canvas per frame at 1:1) on a 2-core runner, plus a Claude
+narration call and Kokoro TTS before any of it starts.
+
+Before concluding a run is stuck, check **which step** it is on:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[] | select(.name=="prepare") | .steps[]
+        | select(.status!="completed") | .name'
+```
+
+`Prepare assets + captions` on an ad is patience. Anything else for that
+long is worth looking at.
+
+### apt can stall for tens of minutes
+
+On 2026-08-07 the `Install ffmpeg` step hung past **17 minutes**. Nothing
+was wrong with the render — a Debian mirror was simply not responding, and
+the step had no bound, so it was on course to burn the whole 30-minute job
+budget and lose the post window.
+
+`daily.yml` now caps that step at **6 minutes** (a healthy install is under
+two), matching the guard `test.yml` had carried since PR #9 — that lesson
+existed for a year and was never back-ported to the job that actually
+publishes. A test asserts every `apt-get install` across all workflows sits
+under a step timeout.
+
+**It resolved on its own.** If it happens again: cancel, re-dispatch, and
+expect a fast failure rather than a long one. Nothing is lost — no post
+published, no topic consumed.
+
+**Every run installs ffmpeg and the ~1 GB voice model, including the three
+formats that need neither.** Gating them would mean surfacing the
+rotation's format choice before `prepare` runs, which is a real refactor,
+not a flag. Until then, a `card` post can fail on a video dependency.
+
 ### Local rendering lies about fonts
 
 `cards.py` prefers DejaVu and falls back to Arial. CI has DejaVu; macOS
