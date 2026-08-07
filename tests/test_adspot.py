@@ -301,3 +301,58 @@ def test_format_override_exists():
     for the rotation to reach it."""
     import inspect
     assert "force_format" in inspect.signature(run.prepare).parameters
+
+
+# ---------- persistent wordmark ----------
+
+def _corner_ink(img, w, h):
+    """Bright pixels in the top-right region where the wordmark lives.
+
+    Pixel inspection, not source matching. Three tests this session passed
+    against the very bug they were written for because they matched a
+    comment or a code shape rather than a result — this asserts what is
+    actually drawn.
+    """
+    box = img.convert("L").crop((int(w * 0.55), 0, w, int(h * 0.14)))
+    return sum(1 for px in box.getdata() if px > 140)
+
+
+@pytest.mark.parametrize("ratio", ["square", "video", "x"])
+def test_the_wordmark_is_on_every_non_cta_scene(cal, ratio):
+    """The Slack review still is taken from a non-CTA scene by design, so
+    without this the reviewer sees an unbranded frame — flagged on the
+    2026-08-07 post."""
+    import brand
+    w, h = brand.size(ratio)
+    topic = cal["topics"][0]
+    for scene in ("hook", "feature", "stat"):
+        img = adspot.render_scene(topic, cal["brand"], (w, h), scene, 0.6)
+        assert _corner_ink(img, w, h) > 200, (
+            f"no wordmark on {scene} at {ratio}")
+
+
+@pytest.mark.parametrize("ratio", ["square", "video", "x"])
+def test_the_cta_scene_carries_no_wordmark(cal, ratio):
+    """It already has the full lockup. Two marks on one frame reads as a
+    mistake, not as branding."""
+    import brand
+    w, h = brand.size(ratio)
+    img = adspot.render_scene(cal["topics"][0], cal["brand"], (w, h),
+                              "cta", 0.6)
+    assert _corner_ink(img, w, h) == 0, f"wordmark leaked onto the CTA at {ratio}"
+
+
+def test_the_wordmark_does_not_collide_with_scene_content(cal):
+    """Every scene lays content out from the LEFT edge down, which is why
+    top-right is safe. If a scene ever grows into that corner the ink count
+    diverges from the mark-only baseline — this catches that."""
+    import brand
+    w, h = brand.size("square")
+    counts = {
+        scene: _corner_ink(
+            adspot.render_scene(cal["topics"][0], cal["brand"], (w, h),
+                                scene, 0.6), w, h)
+        for scene in ("hook", "feature", "stat")
+    }
+    assert len(set(counts.values())) == 1, (
+        f"scene content has grown into the wordmark corner: {counts}")
