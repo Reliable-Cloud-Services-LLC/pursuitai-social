@@ -74,3 +74,24 @@ def test_every_linked_file_exists():
     for rel in re.findall(r"\]\((\.\./[^)#]+|[A-Z_]+\.md)\)", DOC):
         path = os.path.normpath(os.path.join(ROOT, "docs", rel))
         assert os.path.exists(path), f"OPERATIONS.md links to missing {rel}"
+
+
+def test_the_documented_ffmpeg_cap_matches_the_workflow():
+    """The doc tells an operator when to stop waiting on apt. If the
+    workflow cap changes and the doc does not, the number they act on is
+    fiction — and this doc's whole purpose is being trusted cold."""
+    daily = _wf("daily.yml")
+    m = re.search(r"Install ffmpeg\n\s+timeout-minutes:\s*(\d+)", daily)
+    assert m, "the ffmpeg step lost its timeout"
+    assert f"caps that step at **{m.group(1)} minutes**" in DOC, (
+        f"doc does not state the real {m.group(1)}-minute cap")
+
+
+def test_the_documented_supersampling_matches_the_renderer():
+    """The doc explains WHY an ad takes 9-13 minutes. If the renderer's
+    supersampling changes, the explanation stops explaining anything."""
+    src = open(os.path.join(ROOT, "engine", "adspot.py")).read()
+    m = re.search(r"^SS\s*=\s*(\d+)", src, re.M)
+    assert m, "adspot.py no longer defines SS"
+    assert f"{m.group(1)}× supersampling" in DOC, (
+        f"doc does not cite the real {m.group(1)}x supersampling")
