@@ -268,3 +268,23 @@ def test_the_commit_step_cannot_lose_the_post_log_silently():
         "the swallowed-failure form is back")
     assert "::error::" in step, "a lost post log must fail loudly"
     assert "exit 1" in step, "a lost post log must fail the step"
+
+
+def test_every_apt_step_is_time_boxed():
+    """apt is the least reliable step in these workflows — test.yml learned
+    that on PR #9 and added a timeout; daily.yml did not, and on 2026-08-07
+    a mirror stall hung it past 13 minutes unbounded. Without a step
+    timeout the stall eats the whole job budget and the day's post window
+    goes with it, instead of failing fast enough to re-dispatch."""
+    offenders = []
+    for path in workflow_files():
+        lines = open(path).read().splitlines()
+        for i, line in enumerate(lines):
+            if "apt-get install" not in line:
+                continue
+            # walk back to the step header, checking for a timeout
+            window = lines[max(0, i - 12):i]
+            if not any("timeout-minutes:" in w for w in window):
+                offenders.append(f"{os.path.basename(path)}:{i + 1}")
+    assert not offenders, (
+        f"apt install with no step timeout: {offenders}")

@@ -88,8 +88,19 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
+      # Time-boxed and slimmed, matching test.yml — that job learned this
+      # on PR #9 and the lesson was never back-ported here. An apt mirror
+      # stall on 2026-08-07 hung this step past 13 minutes with no bound,
+      # so it would have eaten the whole 30-minute job budget before
+      # failing, losing the day's post window rather than the 4 minutes it
+      # should have cost. --no-install-recommends keeps the tree to what
+      # ffmpeg actually needs.
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
 
       # Voice for the animated-ad format. ~1 GB, so it is cached and lives
       # in its own requirements file — the test job must never pull it.
