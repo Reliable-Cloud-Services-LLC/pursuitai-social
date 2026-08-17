@@ -23,6 +23,7 @@ gradient — so as shipped, IG would have rejected every card and covered
 every reel with a blank square.
 """
 import json
+import re
 import os
 import sys
 
@@ -513,3 +514,96 @@ def test_reel_mode_runs_without_container_mode(monkeypatch, tmp_path, capsys):
         assert "[6]" in capsys.readouterr().out, (
             f"exited before the reel block ran ({exc}) — the test proves "
             f"nothing")
+
+
+def test_the_happy_path_only_requests_the_documented_field():
+    """status_code is the only DOCUMENTED container field. Asking for an
+    unknown one can 400 the request, so the poll that runs on every
+    success must not — a diagnostic nicety must never become an outage."""
+    import post_ig
+
+    asked = []
+
+    class R:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {"status_code": "FINISHED"}
+
+    def spy(url, params=None, **k):
+        asked.append(params["fields"])
+        return R()
+
+    original = post_ig.requests.get
+    post_ig.requests.get = spy
+    try:
+        post_ig._await_ready("C1", "tok", 1, 0, "reel")
+    finally:
+        post_ig.requests.get = original
+    assert asked == ["status_code"], f"hot path asked for {asked}"
+
+
+def test_a_failed_detail_lookup_still_raises_a_usable_error(monkeypatch):
+    """The detail call is best-effort. If it breaks, the caller must still
+    learn the container errored — not get a different exception."""
+    import post_ig
+
+    class R:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {"status_code": "ERROR", "id": "C1"}
+
+    def get(url, params=None, **k):
+        if params["fields"] == "status":
+            raise RuntimeError("unknown field")
+        return R()
+
+    monkeypatch.setattr(post_ig.requests, "get", get)
+    with pytest.raises(post_ig.InstagramError) as exc:
+        post_ig._await_ready("C1", "tok", 1, 0, "reel")
+    assert "processing failed" in str(exc.value)
+
+
+def test_the_container_poll_requests_the_fields_the_error_path_reads():
+    """The ERROR branch reached for status_error_message while the request
+    asked only for status_code — so the field was always absent and a real
+    failure (2026-08-17) printed a bare dict that could not distinguish a
+    bad file from a transient transcode.
+
+    Pins the request against the read: whatever the error path consumes
+    must be asked for.
+    """
+    src = open(os.path.join(ROOT, "engine", "post_ig.py")).read()
+    poll = src[src.index("def _await_ready"):src.index("def post_image")] \
+        if "def post_image" in src[src.index("def _await_ready"):] \
+        else src[src.index("def _await_ready"):]
+    requested = re.search(r'"fields":\s*"([^"]+)"', poll)
+    assert requested, "the poll no longer requests any fields"
+    asked = set(requested.group(1).split(","))
+    read = set(re.findall(r's\.get\("([a-z_]+)"\)', poll))
+    read.discard("status_code")          # always requested
+    missing = {f for f in read if f not in asked}
+    assert not missing, (
+        f"the error path reads fields the request never asks for: {missing}")
+
+
+def test_a_reel_error_surfaces_something_other_than_the_raw_dict(monkeypatch):
+    """A bare dict is not a diagnosis. When Meta supplies detail it must
+    reach the log."""
+    import post_ig
+
+    class R:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {"status_code": "ERROR", "id": "C1",
+                    "status": "Error: media could not be processed"}
+
+    monkeypatch.setattr(post_ig.requests, "get", lambda *a, **k: R())
+    with pytest.raises(post_ig.InstagramError) as exc:
+        post_ig._await_ready("C1", "tok", 1, 0, "reel")
+    assert "media could not be processed" in str(exc.value)

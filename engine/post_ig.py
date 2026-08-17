@@ -68,6 +68,31 @@ IMAGE_TRIES, IMAGE_DELAY = 20, 3     # 60s
 REEL_TRIES, REEL_DELAY = 40, 15      # 10min
 
 
+def _error_detail(container, tok, fallback):
+    """Meta's reason for an ERROR container, best-effort.
+
+    A SECOND call, made only on failure, because `status` is undocumented
+    (the reference specifies status_code alone). Asking for an unknown
+    field can 400 the request — and doing that on the hot path would turn
+    a diagnostic nicety into an outage on every poll. Here the worst case
+    is that we fall back to the dict we already had.
+
+    Exists because the 2026-08-17 failure logged only
+    ``{'status_code': 'ERROR', 'id': '...'}``, which cannot tell a bad file
+    from a transient transcode — the two need opposite responses.
+    """
+    try:
+        r = requests.get(
+            f"{GRAPH}/{container}",
+            params={"fields": "status", "access_token": tok}, timeout=30)
+        detail = (r.json() or {}).get("status")
+        if detail:
+            return detail
+    except Exception as exc:
+        print(f"[ig] could not fetch error detail ({exc})")
+    return fallback
+
+
 def _await_ready(container, tok, tries, delay, what):
     """Block until Meta says the container can be published.
 
@@ -76,6 +101,9 @@ def _await_ready(container, tok, tries, delay, what):
     never confirmed is how something unverified ships.
     """
     for attempt in range(tries):
+        # status_code is the only DOCUMENTED field, so the hot path asks
+        # for nothing else. Detail is fetched separately, and only on
+        # failure — see _error_detail.
         s = requests.get(f"{GRAPH}/{container}",
                          params={"fields": "status_code", "access_token": tok},
                          timeout=60).json()
@@ -83,11 +111,8 @@ def _await_ready(container, tok, tries, delay, what):
         if status == "FINISHED":
             return
         if status == "ERROR":
-            # status_error_message names the complaint; the bare status dict
-            # alone rarely does.
             raise InstagramError(
-                f"{what} processing failed: "
-                f"{s.get('status_error_message') or s}")
+                f"{what} processing failed: {_error_detail(container, tok, s)}")
         if attempt < tries - 1:
             time.sleep(delay)
     raise InstagramError(
