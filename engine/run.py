@@ -74,6 +74,63 @@ def select_format(run_count, topic_count):
     cycle = run_count // topic_count
     return FORMATS[(index + cycle) % len(FORMATS)]
 
+# Every section screenshots.py captures, in the order they are used.
+#
+# The previous code walked a fixed ("hero", "features", "pricing", "why")
+# and broke on the first that existed. `hero` is the site root, so it always
+# captures and therefore always won: ALL NINE screenshot posts between
+# 2026-07-18 and 2026-08-26 shipped the identical hero image, across nine
+# different topics, while features/pricing/why were re-captured every run
+# and never once used. how-it-works and pipeline-board were not even in the
+# list they were selected from.
+SECTION_ORDER = ("hero", "features", "pricing")
+
+# Captured, but deliberately NOT published, and why. Inspected against the
+# live site on 2026-08-26 at both capture viewports — every one of these was
+# going to ship unlooked-at, which is the mistake OPERATIONS.md already
+# records twice (a silent video, a sliced headline).
+#
+# The common cause is that the marketing page animates: sections fade in on
+# IntersectionObserver and several numbers count up. A viewport capture is a
+# race against all of them independently, so "it looked right once" is not
+# evidence it will look right on the day it posts. Element capture via a
+# selector (SECTIONS already has the slot, always None today) fixes the
+# framing but NOT the timing — these need the animations settled or disabled.
+SECTIONS_WITHHELD = {
+    "how-it-works": "the Recompete Radar counter captured mid-count reading "
+                    "0 instead of 97; agency marquee sliced mid-logo",
+    "pipeline-board": "the four headline stats are count-up animations with "
+                      "the same race; bottom card row cut mid-card",
+    "why": "text-dense with a dead lower half — legible on desktop, "
+           "unreadable at feed size",
+}
+
+
+def pick_section(shot_index, sdir):
+    """(x_path, ig_path) for this screenshot post, or (None, None).
+
+    Starts at the cursor and walks the WHOLE list, so a section whose
+    capture failed is stepped over rather than costing the post — the
+    resilience the old loop had, without the fixed start that made it
+    degenerate to one image forever.
+
+    Indexed by a dedicated cursor rather than something derived from
+    run_count. select_format's docstring is the cautionary tale: an index
+    computed by modular arithmetic over a second counter silently re-locks
+    whenever the two share a factor, which is exactly how every topic got
+    pinned to one format. A cursor that only ever means "how many screenshot
+    posts have shipped" cannot do that.
+    """
+    n = len(SECTION_ORDER)
+    for step in range(n):
+        name = SECTION_ORDER[(shot_index + step) % n]
+        xp = os.path.join(sdir, f"{name}_x.png")
+        ip = os.path.join(sdir, f"{name}_ig.png")
+        if os.path.exists(xp) and os.path.exists(ip):
+            return xp, ip
+    return None, None
+
+
 def publishable_topics(cal):
     """Topics that can actually go out today.
 
@@ -191,13 +248,11 @@ def prepare(force_format=None, force_topic=None):
             screenshots.capture_all()
         except Exception as e:
             print(f"[prepare] screenshot refresh failed ({e})")
-        sdir = os.path.join(ROOT, "assets", "screenshots")
-        for c in ("hero", "features", "pricing", "why"):
-            xp, ip = (os.path.join(sdir, f"{c}_x.png"),
-                      os.path.join(sdir, f"{c}_ig.png"))
-            if os.path.exists(xp) and os.path.exists(ip):
-                shot_x, shot_ig = xp, ip
-                break
+        shot_x, shot_ig = pick_section(
+            state.get("shot_index", 0),
+            os.path.join(ROOT, "assets", "screenshots"))
+        if shot_x:
+            print(f"[prepare] section={os.path.basename(shot_x)[:-6]}")
 
     card_x = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_x.png")
     card_ig = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_ig.png")
@@ -392,6 +447,11 @@ def publish(skip_x=False, skip_ig=False, force=False):
         state["topic_index"] = ((state["topic_index"] + 1)
                                 % max(1, len(publishable_topics(cal))))
         state["run_count"] = state.get("run_count", 0) + 1
+        # Only screenshot posts consume a section, and only once one has
+        # actually reached an audience — mirroring topic_index above, so an
+        # unapproved or failed run does not silently burn a section.
+        if pending.get("format") == "screenshot":
+            state["shot_index"] = state.get("shot_index", 0) + 1
         state["last_run"] = pending["date"]
         save_json(STATE, state)
     else:

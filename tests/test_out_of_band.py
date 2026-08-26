@@ -38,10 +38,19 @@ def repo(tmp_path, monkeypatch):
 
 
 def _publishable_ids():
-    import compliance
+    """The topics prepare will actually accept.
+
+    Deliberately run.publishable_topics and NOT compliance.is_publishable.
+    prepare indexes the performance-weighted rotation CYCLE, which omits
+    weak topics outright, so the looser check can hand back a topic prepare
+    then refuses. That is not hypothetical: once enough metrics accumulated
+    for weighting to engage, five topics dropped out and this helper started
+    returning fit-scoring at index 0 — turning the suite red with no code
+    change at all. Deduped because the cycle repeats strong topics.
+    """
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         cal = json.load(f)
-    return [t["id"] for t in cal["topics"] if compliance.is_publishable(t)]
+    return list(dict.fromkeys(t["id"] for t in run.publishable_topics(cal)))
 
 
 def test_forced_topic_is_the_one_prepared(repo):

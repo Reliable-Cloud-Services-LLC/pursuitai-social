@@ -81,8 +81,12 @@ def pending_review(pending, media_url=None, review_url=None):
                  f"topic `{topic}` · format `{fmt}`"),
     ]
     if media_url:
+        # The format, not a hardcoded "card". The label said card over a
+        # screenshot on 2026-08-26, which is precisely when a label costs
+        # something: the reviewer is being asked to check the image, and
+        # the caption told them it was a kind of image it was not.
         blocks.append({"type": "image", "image_url": media_url,
-                       "alt_text": f"{topic} card"})
+                       "alt_text": f"{topic} {fmt}"})
     blocks.append(_section("*X*\n```" + (pending.get("text_x") or "") + "```"))
     blocks.append(_section("*Instagram*\n```"
                            + (pending.get("text_ig") or "") + "```"))

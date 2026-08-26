@@ -20,6 +20,17 @@ SECTIONS = [
     ("why", "https://pursuitai.net/why-pursuitai", None, 0),
 ]
 
+# Height of the sticky site header, plus a little breathing room. Measured
+# against the live site at both capture viewports on 2026-08-26.
+HEADER_PX = 120
+
+# How long to wait after scrolling before capturing. Generous on purpose:
+# the cost of overshooting is seconds on a job that already takes minutes,
+# and the cost of undershooting is a published screenshot of a half-rendered
+# section that every automated gate will pass.
+SETTLE_MS = 3500
+
+
 def _footer(img, text="pursuitai.net · free 14-day trial"):
     d = ImageDraw.Draw(img, "RGBA")
     w, h = img.size
@@ -62,7 +73,21 @@ def capture_all(out_dir=OUT):
                     page.wait_for_timeout(3500)  # let animations settle
                     if scroll_y:
                         page.mouse.wheel(0, scroll_y)
-                        page.wait_for_timeout(1500)
+                        # Sections animate in on scroll (IntersectionObserver),
+                        # and 1500ms was not enough for the staggered ones:
+                        # how-it-works captured card 02 with an EMPTY body on
+                        # 2026-08-26 because its contents had not populated.
+                        page.wait_for_timeout(SETTLE_MS)
+                    if "#" in url or scroll_y:
+                        # The sticky header overlays the top of whatever sits
+                        # at scroll position 0. On "/" that is harmless, the
+                        # hero begins below it — but an anchor URL scrolls its
+                        # target to y=0 and the header then slices the section
+                        # heading ("Simple, transparent pricing" and
+                        # "Everything you need to capture and win" both lost
+                        # their top edge). Nudge back up so the heading clears.
+                        page.mouse.wheel(0, -HEADER_PX)
+                        page.wait_for_timeout(600)
                     raw = os.path.join(out_dir, f"{name}_raw_{kind}.png")
                     if selector:
                         page.locator(selector).first.screenshot(path=raw)
