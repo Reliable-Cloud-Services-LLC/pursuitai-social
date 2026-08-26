@@ -83,8 +83,27 @@ def select_format(run_count, topic_count):
 # different topics, while features/pricing/why were re-captured every run
 # and never once used. how-it-works and pipeline-board were not even in the
 # list they were selected from.
-SECTION_ORDER = ("hero", "how-it-works", "pipeline-board",
-                 "features", "pricing", "why")
+SECTION_ORDER = ("hero", "features", "pricing")
+
+# Captured, but deliberately NOT published, and why. Inspected against the
+# live site on 2026-08-26 at both capture viewports — every one of these was
+# going to ship unlooked-at, which is the mistake OPERATIONS.md already
+# records twice (a silent video, a sliced headline).
+#
+# The common cause is that the marketing page animates: sections fade in on
+# IntersectionObserver and several numbers count up. A viewport capture is a
+# race against all of them independently, so "it looked right once" is not
+# evidence it will look right on the day it posts. Element capture via a
+# selector (SECTIONS already has the slot, always None today) fixes the
+# framing but NOT the timing — these need the animations settled or disabled.
+SECTIONS_WITHHELD = {
+    "how-it-works": "the Recompete Radar counter captured mid-count reading "
+                    "0 instead of 97; agency marquee sliced mid-logo",
+    "pipeline-board": "the four headline stats are count-up animations with "
+                      "the same race; bottom card row cut mid-card",
+    "why": "text-dense with a dead lower half — legible on desktop, "
+           "unreadable at feed size",
+}
 
 
 def pick_section(shot_index, sdir):

@@ -114,14 +114,29 @@ def test_cursor_wraps(tmp_path):
     assert _walk(sdir, n) == _walk(sdir, n * 3)[n * 2:]
 
 
-def test_section_order_covers_everything_captured():
-    """Drift guard across two files: a section added to screenshots.py that
-    is missing here is captured on every run and never used, which is the
-    original defect in miniature."""
+def test_every_captured_section_is_published_or_withheld_on_purpose():
+    """Drift guard across two files. A section added to screenshots.py that
+    appears in neither list is captured on every run and used by nothing —
+    the original defect in miniature, and silent. Withholding one is fine;
+    withholding one by accident is not, so it has to be written down."""
     captured = {name for name, *_ in screenshots.SECTIONS}
-    assert captured == set(run.SECTION_ORDER), (
-        f"only in screenshots.py: {captured - set(run.SECTION_ORDER)}; "
-        f"only in run.py: {set(run.SECTION_ORDER) - captured}")
+    accounted = set(run.SECTION_ORDER) | set(run.SECTIONS_WITHHELD)
+    assert captured == accounted, (
+        f"captured but unaccounted for: {captured - accounted}; "
+        f"listed but never captured: {accounted - captured}")
+
+
+def test_withheld_sections_are_never_published():
+    """The two lists must not overlap, or a section documented as unfit
+    ships anyway."""
+    assert not set(run.SECTION_ORDER) & set(run.SECTIONS_WITHHELD)
+
+
+def test_every_withheld_section_says_why():
+    """A bare exclusion list rots into superstition — nobody remembers
+    whether the reason still holds, so nothing is ever promoted back."""
+    for name, reason in run.SECTIONS_WITHHELD.items():
+        assert len(reason) > 20, f"{name} withheld without a real reason"
 
 
 # --- the cursor advances on publish, like topic_index -----------------------
