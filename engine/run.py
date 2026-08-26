@@ -243,16 +243,33 @@ def prepare(force_format=None, force_topic=None):
     narration_script = None
     shot_x = shot_ig = None
     if fmt == "screenshot":
+        # First choice: this topic's OWN feature card, via the
+        # data-social-shot anchor. Rotating generic sections stopped the
+        # feed repeating one image but never made the picture match the
+        # copy — an 8(a) post captured under the old scheme showed
+        # Opportunity Discovery, Grants and AI Fit Scoring, which is less
+        # relevant than the hero it replaced, not more.
+        import screenshots
         try:
-            import screenshots
-            screenshots.capture_all()
+            shot_x, shot_ig = screenshots.capture_topic(topic, brand)
         except Exception as e:
-            print(f"[prepare] screenshot refresh failed ({e})")
-        shot_x, shot_ig = pick_section(
-            state.get("shot_index", 0),
-            os.path.join(ROOT, "assets", "screenshots"))
+            print(f"[prepare] topic capture failed ({e})")
         if shot_x:
-            print(f"[prepare] section={os.path.basename(shot_x)[:-6]}")
+            print(f"[prepare] captured the {topic['id']} card")
+        else:
+            # No anchor on the live site. Fall back to a generic section
+            # rather than losing the post. Only now is the full six-section
+            # sweep worth its couple of minutes.
+            print("[prepare] falling back to a generic section")
+            try:
+                screenshots.capture_all()
+            except Exception as e:
+                print(f"[prepare] screenshot refresh failed ({e})")
+            shot_x, shot_ig = pick_section(
+                state.get("shot_index", 0),
+                os.path.join(ROOT, "assets", "screenshots"))
+            if shot_x:
+                print(f"[prepare] section={os.path.basename(shot_x)[:-6]}")
 
     card_x = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_x.png")
     card_ig = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_ig.png")
