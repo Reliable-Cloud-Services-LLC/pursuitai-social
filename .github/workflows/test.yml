@@ -11,6 +11,10 @@ on:
         description: "Also validate X + Instagram credentials (needs secrets)"
         type: boolean
         default: false
+      reel_file:
+        description: "Reel check: test THIS video (repo-relative, e.g. assets/video/pricing-plans_ad.mp4). Blank = newest posted."
+        type: string
+        default: ""
 
 # A superseded push should not keep burning a runner, and a stalled
 # apt mirror should not hold a PR hostage for the full job timeout.
@@ -114,4 +118,16 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
-        run: python scripts/validate_ig.py --reel
+          # Through the ENVIRONMENT, never interpolated into the script.
+          # `${{ inputs.reel_file }}` written straight into a run: block is
+          # the standard Actions script-injection hole — the input is
+          # attacker-controllable text that would be pasted into a shell
+          # this job runs with the publishing secrets in scope. Quoted
+          # "$REEL_FILE" is just an argument.
+          REEL_FILE: ${{ inputs.reel_file }}
+        run: |
+          if [ -n "$REEL_FILE" ]; then
+            python scripts/validate_ig.py --reel --file "$REEL_FILE"
+          else
+            python scripts/validate_ig.py --reel
+          fi
