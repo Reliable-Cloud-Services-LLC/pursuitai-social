@@ -38,6 +38,50 @@ def fail(msg):
 def ok(msg):
     print(f"  ✓ {msg}")
 
+VIDEO_SUFFIXES = (".mp4", ".mov")
+
+
+class NoReelTarget(Exception):
+    """Nothing to test, with the reason a human needs."""
+
+
+def resolve_reel_target(explicit, log_path):
+    """Repo-relative path of the video to test.
+
+    `explicit` (--file) wins. It is NOT checked against the filesystem:
+    assets/ is gitignored and the runner's checkout has none of it, so the
+    only existence that matters is the object in the bucket — which the
+    caller establishes with a HEAD, and whose failure message can say so
+    properly. Requiring a local file here would make the flag unusable in
+    CI, which is the one place it has production credentials.
+
+    Without it, the newest video in the post log — a known-good file, which
+    is what you want when asking "does the reel path work", but NOT when
+    asking "was that specific artifact bad". The 2026-08-17 failure went
+    ten days unanswered partly because the default quietly tested a later,
+    healthy file instead.
+    """
+    if explicit:
+        if not explicit.lower().endswith(VIDEO_SUFFIXES):
+            raise NoReelTarget(
+                f"{explicit} is not a video ({', '.join(VIDEO_SUFFIXES)}) — "
+                f"Meta would reject it for a reason unrelated to what you "
+                f"are testing")
+        return explicit.lstrip("/")
+
+    if not os.path.exists(log_path):
+        raise NoReelTarget(f"no post log at {log_path} and no --file given")
+    with open(log_path) as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    for entry in reversed(entries):
+        cand = entry.get("media_ig") or ""
+        if cand.lower().endswith(VIDEO_SUFFIXES):
+            return cand.lstrip("/")
+    raise NoReelTarget(
+        "no video in posted.jsonl to test with — render one first, or name "
+        "one with --file")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--container", action="store_true",
@@ -46,7 +90,16 @@ def main():
                     help="also create (but never publish) a REELS container. "
                          "The reel path has different specs from images and "
                          "reached production untested — this exercises it.")
+    ap.add_argument("--file", metavar="REPO_REL_PATH",
+                    help="test THIS video instead of the newest posted one, "
+                         "e.g. assets/video/pricing-plans_ad.mp4. Needs "
+                         "--reel. The path is relative to the repo and must "
+                         "exist in the BUCKET, which is not the same as "
+                         "existing on your disk.")
     args = ap.parse_args()
+
+    if args.file and not args.reel:
+        fail("--file targets the REEL check; pass --reel too")
 
     tok = os.environ.get("IG_ACCESS_TOKEN") or fail("IG_ACCESS_TOKEN not set")
     uid = os.environ.get("IG_USER_ID") or fail("IG_USER_ID not set")
@@ -174,22 +227,21 @@ def main():
         sys.exit(1)
     if args.reel:
         print("[6] REELS container (fetch + transcode test — will NOT publish)")
-        rel = None
-        log_path = os.path.join(ROOT, "logs", "posted.jsonl")
-        if os.path.exists(log_path):
-            with open(log_path) as f:
-                entries = [json.loads(line) for line in f if line.strip()]
-            for entry in reversed(entries):
-                cand = entry.get("media_ig") or ""
-                if cand.lower().endswith((".mp4", ".mov")):
-                    rel = cand
-                    break
-        if not rel:
-            fail("no video in posted.jsonl to test with — render one first")
-        url = f"{base.rstrip('/')}/{rel.lstrip('/')}"
+        try:
+            rel = resolve_reel_target(
+                args.file, os.path.join(ROOT, "logs", "posted.jsonl"))
+        except NoReelTarget as e:
+            fail(str(e))
+        print(f"    target: {rel}"
+              + ("  (--file)" if args.file else "  (newest posted video)"))
+        url = f"{base.rstrip('/')}/{rel}"
         head = requests.head(url, timeout=30)
         if head.status_code >= 400:
-            fail(f"video not publicly reachable ({head.status_code}): {url}")
+            fail(f"video not publicly reachable ({head.status_code}): {url}\n"
+                 f"       NB S3 answers 403 for a MISSING key when listing is\n"
+                 f"       private, so this usually means the file was never\n"
+                 f"       uploaded — prepare is what syncs assets to the\n"
+                 f"       bucket — rather than that credentials are wrong.")
         ok(f"video publicly reachable: {url}")
 
         payload = {"media_type": "REELS", "video_url": url,
