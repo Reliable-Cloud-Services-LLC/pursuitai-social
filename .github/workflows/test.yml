@@ -97,3 +97,21 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
         run: python scripts/validate_ig.py --container
+
+      # The IMAGE path and the REEL path are different specs, different
+      # transcodes and different failure modes, and only the image path was
+      # ever checked here. On 2026-08-17 a reel failed to publish with
+      # `2207085` — a code outside Meta's documented 2207001-2207057 range,
+      # so nothing said whether the file was wrong or the transcode was
+      # transient, and the two need opposite responses.
+      #
+      # Separate step, and `if: always()`, so a reel result is never hidden
+      # by an image failure — that pairing is the whole point of running
+      # both. Publishes nothing: the container expires in 24h.
+      - name: Validate Instagram REEL path
+        if: always()
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
+        run: python scripts/validate_ig.py --reel

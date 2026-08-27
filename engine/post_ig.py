@@ -29,6 +29,19 @@ class InstagramError(RuntimeError):
     """A Meta API rejection, carrying what Meta actually said."""
 
 
+class ContainerProcessingError(InstagramError):
+    """Meta reported status_code ERROR on a container.
+
+    Its own type so the retry can catch THIS and nothing else. The
+    alternative — matching on the message text — would silently start
+    retrying a container that merely never finished, which is a different
+    failure with a different cost: an ERROR is a fast definite negative,
+    while a stalled container burns the full ten-minute poll before we
+    learn anything, and two of those do not fit in the publish job's
+    thirty-minute budget.
+    """
+
+
 def _check(response, what):
     """raise_for_status() with Meta's explanation kept.
 
@@ -111,7 +124,7 @@ def _await_ready(container, tok, tries, delay, what):
         if status == "FINISHED":
             return
         if status == "ERROR":
-            raise InstagramError(
+            raise ContainerProcessingError(
                 f"{what} processing failed: {_error_detail(container, tok, s)}")
         if attempt < tries - 1:
             time.sleep(delay)
@@ -130,6 +143,26 @@ def post_image(repo_rel_path, caption):
     container = r.json()["id"]
     _await_ready(container, tok, IMAGE_TRIES, IMAGE_DELAY, "image")
     return _publish(uid, tok, container)
+
+# A container that comes back ERROR is re-created, not given up on.
+#
+# 2026-08-17: a reel failed with `2207085`, a code outside Meta's documented
+# 2207001-2207057 range — so no file-shaped complaint fired (2207026 is
+# "video format is not supported", 2207052 is "could not be fetched"), and
+# nothing said whether the file or the transcode was at fault. The 2026-08-24
+# ad then published from the same renderer and the same pipeline, and a fresh
+# container for that file transcodes clean today. One-off, not a defect.
+#
+# Meta treats this class as retryable in its own reference: 2207032 is
+# "Create media fail, please try to re-create media", and for 2207008 the
+# advice is "Try again 1-2 times in the next 30 seconds to 2 minutes".
+#
+# TWO attempts, not three. Each poll runs up to ten minutes and the publish
+# job's budget is thirty, which has to cover X as well. Retrying is also
+# quota-safe: the publishing limit counts published posts, and an ERROR
+# container never published anything.
+REEL_ATTEMPTS = 2
+REEL_RETRY_DELAY = 45
 
 # Where to take the cover from when no poster image is available. Meta's
 # default is 0 — the first frame — and our spots open on a bare gradient
@@ -152,11 +185,23 @@ def post_reel(repo_rel_path, caption, cover_rel_path=None):
         payload["cover_url"] = _public_url(cover_rel_path)
     else:
         payload["thumb_offset"] = str(COVER_FALLBACK_MS)
-    r = requests.post(f"{GRAPH}/{uid}/media", data=payload, timeout=120)
-    _check(r, "reel container creation")
-    container = r.json()["id"]
-    _await_ready(container, tok, REEL_TRIES, REEL_DELAY, "reel")
-    return _publish(uid, tok, container)
+    for attempt in range(1, REEL_ATTEMPTS + 1):
+        r = requests.post(f"{GRAPH}/{uid}/media", data=payload, timeout=120)
+        # NOT retried: a rejected creation is a 4xx about credentials,
+        # permissions or the payload, and re-sending an identical request
+        # cannot fix any of them.
+        _check(r, "reel container creation")
+        container = r.json()["id"]
+        try:
+            _await_ready(container, tok, REEL_TRIES, REEL_DELAY, "reel")
+        except ContainerProcessingError as e:
+            if attempt == REEL_ATTEMPTS:
+                raise
+            print(f"[ig] {e} — re-creating the container "
+                  f"(attempt {attempt + 1}/{REEL_ATTEMPTS})")
+            time.sleep(REEL_RETRY_DELAY)
+            continue
+        return _publish(uid, tok, container)
 
 def _permalink(media_id, tok):
     """The public URL. Unlike X — where the id slots straight into

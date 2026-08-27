@@ -607,3 +607,145 @@ def test_a_reel_error_surfaces_something_other_than_the_raw_dict(monkeypatch):
     with pytest.raises(post_ig.InstagramError) as exc:
         post_ig._await_ready("C1", "tok", 1, 0, "reel")
     assert "media could not be processed" in str(exc.value)
+
+
+# --- retrying a transient container failure --------------------------------
+#
+# 2026-08-17: a reel failed with `2207085`, outside Meta's documented
+# 2207001-2207057 range, so no file-shaped complaint fired and nothing said
+# whether the file or the transcode was at fault. The 2026-08-24 ad then
+# published from the same renderer, and a fresh container for that file
+# transcodes clean. One-off, not a defect — so re-create rather than lose
+# the day's post.
+
+class _Seq:
+    """Drives post_ig through a scripted sequence of container verdicts."""
+
+    def __init__(self, verdicts):
+        self.verdicts = list(verdicts)
+        self.creates = 0
+        self.publishes = 0
+
+    def post(self, url, data=None, timeout=None):
+        outer = self
+
+        class R:
+            ok = True
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                if url.endswith("/media"):
+                    outer.creates += 1
+                    return {"id": f"c{outer.creates}"}
+                outer.publishes += 1
+                return {"id": "published-1"}
+
+        return R()
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        outer = self
+
+        class R:
+            ok = True
+            status_code = 200
+
+            def json(self):
+                if (params or {}).get("fields") == "permalink":
+                    return {"permalink": "https://instagram.test/p/x"}
+                # one verdict per poll; the last repeats
+                v = (outer.verdicts.pop(0) if len(outer.verdicts) > 1
+                     else outer.verdicts[0])
+                return {"status_code": v, "id": "c"}
+
+        return R()
+
+
+def _run(monkeypatch, verdicts):
+    seq = _Seq(verdicts)
+    monkeypatch.setenv("IG_USER_ID", "1")
+    monkeypatch.setenv("IG_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setattr(post_ig.requests, "post", seq.post)
+    monkeypatch.setattr(post_ig.requests, "get", seq.get)
+    monkeypatch.setattr(post_ig.time, "sleep", lambda s: None)
+    return seq
+
+
+def test_an_error_container_is_recreated_and_can_still_publish(monkeypatch):
+    seq = _run(monkeypatch, ["ERROR", "FINISHED"])
+    post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert seq.creates == 2, "the container was not re-created"
+    assert seq.publishes == 1
+
+
+def test_a_clean_run_creates_exactly_one_container(monkeypatch):
+    """Negative control: the retry must not fire when nothing failed, or
+    every post silently costs two containers."""
+    seq = _run(monkeypatch, ["FINISHED"])
+    post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert seq.creates == 1 and seq.publishes == 1
+
+
+def test_retries_are_bounded(monkeypatch):
+    """Each poll runs up to ten minutes and the publish job has thirty,
+    which also has to cover X."""
+    seq = _run(monkeypatch, ["ERROR"])
+    with pytest.raises(post_ig.InstagramError):
+        post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert seq.creates == post_ig.REEL_ATTEMPTS
+    assert seq.publishes == 0, "published despite never succeeding"
+
+
+def test_a_container_that_never_finishes_is_not_retried(monkeypatch):
+    """A stalled container is a DIFFERENT failure with a different cost: it
+    burns the full poll before telling us anything, and two of those do not
+    fit the job budget. This is why the ERROR verdict has its own exception
+    type rather than being matched on message text."""
+    monkeypatch.setattr(post_ig, "REEL_TRIES", 2)
+    monkeypatch.setattr(post_ig, "REEL_DELAY", 0)
+    seq = _run(monkeypatch, ["IN_PROGRESS"])
+    with pytest.raises(post_ig.InstagramError):
+        post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert seq.creates == 1, "a stalled container was retried"
+
+
+def test_a_rejected_creation_is_not_retried(monkeypatch):
+    """A 4xx on creation is about credentials, permissions or the payload.
+    Re-sending an identical request cannot fix any of them, and hammering
+    Meta with it is how an account gets attention it does not want."""
+    calls = {"n": 0}
+
+    class Bad:
+        ok = False
+        status_code = 400
+
+        def json(self):
+            return {"error": {"message": "Invalid OAuth access token"}}
+        text = "bad"
+
+    def bad_post(url, data=None, timeout=None):
+        calls["n"] += 1
+        return Bad()
+
+    monkeypatch.setenv("IG_USER_ID", "1")
+    monkeypatch.setenv("IG_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("MEDIA_BASE_URL", "https://cdn.test")
+    monkeypatch.setattr(post_ig.requests, "post", bad_post)
+    monkeypatch.setattr(post_ig.time, "sleep", lambda s: None)
+    with pytest.raises(post_ig.InstagramError):
+        post_ig.post_reel("assets/video/t_ad.mp4", "cap")
+    assert calls["n"] == 1
+
+
+def test_the_error_verdict_has_its_own_type(monkeypatch):
+    """The retry catches ContainerProcessingError specifically. If ERROR
+    ever went back to a bare InstagramError, the retry would silently stop
+    firing — and the tests above would still pass on the happy path."""
+    assert issubclass(post_ig.ContainerProcessingError, post_ig.InstagramError)
+    monkeypatch.setattr(post_ig, "REEL_ATTEMPTS", 1)
+    seq = _run(monkeypatch, ["ERROR"])
+    with pytest.raises(post_ig.ContainerProcessingError):
+        post_ig.post_reel("assets/video/t_ad.mp4", "cap")
