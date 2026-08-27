@@ -8,7 +8,7 @@ us, and what is still open.
 Keep it current. A stale operations doc is worse than none, because it is
 believed.
 
-_Last reviewed: 2026-08-01._
+_Last reviewed: 2026-08-27._
 
 ---
 
@@ -21,7 +21,7 @@ _Last reviewed: 2026-08-01._
 | **LinkedIn** | Manual by necessity — no API access for a first-party publishing bot. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
 | **Facebook** | Not wired. |
 | **Rotation** | 23 of 24 topics publishable. `card → screenshot → card → ad`. |
-| **Cron** | Mon–Sat 13:37 UTC, `daily.yml`. |
+| **Cron** | Mon–Sat 13:37 UTC, `daily.yml`. Late is normal; dropped happens. |
 
 The one blocked topic is `capability-statement` — **UNVERIFIABLE**, not
 pending work. Its central claim cannot be traced to a source, so it stays
@@ -39,7 +39,12 @@ out.
 ### Alarms
 
 - **Missed-run alarm** — `missed-run.yml`, 17:07 UTC Mon–Sat. Alerts if no
-  post landed on a day one was due.
+  post landed on a day one was due. **It cannot cover the day GitHub drops
+  every schedule, because it is dropped too** — see below.
+- **Gap check** — a job on `daily.yml`, so it runs whenever the workflow
+  fires rather than on a schedule of its own. Reports scheduled days
+  immediately before today on which no run was created. This is the
+  backstop for the alarm's blind spot; it is retroactive by nature.
 - **Heartbeat** — `heartbeat.yml`, Mondays 14:23 UTC. Weekly liveness.
   (UTC like the rest of this section — it used to be written in ET, which
   made it the one time here you had to convert before comparing it to a
@@ -67,6 +72,31 @@ So ~2h is **typical**, not the tail. The missed-run alarm sits at 17:07 —
 than no alarm: the next real one gets dismissed.
 
 **Do not "fix" a late run.** Only a *missing* one is a problem.
+
+### …and some days it does not run at all
+
+On **2026-08-27** GitHub dropped *every* scheduled run for this repo — the
+post at 13:37 and the alarm at 17:07. No run records, no failures, no
+incident on GitHub's status page. Nothing on our side had changed: cron
+intact, workflow `active`, default branch correct, YAML valid.
+
+Two things follow, and the second is the one that bites.
+
+**A drop leaves no trace.** A late run is visible; a dropped one is
+indistinguishable from a day nobody scheduled. Check for the *absence* of a
+run record, not for a failure.
+
+**The alarm shares the failure mode it detects.** `missed-run.yml` is itself
+a scheduled workflow, so the day GitHub drops schedules it is dropped too.
+It is structurally blind to its own case and no tuning fixes that — a
+scheduled workflow cannot detect its own non-execution. That is why the gap
+check lives on `daily.yml` and looks *backwards*: only a workflow that
+actually fired can report one that did not.
+
+The residual hole cannot be closed from inside GitHub Actions: if every
+scheduled workflow is dropped for several days running, nothing reports
+anything until one fires again — and then the gap check reports the whole
+outage at once.
 
 ### An `ad` takes 9–13 minutes to prepare, and that is not a hang
 
@@ -124,13 +154,68 @@ It shipped a broken card twice before that skip existed.
 **Card layout is confirmed by CI, not by your laptop.** Install DejaVu
 locally if you want the check to mean something here.
 
-### Two channels, two viewports
+### A screenshot post shows the topic's own feature card
 
-The `screenshot` format captures the site **twice** — desktop for X,
-portrait for Instagram. One capture cropped two ways put half the headline
-outside the 4:5 frame ("Win More Set-Asides." became "Set-Asides."), and it
-looked *correct on X the whole time*, because a 16:9 crop trims height
-instead of width.
+Not a crop of the marketing site. `capture_topic()` grabs the element the
+live site tags `data-social-shot="<topic-id>"` (added in pursuit-ai#2146)
+and composes it onto the brand gradient: a 16:9 spotlight for X — headline,
+stat and price beside the card — and a 4:5 fill for Instagram, which gains
+a headline above the card only when the card does not already fill the
+frame. ~8s per topic.
+
+It got here the long way, and the wrong turn is worth knowing. Screenshot
+posts originally took a viewport crop of whatever generic section a cursor
+landed on, and **every screenshot post for two months used the identical
+hero image** — the selection loop broke on the first section that existed,
+and the site root always exists. Rotating the sections fixed the repetition
+and made relevance *worse*: an 8(a) post then showed Opportunity Discovery,
+Grants and AI Fit Scoring. A different generic image is still generic.
+
+Two things the old approach taught, both still live:
+
+* **The page animates.** Sections fade in on scroll and numbers count up, so
+  a capture races all of them. One caught a counter mid-count reading 0
+  where it should have read 97. Captures now run with
+  `reduced_motion="reduce"`.
+* **Anything pinned to the top is painted OVER the element**, and an element
+  screenshot takes pixels as rendered — the site nav landed inside the frame
+  and clipped tall cards. `_hide_pinned_chrome` matches on *computed
+  position*, not tag name: the first attempt hid `header`, the nav is a
+  `<nav>`, and it silently did nothing.
+
+**The fallback still exists and still matters.** A topic whose anchor is
+missing from the live site — a new topic, or a capture against a deploy
+that predates the anchors — falls back to a generic section, so it gets a
+weaker post rather than no post. `pricing-plans` takes it permanently: its
+anchor tags a whole *section*, 6.13 tall/wide against 0.58–1.32 for every
+real card, and composed it was an illegible sliver. `SECTIONS_WITHHELD`
+records the three generic sections not fit to publish, each with the defect
+it shows, because an undocumented exclusion rots into superstition.
+
+### A reel container that comes back ERROR is re-created
+
+On 2026-08-17 a reel failed with `2207085` — a code **outside** Meta's
+documented `2207001–2207057` range, so no file-shaped complaint fired
+(`2207026` is "video format is not supported", `2207052` is "could not be
+fetched") and nothing distinguished a bad file from a transient transcode.
+Those need opposite responses, so nothing was done for ten days.
+
+It was transient. The 2026-08-24 ad published from the same renderer and
+pipeline, and a fresh container for that file transcodes clean. The answer
+was in `posted.jsonl` the whole time; **nothing surfaced it because the reel
+path had no CI coverage** — `validate_ig.py --reel` existed for exactly this
+and was never wired in. It is now a step in the credential-validation job.
+
+`post_reel` retries an `ERROR` verdict once. Deliberately nothing else: a
+rejected *creation* is a 4xx about credentials or payload that an identical
+re-send cannot fix, and a container that never *finishes* burns the full
+ten-minute poll first, which twice over does not fit the publish job's
+thirty-minute budget. That distinction is why `ERROR` raises its own
+`ContainerProcessingError` rather than being matched on message text.
+
+Still untested: `pricing-plans_ad.mp4` itself. Everything above is inference
+from its neighbours plus Meta's error taxonomy. `--reel` picks the newest
+video and cannot target a named file.
 
 ### Instagram accepts JPEG only
 
@@ -186,6 +271,12 @@ Publishes nothing. Containers expire in 24h. **It fails deliberately on a
 token expiring within 7 days** — a chain can be perfect and still not
 survive a daily cron.
 
+You usually do not need local secrets for this: both paths now run in CI —
+Actions → *Tests & credential validation* → Run workflow, with
+`validate_credentials` ticked. That is also the only way to exercise them
+with the same credentials production publishes with. NB `--reel` builds a
+real REELS container each run, so it is no longer a free check.
+
 ### Replace a bad post
 
 Neither platform can swap media on a live post. Delete it by hand, then
@@ -220,11 +311,19 @@ Compliance, pronunciation, freshness, card-overflow and the claims schema
 all check whether a post is **permitted**. None check whether it is
 **good**.
 
-Both of these passed every automated gate and were caught by a human
+All three of these passed every automated gate and were caught by a human
 looking at the result:
 
 - a video that shipped **silent**, with text pulsing in and out
 - a screenshot with its **headline sliced in half**
+- a screenshot that was perfectly rendered and **about the wrong feature** —
+  8(a) copy over a picture of Opportunity Discovery, Grants and AI Fit
+  Scoring
+
+The third is the instructive one. Nothing was broken: the image was sharp,
+correctly cropped, on-brand, and every check passed. It was simply not about
+the thing the post was about, and no gate has an opinion on that. Relevance
+is not a property any of these tests can see.
 
 That is the work the approval gate exists to make possible. Look at the
 post, not just the checkmark.
@@ -242,12 +341,18 @@ post, not just the checkmark.
 - **Customer win detection** — spec handed to the main-app session:
   detect when a *customer* wins via `contract_awards.recipient_uei →
   company_profiles.uei`, with explicit opt-in before naming anyone.
-- **Cron timing** — if the ~2h delay proves systematic, moving the cron
-  ~2h earlier would land posts at the intended 9:30 ET. Wants a third data
-  point first.
-- **Hero animation** — a looping animation on the live site occasionally
-  drifts across the headline in captures. Cosmetic; a per-section
-  `scroll_y` tweak would dodge it.
+- **Cron timing** — the third data point arrived and changed the question:
+  2026-08-27 was not a delay but a **drop**. Moving the cron earlier does
+  nothing for a drop, so this is now about whether ~2h late is worth
+  correcting on its own. Probably not.
+- **Target a named file for reel validation** — `--reel` takes the newest
+  video, so the artifact that actually failed on 2026-08-17 has never been
+  re-tested. A `--file` flag would close that.
+- **Hero animation** — was: a looping animation drifting across the headline
+  in captures. Largely moot now that captures run with
+  `reduced_motion="reduce"` and target an element rather than a viewport.
+  Still live for the generic-section fallback, which is why
+  `how-it-works`, `pipeline-board` and `why` remain withheld.
 
 ---
 
