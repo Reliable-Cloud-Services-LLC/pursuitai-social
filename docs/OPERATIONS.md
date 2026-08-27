@@ -213,9 +213,17 @@ ten-minute poll first, which twice over does not fit the publish job's
 thirty-minute budget. That distinction is why `ERROR` raises its own
 `ContainerProcessingError` rather than being matched on message text.
 
-Still untested: `pricing-plans_ad.mp4` itself. Everything above is inference
-from its neighbours plus Meta's error taxonomy. `--reel` picks the newest
-video and cannot target a named file.
+**Confirmed, not inferred.** On 2026-08-27 the exact rejected file was
+re-run through a fresh container with `--reel --file
+assets/video/pricing-plans_ad.mp4` and reached `transcode FINISHED`. The
+file was never bad, and a second attempt on the day would very likely have
+published it.
+
+Getting there needed `--file`, because `--reel` defaults to the NEWEST
+posted video — which by then was a later, healthy ad. A run had already come
+back green against that file and said nothing about the one in question, so
+the output now names its target and marks whether `--file` chose it. A green
+reel check that tested something else looks identical to one that did not.
 
 ### Instagram accepts JPEG only
 
@@ -345,9 +353,9 @@ post, not just the checkmark.
   2026-08-27 was not a delay but a **drop**. Moving the cron earlier does
   nothing for a drop, so this is now about whether ~2h late is worth
   correcting on its own. Probably not.
-- **Target a named file for reel validation** — `--reel` takes the newest
-  video, so the artifact that actually failed on 2026-08-17 has never been
-  re-tested. A `--file` flag would close that.
+- **LinkedIn automation** — being scoped. Manual today; see
+  [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md) for what was already refused and
+  why.
 - **Hero animation** — was: a looping animation drifting across the headline
   in captures. Largely moot now that captures run with
   `reduced_motion="reduce"` and target an element rather than a viewport.
