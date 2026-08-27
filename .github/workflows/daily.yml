@@ -61,12 +61,67 @@ on:
 
 permissions:
   contents: write
+  actions: read           # the gap check asks whether earlier runs happened
 
 concurrency:
   group: daily-post
   cancel-in-progress: false
 
 jobs:
+  # Was a PREVIOUS scheduled day dropped? Deliberately its own job, not a
+  # step in prepare: it must report regardless of whether today's render
+  # works, and it has nothing to do with building a post.
+  #
+  # This exists because the same-day alarm (missed-run.yml) is ITSELF a
+  # scheduled workflow, so it shares the failure it detects. On 2026-08-27
+  # GitHub dropped every scheduled run for this repo — the 13:37 post and
+  # the 17:07 alarm both — so nothing reported the missing day and a human
+  # found it instead. A scheduled workflow cannot detect its own
+  # non-execution; only a workflow that DID fire can, by looking backwards.
+  #
+  # Never fails the run. A gap is history, and failing today's post over
+  # yesterday's outage would turn one missed day into two.
+  gap-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Was an earlier scheduled day dropped?
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          import missed_run, notify
+
+          try:
+              missed, message = missed_run.preceding_gap(
+                  os.environ["REPO"], os.environ["GH_TOKEN"])
+          except Exception as e:
+              # Best effort by design: a flaky API read must not fail the
+              # workflow that carries the day's post.
+              print(f"[gap-check] could not check ({type(e).__name__}: {e})")
+              sys.exit(0)
+
+          print(f"[gap-check] {message}")
+          if missed:
+              notify.alert(
+                  f":warning: *A scheduled social post day was dropped*\n"
+                  f"{message}\n"
+                  f"Nothing was lost — those topics were never consumed and "
+                  f"come round again. To post one now: "
+                  f"{os.environ['ACTIONS_URL']}")
+          PY
+
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30

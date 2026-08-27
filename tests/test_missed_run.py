@@ -135,3 +135,89 @@ def test_the_alarm_covers_the_same_days_as_the_post():
         text = open(os.path.join(ROOT, ".github", "workflows", name)).read()
         m = re.search(r'cron:\s*"[\d]+\s+[\d]+\s+\*\s+\*\s+([\d\-]+)"', text)
         assert m and m.group(1) == "1-6", f"{name} days: {m and m.group(1)}"
+
+
+# --- the gap check ---------------------------------------------------------
+#
+# 2026-08-27: GitHub dropped EVERY scheduled run for this repo — the daily
+# post at 13:37 and this alarm at 17:07. So the alarm could not report the
+# post it was watching, and the day passed silently until a human noticed,
+# which is the exact outcome the alarm exists to prevent.
+#
+# check() cannot cover that. It runs on a schedule, so it shares the failure
+# mode it detects. preceding_gap() runs from a workflow that DID fire and
+# looks backwards instead.
+
+def _runs(*dates):
+    return [{"created_at": f"{d}T14:00:00Z"} for d in dates]
+
+
+def test_the_previous_scheduled_day_having_no_run_is_a_gap():
+    """The 2026-08-27 case, from the next morning."""
+    missed, msg = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 28),
+        session=FakeSession(_runs("2026-08-25", "2026-08-26")))
+    assert [d.isoformat() for d in missed] == ["2026-08-27"]
+    assert "2026-08-27" in msg
+
+
+def test_no_gap_when_the_previous_scheduled_day_ran():
+    missed, msg = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 27),
+        session=FakeSession(_runs("2026-08-26")))
+    assert missed == [] and "no gap" in msg
+
+
+def test_a_saturday_drop_is_still_reported_on_monday():
+    """Sunday is not scheduled, so it must be stepped OVER rather than end
+    the scan — otherwise every Saturday outage is invisible."""
+    missed, _ = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 31),   # Monday
+        session=FakeSession(_runs("2026-08-28")))     # Fri ran, Sat did not
+    assert [d.isoformat() for d in missed] == ["2026-08-29"]
+
+
+def test_a_multi_day_outage_is_reported_whole():
+    missed, msg = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 28),
+        session=FakeSession(_runs("2026-08-24")))
+    assert [d.isoformat() for d in missed] == ["2026-08-25", "2026-08-26",
+                                               "2026-08-27"]
+    assert "3 scheduled day(s)" in msg
+
+
+def test_the_scan_stops_at_the_first_day_that_ran():
+    """What makes this self-deduplicating, with no state file: once a run
+    fires on day N, the scan on N+1 stops at N. An older gap BEHIND a
+    successful day is deliberately not re-reported — it was already
+    reported when it was the leading edge."""
+    missed, _ = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 28),
+        session=FakeSession(_runs("2026-08-26")))   # 25 missing, 26 ran
+    assert [d.isoformat() for d in missed] == ["2026-08-27"]
+
+
+def test_a_manual_dispatch_closes_the_gap():
+    """Same rule as check(): any event type counts. Alarming on the day
+    somebody worked around a problem by hand is a false positive."""
+    missed, _ = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 28),
+        session=FakeSession(_runs("2026-08-27")))
+    assert missed == []
+
+
+def test_the_scan_is_bounded():
+    """Without a bound this walks to the first commit on a fresh clone."""
+    missed, _ = missed_run.preceding_gap(
+        "r", "t", today=datetime.date(2026, 8, 28), max_days=3,
+        session=FakeSession([]))
+    assert len(missed) <= 3
+
+
+def test_the_query_window_covers_the_whole_lookback():
+    """Negative control on the API call itself: a `created` filter scoped to
+    today would return no history, and every day would look like a gap."""
+    s = FakeSession(_runs("2026-08-26"))
+    missed_run.preceding_gap("r", "t", today=datetime.date(2026, 8, 28),
+                             max_days=14, session=s)
+    assert s.params["created"] == ">=2026-08-14"
