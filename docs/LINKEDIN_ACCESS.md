@@ -78,7 +78,54 @@ and video upload separately to get a URN. Roughly 150 lines of work.
 500 calls/day is ~100× our need (one post/day is 3–5 calls). **Rate is not
 the constraint.**
 
-### We cannot pass Standard tier review as built
+### CORRECTION (re-verified 2026-08-27): Development tier needs no screencast
+
+The section below is about **Standard** tier, and reading it as "LinkedIn is
+closed to us" was wrong. LinkedIn's app-review page heads that list
+*"Requirements for Standard Tier Upgrade Only"*, and Development tier is
+reviewed on administrative facts alone:
+
+> - Approved use case
+> - Verified business email address
+> - Verified organization
+> - Verified organization website and domain address
+> - Application verified by LinkedIn Page associated with same organization
+
+No screencast, no test credentials, no application users. And per Increasing
+Access, *"All applications start with Development tier"* — it is the default
+on approval, not a separate thing to win.
+
+At **500 API calls/app/24h** against our 3–5, Development tier is not a
+stepping stone to production for us. It IS production.
+
+### The real constraint is the token, not the tier
+
+[3-legged OAuth](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow):
+
+> "Currently, all access tokens are issued with a 60-day lifespan."
+
+Refreshing is a browser flow, not a server one. The consent screen is
+skipped, but only *"provided … The member is still logged into
+https://www.linkedin.com"* — so it needs a human with a browser session.
+
+> "Programmatic refresh tokens are available for a limited set of partners."
+
+Unless we are granted that, **a human re-authorizes roughly every 60 days.**
+That is the difference between LinkedIn and the other two channels: X uses
+long-lived OAuth 1.0a credentials and Instagram a System User token that
+never expires, so neither has a recurring human step.
+
+So automatic LinkedIn posting is real, and it is automatic *in 60-day
+stretches*. Worth building, worth knowing.
+
+### A rejection is recoverable
+
+Also worth correcting: *"You won't be able to re-apply for Development tier
+access with your existing app"* — but the same sentence says to *"create a
+new app, and submit a new Development tier access request form."* The app is
+burned; the attempt is not.
+
+### Standard tier review — unpassable as built, and we do not need it
 
 [App Review](https://learn.microsoft.com/en-us/linkedin/marketing/community-management-app-review)
 requires a screencast demonstrating, for a Page Management use case:
