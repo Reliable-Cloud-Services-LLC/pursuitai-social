@@ -194,3 +194,61 @@ def test_linkedin_is_registered_and_skippable():
     assert run.POSTERS["linkedin"][0] == "LINKEDIN_ACCESS_TOKEN"
     import inspect
     assert "skip_linkedin" in inspect.signature(run.publish).parameters
+
+
+# --- the validator entry point ---------------------------------------------
+
+def _run_validator(*args):
+    import subprocess
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID")}
+    return subprocess.run(
+        [sys.executable, os.path.join(ROOT, "scripts", "validate_linkedin.py"),
+         *args], capture_output=True, text=True, env=env)
+
+
+@pytest.mark.parametrize("flag", ["--discover", "--upload", ""])
+def test_the_validator_runs_and_stops_at_the_credential_check(flag):
+    """Every mode reaches argument parsing and exits cleanly without
+    credentials. This proves the script RUNS; it does not prove the module
+    is ordered correctly — see the next test for why that needed its own."""
+    r = _run_validator(*([flag] if flag else []))
+    assert "Traceback" not in r.stderr, r.stderr
+    assert "LINKEDIN_ACCESS_TOKEN not set" in r.stdout
+
+
+def test_the_entry_point_is_the_last_statement_in_the_file():
+    """Python executes a module top to bottom, so a __main__ guard placed
+    mid-file calls main() before anything below it is defined. discover()
+    was appended past the guard and became a NameError that fired only when
+    the script was RUN with a token — imports were fine, and the run-it
+    test above passes either way, because main() exits at the credential
+    check long before it reaches discover().
+
+    So this asserts the ordering itself, via the AST rather than a string
+    match: the __main__ guard must be the final top-level statement.
+    """
+    import ast
+    src = open(os.path.join(ROOT, "scripts", "validate_linkedin.py")).read()
+    body = ast.parse(src).body
+    last = body[-1]
+    assert isinstance(last, ast.If), (
+        f"last top-level statement is {type(last).__name__}, not the "
+        f"__main__ guard — anything after it is undefined when main() runs")
+    assert "__main__" in ast.unparse(last.test)
+
+
+def test_the_org_urn_is_read_under_either_field_name():
+    """LinkedIn's own samples disagree: the roleAssignee example returns the
+    URN under "organization", the paginated example under "organizationTarget".
+    Reading only one reports "member does NOT administer" against a Page they
+    demonstrably do — a confusing failure at exactly the wrong moment."""
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import validate_linkedin as v
+    assert v._orgs_in({"elements": [{"organization": "urn:li:organization:1"}]}) \
+        == ["urn:li:organization:1"]
+    assert v._orgs_in({"elements": [{"organizationTarget":
+                                     "urn:li:organization:2"}]}) \
+        == ["urn:li:organization:2"]
+    assert v._orgs_in({"elements": [{"role": "ADMINISTRATOR"}]}) == []
+    assert v._orgs_in({}) == []
