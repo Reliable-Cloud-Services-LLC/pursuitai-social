@@ -53,6 +53,12 @@ def main():
     ap.add_argument("--upload", action="store_true",
                     help="also upload a real image (never posted) to prove "
                          "the half of the flow that actually breaks")
+    ap.add_argument("--discover", action="store_true",
+                    help="print LINKEDIN_ORG_ID and LINKEDIN_TOKEN_EXPIRES_AT "
+                         "for the current token, ready to paste as secrets")
+    ap.add_argument("--ttl-seconds", type=int, default=None,
+                    help="token TTL from the portal's Token Details, used "
+                         "with --discover to compute the expiry timestamp")
     ap.add_argument("--file", metavar="REPO_REL_PATH",
                     help="image to upload with --upload; defaults to the "
                          "newest LinkedIn card")
@@ -60,6 +66,8 @@ def main():
 
     tok = os.environ.get("LINKEDIN_ACCESS_TOKEN") or fail(
         "LINKEDIN_ACCESS_TOKEN not set")
+    if args.discover:
+        return discover(tok, args.ttl_seconds)
     org_id = os.environ.get("LINKEDIN_ORG_ID") or fail(
         "LINKEDIN_ORG_ID not set")
     org_urn = f"urn:li:organization:{org_id}"
@@ -87,8 +95,7 @@ def main():
         print("    NOT fatal on its own, but if the upload below 403s, this "
               "is why — grant the member an ADMINISTRATOR role on the Page.")
     else:
-        orgs = [e.get("organization")
-                for e in (r.json() or {}).get("elements", [])]
+        orgs = _orgs_in(r.json())
         if org_urn in orgs:
             ok(f"member administers {org_urn}")
         else:
@@ -122,6 +129,23 @@ def main():
     print("\nAll checks passed — the LinkedIn chain is ready. 🚀")
 
 
+# LinkedIn's own samples for this endpoint disagree with each other: the
+# roleAssignee example returns the URN under "organization", the paginated
+# example under "organizationTarget". Reading only one silently finds
+# nothing and reports "member does NOT administer" against a Page they do.
+_ORG_FIELDS = ("organization", "organizationTarget")
+
+
+def _orgs_in(payload):
+    out = []
+    for e in (payload or {}).get("elements", []):
+        for field in _ORG_FIELDS:
+            if e.get(field):
+                out.append(e[field])
+                break
+    return out
+
+
 def _newest_card():
     d = os.path.join(ROOT, "assets", "linkedin")
     if not os.path.isdir(d):
@@ -134,5 +158,59 @@ def _newest_card():
     return os.path.join("assets", "linkedin", newest)
 
 
+
+
+# Documented default: "all access tokens are issued with a 60-day lifespan".
+# Used only when the real TTL is not supplied — see the warning below.
+DEFAULT_TTL_SECONDS = 60 * 86400
+
+
+def discover(tok, ttl_seconds=None):
+    """Print the two derived secrets for a freshly minted token.
+
+    LINKEDIN_ORG_ID is asked of the API rather than read off a Page URL, so
+    it cannot be the id of a Page the token cannot actually post to.
+    """
+    import time
+    headers = post_linkedin._headers(tok, json_body=False)
+    r = requests.get(
+        "https://api.linkedin.com/rest/organizationAcls"
+        "?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+        headers=headers, timeout=30)
+    if r.status_code != 200:
+        fail(f"could not read organizationAcls ({r.status_code}): "
+             f"{r.text[:200]}\n"
+             f"       This needs the rw_organization_admin scope on the "
+             f"token — regenerate it with that scope ticked.")
+    orgs = _orgs_in(r.json())
+    if not orgs:
+        fail("this member administers no Pages. Posting as an organization "
+             "needs an ADMINISTRATOR role — grant it on the Page, then mint "
+             "a fresh token.")
+
+    print("\n# Paste these as repository secrets:\n")
+    for urn in orgs:
+        print(f"LINKEDIN_ORG_ID={urn.rsplit(':', 1)[-1]}"
+              + (f"    # {urn}" if len(orgs) > 1 else ""))
+    if len(orgs) > 1:
+        print("# NB more than one Page — pick the PursuitAI one.")
+
+    ttl = ttl_seconds or DEFAULT_TTL_SECONDS
+    print(f"LINKEDIN_TOKEN_EXPIRES_AT={int(time.time()) + ttl}")
+    if ttl_seconds is None:
+        print(f"\n# ^ assumes the documented {DEFAULT_TTL_SECONDS // 86400}-day "
+              f"lifespan, NOT this token's actual TTL. The portal shows the\n"
+              f"# real value under Token Details; re-run with --ttl-seconds N "
+              f"to use it. Being wrong here\n"
+              f"# only shifts when the expiry alarm fires, but it shifts it "
+              f"in the unhelpful direction if the\n"
+              f"# token was already partly used.")
+
+
+# Entry point LAST, deliberately. Python executes a module top to bottom, so
+# a __main__ guard placed mid-file calls main() before anything below it is
+# defined — which is exactly how discover() became a NameError the moment it
+# was appended past the guard. test_entry_point_reaches_argument_parsing
+# runs the script for real so that cannot recur silently.
 if __name__ == "__main__":
     main()
