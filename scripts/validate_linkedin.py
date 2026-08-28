@@ -102,12 +102,34 @@ def main():
             fail(f"member does NOT administer {org_urn}. Roles found: "
                  f"{orgs or 'none'}. Posting will 403.")
 
-    print("[3] token lifetime")
-    days = post_linkedin.token_days_left()
+    print("[3] token lifetime and scopes")
+    days, status, scopes = post_linkedin.token_state()
+
+    if status == "unknown":
+        print("    No LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET, so this "
+              "falls back to the stored\n"
+              "    LINKEDIN_TOKEN_EXPIRES_AT — which cannot detect a REVOKED "
+              "token (revoked tokens\n"
+              "    keep a future expiry) and cannot show which scopes were "
+              "actually granted.")
+    elif status != "active":
+        fail(f"LinkedIn reports this token as {status.upper()}. "
+             f"Re-authorize before relying on it.")
+    else:
+        ok("LinkedIn reports the token active")
+
+    if scopes:
+        if post_linkedin.REQUIRED_SCOPE in scopes:
+            ok(f"scope {post_linkedin.REQUIRED_SCOPE} granted")
+        else:
+            # The token carries what the member consented to, not what you
+            # meant to tick. Posting 403s without this.
+            fail(f"token lacks {post_linkedin.REQUIRED_SCOPE}. Granted: "
+                 f"{', '.join(scopes)}. Re-mint with that scope ticked.")
+
     if days is None:
-        print("    LINKEDIN_TOKEN_EXPIRES_AT not set — cannot warn before "
-              "this token dies. Set it when you mint the token (epoch "
-              "seconds: now + expires_in).")
+        print("    No expiry available — set LINKEDIN_TOKEN_EXPIRES_AT, or "
+              "the client credentials for the real value.")
     elif days < MIN_DAYS:
         fail(f"token expires in {days} day(s). It will not survive the "
              f"posting schedule — re-authorize before relying on it.")
