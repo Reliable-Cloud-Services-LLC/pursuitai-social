@@ -236,6 +236,71 @@ answer is no.
 
 ---
 
+## Getting the three secrets
+
+Verified against learn.microsoft.com on 2026-08-27.
+
+**Order matters.** Two of the three cannot exist until the Community
+Management API application is approved: the Token Generator only offers
+scopes your app actually has, so before approval there is no
+`w_organization_social` to tick and no token worth minting.
+
+### 1. LINKEDIN_ACCESS_TOKEN
+
+**No OAuth callback server is needed.** The Developer Portal mints tokens
+directly — *"The LinkedIn Developer Portal Token Generator Tool allows a
+quick and easy method for generating an access token"* — which matters here,
+because a single-Page first-party publisher has no users to send through a
+consent flow.
+
+1. [Token Generator](https://www.linkedin.com/developers/tools/oauth/token-generator)
+2. Select the app
+3. Tick **`w_organization_social`** (post as the Page) and
+   **`rw_organization_admin`** (read Page roles, which is how step 2 below
+   finds the org id)
+4. Approve as a member who holds an **ADMINISTRATOR** role on the PursuitAI
+   Page — the token inherits that member's roles, so approving as someone
+   without it produces a token that looks perfect and 403s on publish
+5. Copy the token. Note the **TTL** shown under Token Details
+
+### 2 & 3. LINKEDIN_ORG_ID and LINKEDIN_TOKEN_EXPIRES_AT
+
+Ask the API rather than reading an id off a Page URL — that way the id
+cannot be for a Page the token cannot actually post to:
+
+```bash
+export LINKEDIN_ACCESS_TOKEN=<from step 1>
+python scripts/validate_linkedin.py --discover --ttl-seconds <TTL from step 1>
+```
+
+It prints both, ready to paste as repository secrets. Omit `--ttl-seconds`
+and it assumes the documented 60-day lifespan, which is right for a
+freshly-minted token and wrong for a partly-used one — in the unhelpful
+direction, because the expiry alarm then fires late.
+
+`LINKEDIN_TOKEN_EXPIRES_AT` is the one that is easy to skip. Without it
+nothing can warn before the token dies, and the first symptom is a channel
+that silently stops posting.
+
+### 4. Prove it before trusting it
+
+```bash
+export LINKEDIN_ORG_ID=<from step 2>
+python scripts/validate_linkedin.py --upload
+```
+
+Uploads a real image and waits for `AVAILABLE`. Publishes nothing. Re-run it
+after every re-authorization — the whole point of a 60-day credential is
+that last month's green result means nothing.
+
+### Every 60 days, thereafter
+
+Repeat steps 1–3. Refresh is a browser flow, so there is no way to automate
+this without programmatic refresh tokens, which are *"available for a limited
+set of partners"*.
+
+---
+
 ## When to revisit
 
 - **Development tier lands** → wire `post_linkedin.py` behind a flag,
