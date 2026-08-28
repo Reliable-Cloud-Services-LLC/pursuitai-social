@@ -26,6 +26,9 @@ shell or put them in a `.env` you never commit (`.env` is gitignored).
 | `MEDIA_BUCKET` | yes | your bucket | The prepare job fails loudly — media has nowhere to go. |
 | `MEDIA_ACCESS_KEY_ID` / `MEDIA_SECRET_ACCESS_KEY` | yes | R2 or IAM | Upload and fetch both fail. |
 | `MEDIA_ENDPOINT` | R2 only | Cloudflare | Leave unset for AWS S3. |
+| `LINKEDIN_ACCESS_TOKEN` | yes, for LinkedIn | LinkedIn Developer Portal | LinkedIn is **skipped** — the other channels are unaffected |
+| `LINKEDIN_ORG_ID` | yes, for LinkedIn | `validate_linkedin.py --discover` | LinkedIn posts fail — there is no Page to post as |
+| `LINKEDIN_TOKEN_EXPIRES_AT` | strongly recommended | `validate_linkedin.py --discover` | **Nothing can warn before the 60-day token dies.** The first symptom is a channel that quietly stopped posting. |
 
 Only `X_API_KEY` and `IG_USER_ID` gate whether a channel is *attempted* — the
 engine checks those two as the "are credentials present" signal. The rest fail
@@ -130,6 +133,68 @@ The `--container` flag creates a real media container to prove Instagram can
 actually *fetch* your media URL, then never publishes it — unpublished
 containers expire harmlessly after 24h. This is the single most useful check,
 because a media URL Instagram can't reach is the most common silent failure.
+
+---
+
+## LinkedIn — 3 secrets, and two you should NOT store
+
+Requires the **Community Management API** approved on the app (Development
+tier is enough — 500 calls/day against our 3–5). See
+[docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md) for the application, and
+for the full runbook to obtain these.
+
+### Do NOT store the Client ID or Client Secret
+
+Creating the app hands you both, and putting them here is the obvious next
+move. Don't.
+
+**Nothing in this engine reads them.** The whole LinkedIn path uses exactly
+three variables — `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_ORG_ID`,
+`LINKEDIN_TOKEN_EXPIRES_AT` — because tokens are minted in the browser with
+the portal's Token Generator rather than by exchanging an authorization code
+ourselves. There is no callback server here, so there is nothing for a client
+secret to authenticate.
+
+A secret stored where it is not used is pure downside: one more thing that
+can leak, one more thing to rotate, and nothing gained. Keep both in a
+password manager.
+
+They become relevant only if this engine ever performs the OAuth exchange
+itself — which today means being granted programmatic refresh tokens,
+"available for a limited set of partners". Add them deliberately at that
+point, not preemptively.
+
+### The three that ARE stored
+
+1. **Mint the token.** [Token Generator](https://www.linkedin.com/developers/tools/oauth/token-generator)
+   → select the app → tick `w_organization_social` and
+   `rw_organization_admin` → approve as a member holding an **ADMINISTRATOR**
+   role on the PursuitAI Page. Note the TTL shown under Token Details.
+
+   The token inherits that member's roles, so approving as someone without
+   the Page role yields a token that passes every check and 403s on publish.
+
+2. **Derive the other two:**
+   ```bash
+   export LINKEDIN_ACCESS_TOKEN=<from step 1>
+   python scripts/validate_linkedin.py --discover --ttl-seconds <TTL>
+   ```
+   Prints `LINKEDIN_ORG_ID` and `LINKEDIN_TOKEN_EXPIRES_AT` ready to paste.
+   The org id is asked of the API rather than read off a Page URL, so it
+   cannot be for a Page the token cannot actually post to.
+
+3. **Prove it before trusting it:**
+   ```bash
+   export LINKEDIN_ORG_ID=<from step 2>
+   python scripts/validate_linkedin.py --upload
+   ```
+   Uploads a real image and waits for `AVAILABLE`. Publishes nothing.
+
+### Every 60 days
+
+Repeat all three. Refresh is a browser flow, so this cannot be automated
+without programmatic refresh tokens. `LINKEDIN_TOKEN_EXPIRES_AT` is what
+makes the deadline visible in advance instead of as an outage.
 
 ---
 
