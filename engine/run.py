@@ -328,6 +328,11 @@ def prepare(force_format=None, force_topic=None):
         "text_x": captions.build_x(topic, brand, fmt=fmt),
         "text_x_reply": captions.build_x_reply(topic, brand, fmt),
         "text_ig": captions.build_ig(topic, brand),
+        # LinkedIn takes the 16:9 asset. Its feed favours landscape, and
+        # the x variant exists for every format — the 4:5 is Instagram's
+        # shape and the ad is a video, which this poster does not handle.
+        "media_linkedin": os.path.relpath(media_x, ROOT),
+        "text_linkedin": captions.build_linkedin(topic, brand, fmt=fmt),
         "media_x": os.path.relpath(media_x, ROOT),
         "media_ig": os.path.relpath(media_ig, ROOT),
         "cover_ig": os.path.relpath(cover_ig, ROOT) if cover_ig else None,
@@ -381,19 +386,34 @@ def _post_ig(pending):
                                  cover_rel_path=pending.get("cover_ig"))
     return post_ig.post_image(pending["media_ig"], pending["text_ig"])
 
+def _post_linkedin(pending):
+    import post_linkedin
+    return post_linkedin.post_image(pending["media_linkedin"],
+                                    pending["text_linkedin"],
+                                    alt_text=pending.get("topic"))
+
 # channel -> (env var proving credentials are present, poster)
+#
+# LinkedIn ships INERT: with no LINKEDIN_ACCESS_TOKEN the loop below marks it
+# "skipped" and the other channels are untouched. That is the whole
+# deployment story for it until the Community Management API application is
+# approved — no flag to remember, and no way for an unapproved channel to
+# fail a run.
 POSTERS = {
     "x":  ("X_API_KEY", _post_x),
     "ig": ("IG_USER_ID", _post_ig),
+    "linkedin": ("LINKEDIN_ACCESS_TOKEN", _post_linkedin),
 }
 
-def publish(skip_x=False, skip_ig=False, force=False):
+def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
+            force=False):
     """Post the prepared content. Four outcomes per channel:
 
       posted    reached the platform, carries an id
       failed    the call raised, carries the error
       skipped   enabled but credentials absent
-      disabled  turned off explicitly with --skip-x / --skip-ig
+      disabled  turned off explicitly with --skip-x / --skip-ig /
+                --skip-linkedin
 
     Exits non-zero if anything failed OR if nothing posted at all — a run
     that publishes nothing must never report success.
@@ -427,7 +447,15 @@ def publish(skip_x=False, skip_ig=False, force=False):
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
 
-    disabled = {"x": skip_x, "ig": skip_ig}
+    # Every channel in POSTERS must appear here. Keyed rather than
+    # .get()-ed on purpose: a channel added to POSTERS without a skip flag
+    # would be unskippable, so the KeyError is the reminder — which is
+    # exactly how this was caught when linkedin was added.
+    disabled = {"x": skip_x, "ig": skip_ig, "linkedin": skip_linkedin}
+    unskippable = set(POSTERS) - set(disabled)
+    assert not unskippable, (
+        f"channel(s) with no skip flag: {unskippable}. Every channel must be "
+        f"skippable — the single-channel re-post path depends on it.")
     results = {}
     for ch, (env_var, poster) in POSTERS.items():
         if disabled[ch]:
@@ -566,6 +594,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--skip-x", action="store_true")
     ap.add_argument("--skip-ig", action="store_true")
+    ap.add_argument("--skip-linkedin", action="store_true")
     ap.add_argument("--force", action="store_true",
                     help="LOCAL DEV ONLY: publish without approval")
     ap.add_argument("--format", dest="fmt", choices=FORMATS,
@@ -595,7 +624,8 @@ def main():
         notify_pending()
         return
     if args.publish:
-        publish(args.skip_x, args.skip_ig, args.force)
+        publish(args.skip_x, args.skip_ig, args.skip_linkedin,
+                args.force)
         return
     # No flags: prepare only. Chaining straight into publish would make the
     # convenience path an accidental auto-approve.
