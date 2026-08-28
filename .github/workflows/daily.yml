@@ -122,6 +122,58 @@ jobs:
                   f"{os.environ['ACTIONS_URL']}")
           PY
 
+  # LinkedIn's token dies every 60 days and refreshing it is a browser flow,
+  # so this is the one credential in the system with a deadline. Checked on
+  # every run because the failure it prevents is silent: the channel simply
+  # stops posting, and "no LinkedIn post today" looks like a quiet day.
+  #
+  # Never fails the run — a warning about next month must not cost today's
+  # post. Skips itself entirely when LinkedIn is not configured.
+  linkedin-token:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Is the LinkedIn token about to die?
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          if not os.environ.get("LINKEDIN_ACCESS_TOKEN"):
+              print("[linkedin-token] channel not configured — nothing to check")
+              sys.exit(0)
+          import post_linkedin, notify
+
+          try:
+              days, status, scopes = post_linkedin.token_state()
+          except Exception as e:
+              print(f"[linkedin-token] check failed ({e})")
+              sys.exit(0)
+          print(f"[linkedin-token] status={status} days_left={days} "
+                f"scopes={scopes or 'unknown'}")
+
+          # 14 days: two weekly cycles of slack to notice, re-authorize and
+          # re-validate. 7 would land the warning inside the week it dies.
+          if status in ("revoked", "expired") or (days is not None
+                                                  and days <= 14):
+              notify.alert(
+                  f":warning: *LinkedIn token needs re-authorizing*\n"
+                  f"status `{status}`, {days} day(s) left. Refresh is a "
+                  f"browser flow — see SECRETS.md. Until then LinkedIn is "
+                  f"skipped and X and Instagram are unaffected.")
+          PY
+
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -215,6 +215,72 @@ def _permalink(post_id):
     return f"https://www.linkedin.com/feed/update/{post_id}/"
 
 
+# The token's real state, not an assumption about it.
+INTROSPECT_URL = "https://www.linkedin.com/oauth/v2/introspectToken"
+
+# What the posting path cannot work without. Checked against the token's
+# ACTUAL scopes rather than against what we believe we ticked in the portal.
+REQUIRED_SCOPE = "w_organization_social"
+
+
+def introspect(token=None, client_id=None, client_secret=None):
+    """LinkedIn's own view of a token: {active, status, expires_at, scope}.
+
+    Requires the app's client credentials. Returns None when they are absent,
+    so every caller degrades to the LINKEDIN_TOKEN_EXPIRES_AT fallback rather
+    than failing.
+
+    Worth the extra secret because it answers two questions a stored expiry
+    timestamp cannot:
+
+      * REVOCATION. A revoked token has a future expires_at and is dead. A
+        timestamp reports it healthy right up until the post fails.
+      * SCOPE. The token carries whatever the approving member consented to,
+        which is not necessarily what you meant to tick. Finding out at
+        publish time is finding out too late.
+    """
+    cid = client_id or os.environ.get("LINKEDIN_CLIENT_ID")
+    secret = client_secret or os.environ.get("LINKEDIN_CLIENT_SECRET")
+    tok = token or os.environ.get("LINKEDIN_ACCESS_TOKEN")
+    if not (cid and secret and tok):
+        return None
+    r = requests.post(INTROSPECT_URL,
+                      data={"client_id": cid, "client_secret": secret,
+                            "token": tok},
+                      headers={"Content-Type":
+                               "application/x-www-form-urlencoded"},
+                      timeout=30)
+    # 400 = invalid client id or token, 401 = invalid client secret. Both are
+    # real answers about the credentials, so they are raised rather than
+    # swallowed into "unknown".
+    _check(r, "token introspection")
+    return r.json() or {}
+
+
+def token_state(now=None):
+    """(days_left, status, scopes) from introspection, else the fallback.
+
+    status is LinkedIn's own: active / expired / revoked — or "unknown" when
+    only the stored timestamp is available, because a timestamp genuinely
+    cannot tell you whether a token was revoked.
+    """
+    try:
+        data = introspect()
+    except Exception as e:            # never let a check break a publish
+        print(f"[linkedin] introspection unavailable ({e})")
+        data = None
+    if data:
+        expires = data.get("expires_at")
+        days = (int((expires - (now if now is not None else time.time()))
+                    // 86400) if expires else None)
+        status = data.get("status") or (
+            "active" if data.get("active") else "inactive")
+        scopes = [s.strip() for s in (data.get("scope") or "").split(",")
+                  if s.strip()]
+        return days, status, scopes
+    return token_days_left(now), "unknown", []
+
+
 def token_days_left(now=None):
     """Days until LINKEDIN_TOKEN_EXPIRES_AT, or None if unset.
 

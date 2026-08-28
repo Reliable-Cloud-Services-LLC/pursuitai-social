@@ -112,6 +112,26 @@ jobs:
       # Separate step, and `if: always()`, so a reel result is never hidden
       # by an image failure — that pairing is the whole point of running
       # both. Publishes nothing: the container expires in 24h.
+      # Runs even with no access token yet: --check-app probes the app
+      # credentials alone, which is the only part of the LinkedIn chain that
+      # exists before the API application is approved.
+      - name: Validate LinkedIn credentials
+        if: always()
+        env:
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+        run: |
+          if [ -z "$LINKEDIN_CLIENT_ID" ]; then
+            echo "LinkedIn app credentials not set — nothing to check"
+          elif [ -z "$LINKEDIN_ACCESS_TOKEN" ]; then
+            python scripts/validate_linkedin.py --check-app
+          else
+            python scripts/validate_linkedin.py
+          fi
+
       - name: Validate Instagram REEL path
         if: always()
         env:

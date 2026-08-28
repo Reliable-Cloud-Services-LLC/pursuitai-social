@@ -29,6 +29,8 @@ shell or put them in a `.env` you never commit (`.env` is gitignored).
 | `LINKEDIN_ACCESS_TOKEN` | yes, for LinkedIn | LinkedIn Developer Portal | LinkedIn is **skipped** — the other channels are unaffected |
 | `LINKEDIN_ORG_ID` | yes, for LinkedIn | `validate_linkedin.py --discover` | LinkedIn posts fail — there is no Page to post as |
 | `LINKEDIN_TOKEN_EXPIRES_AT` | strongly recommended | `validate_linkedin.py --discover` | **Nothing can warn before the 60-day token dies.** The first symptom is a channel that quietly stopped posting. |
+| `LINKEDIN_CLIENT_ID` | recommended | LinkedIn app → Auth tab | No token introspection: a **revoked** token reads as healthy, and granted scopes are invisible until a post 403s. |
+| `LINKEDIN_CLIENT_SECRET` | recommended | LinkedIn app → Auth tab | As above — both are needed for introspection. |
 
 Only `X_API_KEY` and `IG_USER_ID` gate whether a channel is *attempted* — the
 engine checks those two as the "are credentials present" signal. The rest fail
@@ -143,26 +145,32 @@ tier is enough — 500 calls/day against our 3–5). See
 [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md) for the application, and
 for the full runbook to obtain these.
 
-### Do NOT store the Client ID or Client Secret
+### Store the Client ID and Client Secret too
 
-Creating the app hands you both, and putting them here is the obvious next
-move. Don't.
+Creating the app hands you both. They are worth storing — not because the
+posting path uses them (it does not) but because they unlock **token
+introspection**, which answers two questions a stored expiry timestamp
+cannot:
 
-**Nothing in this engine reads them.** The whole LinkedIn path uses exactly
-three variables — `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_ORG_ID`,
-`LINKEDIN_TOKEN_EXPIRES_AT` — because tokens are minted in the browser with
-the portal's Token Generator rather than by exchanging an authorization code
-ourselves. There is no callback server here, so there is nothing for a client
-secret to authenticate.
+```
+POST https://www.linkedin.com/oauth/v2/introspectToken
+  client_id, client_secret, token  ->  { active, status, expires_at, scope }
+```
 
-A secret stored where it is not used is pure downside: one more thing that
-can leak, one more thing to rotate, and nothing gained. Keep both in a
-password manager.
+* **Revocation.** A revoked token keeps a *future* `expires_at`. The
+  timestamp path reports it healthy right up until the post fails; `status`
+  says `revoked`.
+* **Scopes.** A token carries what the approving member consented to, which
+  is not necessarily what you meant to tick. Finding out at publish time is
+  finding out too late.
 
-They become relevant only if this engine ever performs the OAuth exchange
-itself — which today means being granted programmatic refresh tokens,
-"available for a limited set of partners". Add them deliberately at that
-point, not preemptively.
+It also removes the hand-arithmetic: with these two set, the real
+`expires_at` is read from LinkedIn instead of being computed and pasted.
+
+Introspection is an **upgrade, not a dependency**. Without the client
+credentials everything still works, falling back to
+`LINKEDIN_TOKEN_EXPIRES_AT` — you just lose revocation and scope detection,
+and the validator says so rather than implying it checked.
 
 ### The three that ARE stored
 

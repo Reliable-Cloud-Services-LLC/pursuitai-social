@@ -252,3 +252,151 @@ def test_the_org_urn_is_read_under_either_field_name():
         == ["urn:li:organization:2"]
     assert v._orgs_in({"elements": [{"role": "ADMINISTRATOR"}]}) == []
     assert v._orgs_in({}) == []
+
+
+# --- token introspection ---------------------------------------------------
+#
+# Storing the app's client credentials buys two things a stored expiry
+# timestamp cannot provide, which is the whole reason they are worth storing:
+# revocation (a revoked token keeps a FUTURE expires_at) and the scopes the
+# member actually consented to.
+
+class _Introspect:
+    def __init__(self, payload, status=200):
+        self.payload, self.status = payload, status
+        self.seen = {}
+
+    def __call__(self, url, data=None, headers=None, timeout=None):
+        self.seen = dict(data or {})
+        outer = self
+
+        class R:
+            ok = outer.status < 400
+            status_code = outer.status
+            text = "err"
+
+            def json(self):
+                return outer.payload
+        return R()
+
+
+@pytest.fixture
+def creds(monkeypatch):
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "cid")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "sec")
+    monkeypatch.setenv("LINKEDIN_ACCESS_TOKEN", "tok")
+
+
+def test_introspection_sends_the_three_documented_fields(creds, monkeypatch):
+    fake = _Introspect({"active": True, "status": "active",
+                        "expires_at": 2_000_000, "scope": "w_organization_social"})
+    monkeypatch.setattr(post_linkedin.requests, "post", fake)
+    post_linkedin.introspect()
+    assert set(fake.seen) == {"client_id", "client_secret", "token"}
+
+
+def test_a_revoked_token_is_reported_revoked_not_healthy(creds, monkeypatch):
+    """THE reason the client credentials earn their storage. A revoked token
+    keeps a future expires_at, so the timestamp path calls it healthy right
+    up until the post fails."""
+    monkeypatch.setattr(post_linkedin.requests, "post", _Introspect(
+        {"active": False, "status": "revoked",
+         "expires_at": 9_000_000_000, "scope": "w_organization_social"}))
+    days, status, _ = post_linkedin.token_state(now=1_000_000)
+    assert status == "revoked"
+    assert days > 0, "the expiry really is in the future — that is the point"
+
+
+def test_scopes_come_from_the_token_not_from_what_we_meant_to_tick(creds,
+                                                                   monkeypatch):
+    monkeypatch.setattr(post_linkedin.requests, "post", _Introspect(
+        {"active": True, "status": "active", "expires_at": 2_000_000,
+         "scope": "r_basicprofile,rw_organization_admin"}))
+    _, _, scopes = post_linkedin.token_state(now=1_000_000)
+    assert post_linkedin.REQUIRED_SCOPE not in scopes
+
+
+def test_days_left_is_computed_from_the_real_expiry(creds, monkeypatch):
+    monkeypatch.setattr(post_linkedin.requests, "post", _Introspect(
+        {"active": True, "status": "active",
+         "expires_at": 1_000_000 + 86400 * 12, "scope": "w_organization_social"}))
+    days, status, _ = post_linkedin.token_state(now=1_000_000)
+    assert days == 12 and status == "active"
+
+
+def test_without_client_credentials_it_degrades_to_the_stored_timestamp(
+        monkeypatch):
+    """Introspection is an upgrade, not a dependency — the channel must still
+    work for anyone who has not stored the client credentials."""
+    monkeypatch.delenv("LINKEDIN_CLIENT_ID", raising=False)
+    monkeypatch.delenv("LINKEDIN_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("LINKEDIN_TOKEN_EXPIRES_AT", str(1_000_000 + 86400 * 5))
+    assert post_linkedin.introspect() is None
+    days, status, scopes = post_linkedin.token_state(now=1_000_000)
+    assert (days, status, scopes) == (5, "unknown", [])
+
+
+def test_a_failed_introspection_never_breaks_the_caller(creds, monkeypatch):
+    """A credential check must not be able to take down a publish."""
+    def boom(*a, **k):
+        raise RuntimeError("network")
+    monkeypatch.setattr(post_linkedin.requests, "post", boom)
+    monkeypatch.setenv("LINKEDIN_TOKEN_EXPIRES_AT", str(1_000_000 + 86400 * 3))
+    days, status, _ = post_linkedin.token_state(now=1_000_000)
+    assert (days, status) == (3, "unknown")
+
+
+# --- validating the app credentials alone ----------------------------------
+#
+# Before the API application is approved there is no access token, so the
+# only checkable thing is the app credentials. Introspection needs a token
+# argument, but its credential checks run FIRST — so a junk token still
+# produces a meaningful answer about the client id and secret.
+
+def _check_app_with(monkeypatch, status, body=""):
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import validate_linkedin as v
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "cid12345")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "secret")
+
+    class R:
+        status_code = status
+        text = body
+    monkeypatch.setattr(v.requests, "post", lambda *a, **k: R())
+    return v
+
+
+def test_a_401_is_reported_as_a_bad_client_secret(monkeypatch, capsys):
+    """LinkedIn documents 401 as "Invalid client secret" specifically — the
+    one status that identifies a single credential."""
+    v = _check_app_with(monkeypatch, 401)
+    with pytest.raises(SystemExit):
+        v.check_app()
+    assert "CLIENT SECRET" in capsys.readouterr().out
+
+
+def test_a_400_means_the_secret_was_accepted(monkeypatch, capsys):
+    """The probe token is junk, so 400 ("Invalid client id or token") is the
+    EXPECTED healthy answer: the request got past secret validation."""
+    v = _check_app_with(monkeypatch, 400)
+    v.check_app()
+    out = capsys.readouterr().out
+    assert "client secret accepted" in out
+    # The limit must be stated, not implied — 400 cannot separate a wrong
+    # client id from the junk token.
+    assert "cannot distinguish a wrong client ID" in out
+
+
+def test_the_probe_token_cannot_be_a_real_one(monkeypatch):
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import validate_linkedin as v
+    assert "not-a-real" in v._SENTINEL_TOKEN
+
+
+def test_an_unexpected_status_is_not_reported_as_success(monkeypatch, capsys):
+    """A 500 or a redirect must not read as healthy — silence about a
+    credential is worse than a wrong answer about it."""
+    v = _check_app_with(monkeypatch, 503, "gateway")
+    with pytest.raises(SystemExit):
+        v.check_app()
+    assert "unexpected 503" in capsys.readouterr().out
