@@ -53,6 +53,9 @@ def main():
     ap.add_argument("--upload", action="store_true",
                     help="also upload a real image (never posted) to prove "
                          "the half of the flow that actually breaks")
+    ap.add_argument("--check-app", action="store_true",
+                    help="validate LINKEDIN_CLIENT_ID/SECRET alone, before "
+                         "any access token exists")
     ap.add_argument("--discover", action="store_true",
                     help="print LINKEDIN_ORG_ID and LINKEDIN_TOKEN_EXPIRES_AT "
                          "for the current token, ready to paste as secrets")
@@ -63,6 +66,9 @@ def main():
                     help="image to upload with --upload; defaults to the "
                          "newest LinkedIn card")
     args = ap.parse_args()
+
+    if args.check_app:
+        return check_app()
 
     tok = os.environ.get("LINKEDIN_ACCESS_TOKEN") or fail(
         "LINKEDIN_ACCESS_TOKEN not set")
@@ -227,6 +233,63 @@ def discover(tok, ttl_seconds=None):
               f"# only shifts when the expiry alarm fires, but it shifts it "
               f"in the unhelpful direction if the\n"
               f"# token was already partly used.")
+
+
+# A token value that cannot possibly be real, used to probe the app
+# credentials on their own. Introspection requires a token argument, but the
+# credential checks happen FIRST, so the response code answers a question
+# about the client id and secret regardless of the token being nonsense.
+_SENTINEL_TOKEN = "not-a-real-token-credential-probe"
+
+
+def check_app():
+    """Validate the app credentials before any access token exists.
+
+    Introspection's documented status codes make this possible:
+
+        401  Invalid client secret
+        400  Invalid client id or token
+        200  Success
+
+    We deliberately send a junk token, so 400 is the EXPECTED healthy answer
+    — it means the secret was accepted and the request got as far as
+    rejecting the token. 401 is the definitive failure.
+
+    The one thing this cannot separate is a wrong client id from the junk
+    token: both are 400. That limit is stated rather than papered over —
+    a wrong client id surfaces the moment a real token is introspected.
+    """
+    cid = os.environ.get("LINKEDIN_CLIENT_ID") or fail(
+        "LINKEDIN_CLIENT_ID not set")
+    secret = os.environ.get("LINKEDIN_CLIENT_SECRET") or fail(
+        "LINKEDIN_CLIENT_SECRET not set")
+    ok(f"client id present ({cid[:4]}…{cid[-2:]}, {len(cid)} chars)")
+    ok(f"client secret present ({len(secret)} chars)")
+
+    r = requests.post(post_linkedin.INTROSPECT_URL,
+                      data={"client_id": cid, "client_secret": secret,
+                            "token": _SENTINEL_TOKEN},
+                      headers={"Content-Type":
+                               "application/x-www-form-urlencoded"},
+                      timeout=30)
+    if r.status_code == 401:
+        fail("LinkedIn rejected the CLIENT SECRET (401). Copy it again from "
+             "the app's Auth tab — the portal shows it once per rotation.")
+    if r.status_code == 400:
+        ok("client secret accepted — LinkedIn rejected only the probe token, "
+           "which is the expected answer")
+        print("\n    NB a 400 cannot distinguish a wrong client ID from the "
+              "junk token this sends.\n"
+              "    A wrong client ID would surface the first time a REAL "
+              "token is introspected.")
+    elif r.status_code == 200:
+        ok("credentials accepted (200) — unexpectedly the probe token was "
+           "also accepted, which is worth a look")
+    else:
+        fail(f"unexpected {r.status_code} from introspection: {r.text[:200]}")
+
+    print("\nApp credentials look right. Next: mint an access token, then "
+          "run --discover.")
 
 
 # Entry point LAST, deliberately. Python executes a module top to bottom, so

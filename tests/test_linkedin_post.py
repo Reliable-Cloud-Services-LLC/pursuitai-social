@@ -344,3 +344,59 @@ def test_a_failed_introspection_never_breaks_the_caller(creds, monkeypatch):
     monkeypatch.setenv("LINKEDIN_TOKEN_EXPIRES_AT", str(1_000_000 + 86400 * 3))
     days, status, _ = post_linkedin.token_state(now=1_000_000)
     assert (days, status) == (3, "unknown")
+
+
+# --- validating the app credentials alone ----------------------------------
+#
+# Before the API application is approved there is no access token, so the
+# only checkable thing is the app credentials. Introspection needs a token
+# argument, but its credential checks run FIRST — so a junk token still
+# produces a meaningful answer about the client id and secret.
+
+def _check_app_with(monkeypatch, status, body=""):
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import validate_linkedin as v
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "cid12345")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "secret")
+
+    class R:
+        status_code = status
+        text = body
+    monkeypatch.setattr(v.requests, "post", lambda *a, **k: R())
+    return v
+
+
+def test_a_401_is_reported_as_a_bad_client_secret(monkeypatch, capsys):
+    """LinkedIn documents 401 as "Invalid client secret" specifically — the
+    one status that identifies a single credential."""
+    v = _check_app_with(monkeypatch, 401)
+    with pytest.raises(SystemExit):
+        v.check_app()
+    assert "CLIENT SECRET" in capsys.readouterr().out
+
+
+def test_a_400_means_the_secret_was_accepted(monkeypatch, capsys):
+    """The probe token is junk, so 400 ("Invalid client id or token") is the
+    EXPECTED healthy answer: the request got past secret validation."""
+    v = _check_app_with(monkeypatch, 400)
+    v.check_app()
+    out = capsys.readouterr().out
+    assert "client secret accepted" in out
+    # The limit must be stated, not implied — 400 cannot separate a wrong
+    # client id from the junk token.
+    assert "cannot distinguish a wrong client ID" in out
+
+
+def test_the_probe_token_cannot_be_a_real_one(monkeypatch):
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import validate_linkedin as v
+    assert "not-a-real" in v._SENTINEL_TOKEN
+
+
+def test_an_unexpected_status_is_not_reported_as_success(monkeypatch, capsys):
+    """A 500 or a redirect must not read as healthy — silence about a
+    credential is worse than a wrong answer about it."""
+    v = _check_app_with(monkeypatch, 503, "gateway")
+    with pytest.raises(SystemExit):
+        v.check_app()
+    assert "unexpected 503" in capsys.readouterr().out
