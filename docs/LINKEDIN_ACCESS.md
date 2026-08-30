@@ -153,17 +153,31 @@ publishes to our own Page. There is no honest screencast to record.
 
 Submit at **My Apps → your app → Products → Community Management API**.
 
-### Prerequisites
+### Prerequisites — verified 2026-08-27
 
-- [ ] A **dedicated** developer app. Community Management "requires that it
-      be the only product associated with a developer application"
-- [ ] Business email on the pursuitai.net domain — **personal addresses fail
-      vetting**
-- [ ] App name contains no part of "LinkedIn" or "Microsoft" (watch for
-      "Linked" or "In" as substrings)
-- [ ] A super admin of the PursuitAI LinkedIn Page has
-      [verified the app](https://www.linkedin.com/help/linkedin/answer/a548360/associate-an-app-with-a-linkedin-page)
-- [ ] Legal name, registered address, website, privacy policy to hand
+The Page is **"Pursuit AI"**, at
+<https://www.linkedin.com/company/pursuit-ai>. NB the slug is `pursuit-ai`,
+NOT `pursuitai`: the latter 404s, and pursuitai.net links to it in four
+places including the JSON-LD `sameAs`. Fixing that is a pursuit-ai change,
+tracked separately — but use the real slug for anything here.
+
+- [x] **LinkedIn Page exists** — Pursuit AI, above
+- [x] **Developer app exists** — client id and secret stored and validated
+      (`validate_linkedin.py --check-app`, 2026-08-27)
+- [x] **Privacy policy** — <https://pursuitai.net/privacy>
+- [x] **Business email** — an alias on the **pursuitai.net** domain.
+      Personal addresses fail vetting; a domain matching the stated website
+      is what "verified organization website and domain address" checks.
+- [ ] **App name** contains no part of "LinkedIn" or "Microsoft" — watch for
+      "Linked" or "In" as substrings
+- [ ] **A super admin of the Pursuit AI Page has
+      [verified the app](https://www.linkedin.com/help/linkedin/answer/a548360/associate-an-app-with-a-linkedin-page)**
+      — this is an explicit Development-tier review criterion, so it must be
+      done BEFORE submitting, not after
+- [ ] **Legal name and registered address** — a separate question from the
+      email domain. LinkedIn vets "registered legal organizations", so this
+      field takes whichever entity is actually registered, regardless of
+      which domain the email sits on. Not a decision this document can make.
 - [ ] Any auto-generated survey completed **within 21 days**
 
 ### Draft answers
@@ -174,7 +188,6 @@ Submit at **My Apps → your app → Products → Community Management API**.
 > U.S. federal contracts — firms holding 8(a), SDVOSB, WOSB and HUBZone
 > designations. It aggregates federal opportunity, spend and protest data
 > and layers AI scoring, compliance checking and proposal tooling on top.
-> Operated by Reliable Cloud Services LLC.
 
 **Use case**
 
@@ -233,6 +246,56 @@ before writing any posting code — regenerate the token with
 `pages_manage_posts` added to the scope list and confirm it appears in
 `/debug_token`. That is a five-minute check and it costs nothing if the
 answer is no.
+
+---
+
+## The whole sequence, in order
+
+Nothing below can be done out of order — each step's output is the next
+step's input, and the two that gate everything are LinkedIn's, not ours.
+
+**1 — Verify the app against the Page.** A super admin of Pursuit AI does
+this in the Page's admin view. It is a review criterion, so doing it after
+submitting means resubmitting.
+
+**2 — Submit the application.** My Apps → your app → **Products** →
+Community Management API → request access, then complete the form with the
+draft answers above. Development tier, which needs no screencast.
+
+**3 — Wait.** Nothing here can be tested meanwhile: the Token Generator only
+offers `w_organization_social` once the product is approved on the app, so a
+token minted now would generate fine and be unable to post.
+
+**4 — Grant the posting member an ADMINISTRATOR role** on the Page, if they
+do not already hold one. The token inherits the approving member's roles.
+
+**5 — Mint the token.**
+[Token Generator](https://www.linkedin.com/developers/tools/oauth/token-generator)
+→ select the app → tick `w_organization_social` and `rw_organization_admin`
+→ approve as that member. Store as `LINKEDIN_ACCESS_TOKEN`.
+
+**6 — Derive the org id.**
+```bash
+export LINKEDIN_ACCESS_TOKEN=...
+python scripts/validate_linkedin.py --discover
+```
+Store the printed `LINKEDIN_ORG_ID`. Skip `LINKEDIN_TOKEN_EXPIRES_AT` — with
+the client credentials stored, introspection reports the real expiry, and a
+pasted copy is a second source of truth that can drift from the first.
+
+**7 — Prove the chain.**
+```bash
+python scripts/validate_linkedin.py --upload
+```
+Uploads a real image, waits for `AVAILABLE`, publishes nothing.
+
+**8 — Nothing else.** The next daily run picks LinkedIn up automatically:
+`POSTERS` gates the channel on `LINKEDIN_ACCESS_TOKEN` being present, so
+there is no flag to flip. The post still parks at the same human approval
+gate as X and Instagram.
+
+From then on the `linkedin-token` job warns at 14 days, every run, so the
+60-day cycle stops being something anyone has to remember.
 
 ---
 
