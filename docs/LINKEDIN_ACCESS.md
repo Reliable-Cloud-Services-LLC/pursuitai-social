@@ -168,8 +168,28 @@ tracked separately — but use the real slug for anything here.
 - [x] **Business email** — an alias on the **pursuitai.net** domain.
       Personal addresses fail vetting; a domain matching the stated website
       is what "verified organization website and domain address" checks.
+- [ ] **A DEDICATED app with NO other products.** Confirmed 2026-08-27 by
+      the portal itself, which greys out Request access and explains:
+
+      > "This API product requires that it be the only product on the
+      > application for legal and security reasons. This product cannot be
+      > requested because there are currently other provisioned products or
+      > other pending product requests. A new developer application can be
+      > created to request this product."
+
+      This is not a soft preference and it is not negotiable after the fact:
+      one other product — provisioned OR merely pending — permanently blocks
+      the request on that app. The remedy LinkedIn offers is a NEW app.
+
+      **Consequence: the client credentials change.** A new app means a new
+      Client ID and Secret, so `LINKEDIN_CLIENT_ID` and
+      `LINKEDIN_CLIENT_SECRET` must be REPLACED in the repository secrets.
+      Credentials from the old app will introspect against the wrong
+      application and report a token as inactive.
+
 - [ ] **App name** contains no part of "LinkedIn" or "Microsoft" — watch for
-      "Linked" or "In" as substrings
+      "Linked" or "In" as substrings. It must also differ from any existing
+      app's name, since the dedicated app sits alongside the first one.
 - [ ] **A super admin of the Pursuit AI Page has
       [verified the app](https://www.linkedin.com/help/linkedin/answer/a548360/associate-an-app-with-a-linkedin-page)**
       — this is an explicit Development-tier review criterion, so it must be
@@ -254,6 +274,12 @@ answer is no.
 Nothing below can be done out of order — each step's output is the next
 step's input, and the two that gate everything are LinkedIn's, not ours.
 
+**0 — Create a DEDICATED app.** Community Management must be the only
+product on it, so an app that already carries another product — or a pending
+request for one — cannot ever request it. Build the new app with nothing
+else added: name (unique, no "Linked"/"In"/"Microsoft"), the Pursuit AI Page,
+privacy policy <https://pursuitai.net/privacy>, logo.
+
 **1 — Verify the app against the Page.** A super admin of Pursuit AI does
 this in the Page's admin view. It is a review criterion, so doing it after
 submitting means resubmitting.
@@ -268,6 +294,13 @@ token minted now would generate fine and be unable to post.
 
 **4 — Grant the posting member an ADMINISTRATOR role** on the Page, if they
 do not already hold one. The token inherits the approving member's roles.
+
+**4b — Replace the client credentials.** The dedicated app has its own
+Client ID and Secret; update `LINKEDIN_CLIENT_ID` and
+`LINKEDIN_CLIENT_SECRET` to the new app's. Leaving the old ones there is a
+quiet failure — introspection would validate the token against the wrong
+application and report it inactive. `validate_linkedin.py --check-app`
+confirms the pair before you go further.
 
 **5 — Mint the token.**
 [Token Generator](https://www.linkedin.com/developers/tools/oauth/token-generator)
