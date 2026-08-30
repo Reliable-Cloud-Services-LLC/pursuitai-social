@@ -274,15 +274,27 @@ answer is no.
 Nothing below can be done out of order — each step's output is the next
 step's input, and the two that gate everything are LinkedIn's, not ours.
 
+**0a — DO NOT CLICK ANY OTHER PRODUCT.** On a fresh app the Products tab
+offers several, and at least one is usually requestable while Community
+Management is not yet. Requesting it — even leaving it *pending* — burns the
+app permanently for Community Management, with no way back. That is how the
+first app was lost. The Products tab reads as a menu; treat it as a
+one-way door.
+
 **0 — Create a DEDICATED app.** Community Management must be the only
 product on it, so an app that already carries another product — or a pending
 request for one — cannot ever request it. Build the new app with nothing
 else added: name (unique, no "Linked"/"In"/"Microsoft"), the Pursuit AI Page,
 privacy policy <https://pursuitai.net/privacy>, logo.
 
-**1 — Verify the app against the Page.** A super admin of Pursuit AI does
-this in the Page's admin view. It is a review criterion, so doing it after
-submitting means resubmitting.
+**1 — Verify the app against the Page.** Settings → Verify → *Generate URL*,
+send it to a Page admin of Pursuit AI, who opens it and clicks **Verify**.
+The URL is valid 30 days and the association **cannot be undone**.
+
+Do this before judging the Products tab: on an unverified app most products
+show a greyed Request access, which looks identical to the
+one-product-only block and is not the same thing. It is also a review
+criterion in its own right, so doing it after submitting means resubmitting.
 
 **2 — Submit the application.** My Apps → your app → **Products** →
 Community Management API → request access, then complete the form with the
