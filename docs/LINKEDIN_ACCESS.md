@@ -269,6 +269,60 @@ answer is no.
 
 ---
 
+## Attempt 1 — REJECTED 2026-08-30
+
+> "At this time we are unable to grant you Development Tier access to our
+> Community Management API for the following reason:
+> **Access Denied: Business verification failed**"
+
+Application id `266127073`, CRM `015285037679362`, app `PursuitAI-App`
+(`78b4lrsxr06b7q`). Submitted as legal name **Reliable Cloud Services LLC**,
+no alternate name, Page management only.
+
+**That app is now burned.** LinkedIn: "You won't be able to re-apply for
+Development tier access with your existing app." A third app is required,
+and it burns the same way if the underlying problem is unchanged. Every
+attempt costs an app, which is why the next step is a question, not a
+resubmission.
+
+### Most likely cause — nothing connects the website to the legal entity
+
+Not confirmed by LinkedIn, who gave only the one line. But the review
+criteria include "Verified organization website and domain address", and
+checked on 2026-08-30:
+
+* **pursuitai.net names no operating legal entity anywhere.** Not the
+  footer, not /terms, not /privacy. Those pages name Stripe and Anthropic
+  as third parties and never say who runs the service.
+* The LinkedIn Page is **PursuitAI**, not Reliable Cloud Services LLC.
+* The business email domain is **pursuitai.net**.
+
+So a reviewer asked to tie "Reliable Cloud Services LLC" to this website,
+Page and domain finds nothing to tie it with. The declaration was truthful;
+it was simply unevidenced, and unevidenced is what "business verification"
+checks.
+
+Worth separating: this is a real gap independent of LinkedIn. Terms of
+Service are a contract, and these name no counterparty. Most commercial SaaS
+states its operating entity in Terms or Privacy for exactly that reason.
+
+### Before attempt 2
+
+1. **Ask developer support what actually failed**, quoting the CRM number
+   and application id. The one-line reason does not distinguish "we could
+   not find the registration", "the website does not match the entity", or
+   something else — and each guess costs an app.
+2. **Then close whichever gap they name.** If it is the website/entity link,
+   the options are to state the operating entity on the site (normal
+   practice, and it fixes the contract gap too), register PursuitAI as a
+   DBA so the brand is itself evidenced, or wait for the spin-out and apply
+   as PursuitAI. Which of those is right is a business decision, not a
+   documentation one.
+3. Only then create the third app — dedicated, no other products, Page
+   verified — and resubmit.
+
+---
+
 ## The whole sequence, in order
 
 Nothing below can be done out of order — each step's output is the next
