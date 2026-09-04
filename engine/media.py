@@ -44,10 +44,50 @@ def base_url():
     return base.rstrip("/")
 
 
-def public_url(repo_rel_path):
-    """Repo-relative path -> the public URL a platform can fetch."""
+def content_tag(repo_rel_path, root=None):
+    """Short hash of a file's bytes, or None if it is not on disk.
+
+    Used only to make a URL change when the FILE changes. Not a checksum
+    anyone verifies; eight hex characters is ample to distinguish two
+    renders of the same asset.
+    """
+    import hashlib
+    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, str(repo_rel_path).lstrip("/"))
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:8]
+
+
+def public_url(repo_rel_path, cache_bust=False):
+    """Repo-relative path -> the public URL a platform can fetch.
+
+    `cache_bust` appends a hash of the file's CONTENT, so re-rendering the
+    same asset produces a different URL.
+
+    That matters because our filenames are deterministic: a topic's capture
+    is always `<slug>_shot_x.png`, so re-dispatching the same topic and
+    format overwrites the object at the same URL. Slack caches by URL, and
+    on 2026-09-04 that showed a reviewer the PREVIOUS render of a post that
+    had just been fixed — the fix looked like it had not worked.
+
+    The dangerous direction is the other one: a stale GOOD image standing in
+    for a broken new one, approved on the strength of a picture that is not
+    what would publish. The approval gate is only worth something if the
+    reviewer sees this run's artifact.
+
+    Off by default. Instagram fetches by URL and its containers are
+    long-lived, so the publish path keeps stable URLs; only the review
+    notification needs the bust.
+    """
     path = str(repo_rel_path).replace("\\", "/").lstrip("/")
-    return f"{base_url()}/{path}"
+    url = f"{base_url()}/{path}"
+    if cache_bust:
+        tag = content_tag(repo_rel_path)
+        if tag:
+            url = f"{url}?v={tag}"
+    return url
 
 
 def write_poster(video_path, at=None):
