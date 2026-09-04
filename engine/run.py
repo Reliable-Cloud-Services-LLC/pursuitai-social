@@ -567,7 +567,11 @@ def notify_pending():
     if rel != pending["media_x"] and not os.path.exists(os.path.join(ROOT, rel)):
         rel = None  # no poster: send the review without an image, not with
                     # a block Slack will reject
-    media_url = (f"{base.rstrip('/')}/{rel.lstrip('/')}"
+    # Cache-busted: the reviewer must see THIS run's render. Filenames are
+    # deterministic, so a re-dispatch of the same topic and format reuses the
+    # URL, and Slack serves its cached copy — which on 2026-09-04 showed the
+    # previous render of a post that had just been fixed.
+    media_url = (media.public_url(rel, cache_bust=True)
                  if base and rel else None)
     sent = notify.pending_review(pending, media_url=media_url,
                                  review_url=os.environ.get("REVIEW_URL"))
