@@ -110,6 +110,35 @@ def fit_headline(draw, text, col_w, max_h, start=52, floor=28, step=4,
         size_px -= step
 
 
+# Horizontal padding inside the stat pill: 22px each side.
+CHIP_PAD = 44
+
+
+def fit_chip(draw, text, max_w, start=25, floor=15):
+    """A font size at which the stat pill fits its column.
+
+    The chip does NOT wrap — it is a single-line pill — so unlike the
+    headline it has no natural bound and will happily run past the column
+    into the card.
+
+    That is not hypothetical. On 2026-09-04 the resume-deepdive spotlight
+    rendered its chip 695px wide against a 686px column and overlapped the
+    card. It measured fine locally because macOS falls back to Arial, and
+    the runner has DejaVu, which is wider — the same font trap that already
+    cost two broken cards and is documented in OPERATIONS.md.
+
+    Returns the floor size if even that does not fit: a small chip beats a
+    chip drawn over the product card.
+    """
+    import cards
+    size = start
+    while True:
+        f = cards._font(size, bold=True)
+        if draw.textlength(text, font=f) + CHIP_PAD <= max_w or size <= floor:
+            return f
+        size -= 1
+
+
 def compose_fill(card, size, topic=None):
     """Portrait: the card on the brand gradient, headline above it if the
     card does not already fill the frame."""
@@ -179,13 +208,16 @@ def compose_spotlight(card, topic, brand, size):
         d.text((pad, y), line, font=f, fill=(240, 240, 255))
         y += lh
 
-    # Stat chip.
+    # Stat chip, shrunk to the column. See fit_chip: this is the one piece
+    # of left-column text that does not wrap, so it is the only one that can
+    # reach the card.
     y += int(h * 0.029)
-    f_s = cards._font(25, bold=True)
+    f_s = fit_chip(d, topic["stat"], col_w)
     tw = d.textlength(topic["stat"], font=f_s)
     d.rounded_rectangle([pad, y, pad + tw + 44, y + 52], radius=26,
                         fill=(124, 58, 237, 46), outline=(167, 139, 250, 150))
-    d.text((pad + 22, y + 12), topic["stat"], font=f_s, fill=(196, 181, 253))
+    d.text((pad + 22, y + (52 - f_s.size) // 2 - 1), topic["stat"],
+           font=f_s, fill=(196, 181, 253))
 
     # Price line, baseline-aligned with the bottom of the card so the column
     # reads as headline-top / CTA-bottom rather than a cluster with a void
