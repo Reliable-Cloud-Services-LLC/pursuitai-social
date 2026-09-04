@@ -113,6 +113,20 @@ def fit_headline(draw, text, col_w, max_h, start=52, floor=28, step=4,
 # Horizontal padding inside the stat pill: 22px each side.
 CHIP_PAD = 44
 
+# The narrowest text column the spotlight layout still works in.
+#
+# The card was scaled to fill the HEIGHT with no cap on its width, so a wide
+# card ate the canvas. Measured across the live anchors: columns ranged from
+# 175px to 1284px, and at 175px the layout is not merely tight — the stat
+# chip overflows by 186px even shrunk to its floor, and a headline wraps to
+# seven lines. resume-deepdive, the topic that surfaced this, was the MILD
+# case at 559px.
+#
+# The card is now capped by width too. A wide card no longer fills the frame
+# vertically, which is the right trade: a smaller card whose copy is legible
+# beats a large one with the text crushed beside it.
+MIN_TEXT_COL = 600
+
 
 def fit_chip(draw, text, max_w, start=25, floor=15):
     """A font size at which the stat pill fits its column.
@@ -178,6 +192,30 @@ def compose_fill(card, size, topic=None):
     return _footer(canvas)
 
 
+def spotlight_geometry(card_size, size):
+    """Where the card sits and how much column is left for the copy.
+
+    Extracted so tests can assert against the REAL numbers rather than
+    re-deriving them. A test of mine hardcoded a 686px column, which is
+    wider than the truth for 20 of the 24 topics — so it passed while the
+    layout was visibly broken. A test that re-implements the geometry is
+    only ever testing its own copy of it.
+    """
+    cw, ch = card_size
+    w, h = size
+    bar = int(h * 0.055)
+    pad = int(w * 0.046)
+    gap = int(w * 0.035)
+    max_card_w = w - 2 * pad - gap - MIN_TEXT_COL
+    scale = min((h - bar - 2 * pad) / ch, max_card_w / cw)
+    shot_w, shot_h = int(cw * scale), int(ch * scale)
+    shot_x = w - pad - shot_w
+    shot_y = pad + max(0, (h - bar - 2 * pad - shot_h) // 2)
+    return {"pad": pad, "bar": bar, "gap": gap, "scale": scale,
+            "shot_w": shot_w, "shot_h": shot_h, "shot_x": shot_x,
+            "shot_y": shot_y, "col_w": shot_x - pad - gap}
+
+
 def compose_spotlight(card, topic, brand, size):
     """Landscape: headline + stat + price on the left, the card on the right.
 
@@ -189,15 +227,14 @@ def compose_spotlight(card, topic, brand, size):
     w, h = size
     bar = int(h * 0.055)
     pad = int(w * 0.046)
-    scale = (h - bar - 2 * pad) / card.height
-    shot = card.resize((int(card.width * scale), int(card.height * scale)),
-                       Image.LANCZOS)
-    shot_x = w - pad - shot.width
+    g = spotlight_geometry(card.size, size)
+    gap, shot_x, shot_y = g["gap"], g["shot_x"], g["shot_y"]
+    shot = card.resize((g["shot_w"], g["shot_h"]), Image.LANCZOS)
 
     canvas = cards._gradient(w, h)
-    canvas.paste(shot, (shot_x, pad))
+    canvas.paste(shot, (shot_x, shot_y))
     d = ImageDraw.Draw(canvas, "RGBA")
-    col_w = shot_x - pad - int(w * 0.035)
+    col_w = g["col_w"]
 
     # Headline, shrinking to a budget: the stat chip sits directly below it
     # and the price line is anchored to the bottom of the column, so an
@@ -226,7 +263,7 @@ def compose_spotlight(card, topic, brand, size):
     # repeats the same words twice in one image.
     f_t = cards._font(27, bold=True)
     t_lines = cards._wrap(d, brand["price_line"], f_t, col_w)
-    ty = pad + shot.height - len(t_lines) * 38
+    ty = shot_y + shot.height - len(t_lines) * 38
     for line in t_lines:
         d.text((pad, ty), line, font=f_t, fill=(196, 181, 253))
         ty += 38

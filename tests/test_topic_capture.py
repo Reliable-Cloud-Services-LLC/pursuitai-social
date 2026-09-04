@@ -195,7 +195,14 @@ def test_the_topic_card_is_preferred_when_the_anchor_resolves(repo,
 # horizontally" — true of the headline, which wraps to col_w, and I
 # generalised it to text that does not wrap. This is that gap.
 
-CHIP_COL_W = 686   # the column width compose_spotlight computes at 1600x900
+# Card aspects measured against the live anchors on 2026-09-04. The spread
+# is the point: 0.58 to 1.32, which is why a single hardcoded column was
+# never going to be representative.
+REAL_ASPECTS = (0.58, 0.63, 0.74, 0.84, 1.00, 1.32)
+
+
+def _geom(aspect, size=(1600, 900)):
+    return screenshots.spotlight_geometry((900, int(900 * aspect)), size)
 
 
 def _dejavu(size):
@@ -208,49 +215,72 @@ def _dejavu(size):
     return None
 
 
+@pytest.mark.parametrize("aspect", REAL_ASPECTS)
+def test_the_text_column_is_never_squeezed(aspect):
+    """The card used to be scaled to fill the HEIGHT with no width cap, so a
+    wide card ate the canvas: columns ran from 175px to 1284px, and at 175px
+    the chip overflowed by 186px even at its floor while the headline wrapped
+    to seven lines."""
+    assert _geom(aspect)["col_w"] >= screenshots.MIN_TEXT_COL
+
+
+@pytest.mark.parametrize("aspect", REAL_ASPECTS)
+def test_the_card_never_reaches_the_text_column(aspect):
+    g = _geom(aspect)
+    assert g["shot_x"] > g["pad"] + g["col_w"]
+
+
+@pytest.mark.parametrize("aspect", REAL_ASPECTS)
+def test_a_width_capped_card_is_centred_not_hung_from_the_top(aspect):
+    """A capped card no longer fills the height; top-aligning it would leave
+    it hanging off the top edge with all the slack below."""
+    g = _geom(aspect)
+    slack = 900 - g["bar"] - 2 * g["pad"] - g["shot_h"]
+    assert g["shot_y"] == g["pad"] + max(0, slack // 2)
+
+
 def test_fit_chip_never_exceeds_the_column(monkeypatch):
-    """Font-independent, so it means something on any machine: whatever font
-    resolves, the chosen size must fit."""
+    """Font-independent, so it means something on any machine."""
     from PIL import ImageDraw
     d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    col = _geom(1.0)["col_w"]
     for text in ("short", "Requirement→evidence matrix, zero invention",
-                 "Goal coverage · weighted forecast · board PD",
                  "an absurdly long stat line " * 4):
-        f = screenshots.fit_chip(d, text, CHIP_COL_W)
-        width = d.textlength(text, font=f) + screenshots.CHIP_PAD
-        assert width <= CHIP_COL_W or f.size == 15, (
-            f"{text[:30]!r} renders {width}px in a {CHIP_COL_W}px column")
+        f = screenshots.fit_chip(d, text, col)
+        assert d.textlength(text, font=f) + screenshots.CHIP_PAD <= col \
+            or f.size == 15
 
 
 def test_a_short_chip_keeps_its_full_size():
-    """Shrinking must be a response to overflow, not a tax on every chip."""
+    """Shrinking must respond to overflow, not tax every chip."""
     from PIL import ImageDraw
     d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
-    assert screenshots.fit_chip(d, "Stage-aware tracking", CHIP_COL_W).size == 25
+    assert screenshots.fit_chip(
+        d, "Stage-aware tracking", _geom(1.0)["col_w"]).size == 25
 
 
-def test_every_real_stat_fits_in_the_font_CI_actually_uses():
-    """The local font is Arial and the runner's is DejaVu, which is wider —
-    resume-deepdive fit locally at 594px and overflowed at 695px on the
-    runner. Testing with whatever font happens to resolve here would have
-    passed on the broken build, so this SKIPS rather than pretends."""
+def test_every_stat_fits_at_every_real_aspect_in_the_font_CI_uses():
+    """The whole matrix, in DejaVu — the font the runner has and this machine
+    does not. Testing in Arial would have passed on the broken build, so this
+    SKIPS rather than pretends: a visible skip beats a false green."""
     import json
     from PIL import ImageDraw
     if _dejavu(25) is None:
         pytest.skip("DejaVu not installed — cannot check the runner's font")
     import cards
-    monkey = lambda size, bold=True: _dejavu(size)
-    original, cards._font = cards._font, monkey
+    original, cards._font = cards._font, lambda size, bold=True: _dejavu(size)
     try:
         d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
         with open(os.path.join(ROOT, "content", "calendar.json")) as fh:
             topics = json.load(fh)["topics"]
         over = []
         for t in topics:
-            f = screenshots.fit_chip(d, t["stat"], CHIP_COL_W)
-            w = d.textlength(t["stat"], font=f) + screenshots.CHIP_PAD
-            if w > CHIP_COL_W:
-                over.append((t["id"], round(w)))
-        assert not over, f"chips overflow in DejaVu: {over}"
+            for aspect in REAL_ASPECTS:
+                col = _geom(aspect)["col_w"]
+                f = screenshots.fit_chip(d, t["stat"], col)
+                w = d.textlength(t["stat"], font=f) + screenshots.CHIP_PAD
+                if w > col:
+                    over.append((t["id"], aspect, round(w), col))
+        assert not over, f"chips overflow: {over[:5]}"
     finally:
         cards._font = original
