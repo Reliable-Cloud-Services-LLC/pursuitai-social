@@ -194,10 +194,23 @@ tracked separately — but use the real slug for anything here.
       [verified the app](https://www.linkedin.com/help/linkedin/answer/a548360/associate-an-app-with-a-linkedin-page)**
       — this is an explicit Development-tier review criterion, so it must be
       done BEFORE submitting, not after
-- [ ] **Legal name and registered address** — a separate question from the
-      email domain. LinkedIn vets "registered legal organizations", so this
-      field takes whichever entity is actually registered, regardless of
-      which domain the email sits on. Not a decision this document can make.
+- [x] **Legal name: Reliable Cloud Services LLC.** Decided 2026-08-30. The
+      form states it "will use the provided business name for verifying its
+      active registration", so the only workable answer is the entity that
+      actually survives a registry lookup — not the brand we would prefer to
+      write. **Alternate legal name: No**, because PursuitAI is not
+      separately registered; claiming an unregistered DBA fails the same
+      verification, and a rejection burns the app.
+
+      This does NOT weaken the PursuitAI/RCS separation. That separation is
+      about public presentation — the Page, the domain, the site, the posts,
+      the copy in this application — all of which stay PursuitAI. The legal
+      name is a private declaration to LinkedIn's vetting team and is not
+      published anywhere. A parent entity operating a product brand with its
+      own Page and domain is ordinary.
+
+      Revisit if the spin-out completes and PursuitAI becomes its own
+      registered entity.
 - [ ] Any auto-generated survey completed **within 21 days**
 
 ### Draft answers
@@ -232,6 +245,37 @@ tracked separately — but use the real slug for anything here.
 > Approximately 3–5 API calls per weekday: one image upload and one post
 > creation, plus retries. Well inside the Development tier's 500 calls per
 > 24 hours.
+
+**Use-case checkboxes — tick Page management ONLY**
+
+The form asks which use cases to enable, "select all that apply". Exactly
+one applies:
+
+- [x] **Page management** — create and manage company posts. The box is
+      worded more broadly than we act ("comments, and reactions, and monitor
+      engagement"); that is fine, it is the right category and the written
+      use-case answer above narrows it explicitly.
+- [ ] **Page analytics** — deliberately NOT ticked. We do not read LinkedIn
+      post metrics, and this is the option that drags member data into
+      scope: reactions and comments ARE member data, carrying LinkedIn's
+      storage obligations ("member social activity data can only be stored
+      for 48 hours"). Our application's strongest feature is that it reads
+      and stores NO member data at all; ticking this muddies that for a
+      capability which does not exist.
+- [ ] **Profile management** — we post as the Page, never on behalf of an
+      individual.
+- [ ] **Employee advocacy** — not what we do.
+- [ ] **Other** — covered by Page management.
+
+Over-selecting is not free. LinkedIn's Standard-tier review requires a
+screencast demonstrating "each use case that you specified in the access
+request form", so every extra tick is a demonstration owed later. It also
+runs against their data-minimisation rule.
+
+If LinkedIn engagement metrics are wanted later — they would feed the
+performance-weighted rotation the way X and Instagram metrics already do —
+that is a change which "may require re-review", and worth doing honestly
+then rather than pre-claiming now.
 
 ### Set expectations
 
