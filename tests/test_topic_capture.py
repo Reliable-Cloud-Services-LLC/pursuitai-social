@@ -180,3 +180,77 @@ def test_the_topic_card_is_preferred_when_the_anchor_resolves(repo,
     pending = _prepare(repo, monkeypatch, (shot, shot_ig))
     assert pending["media_x"].endswith("t_shot_x.png"), \
         "the generic section won over a resolved topic card"
+
+
+# --- the stat chip fits its column -----------------------------------------
+#
+# 2026-09-04: the resume-deepdive spotlight rendered its stat pill 695px wide
+# against a 686px column, overlapping the product card. Caught by a human
+# looking at the review image, which is the third time that has been the
+# thing that caught it.
+#
+# The chip is the ONE piece of left-column text that does not wrap, so it is
+# the only one that can reach the card. When an earlier test of mine proved
+# toothless I concluded "the text column and the card do not overlap
+# horizontally" — true of the headline, which wraps to col_w, and I
+# generalised it to text that does not wrap. This is that gap.
+
+CHIP_COL_W = 686   # the column width compose_spotlight computes at 1600x900
+
+
+def _dejavu(size):
+    """The font CI renders with, if it is installed here."""
+    from PIL import ImageFont
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              "/tmp/dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf"):
+        if os.path.exists(p):
+            return ImageFont.truetype(p, size)
+    return None
+
+
+def test_fit_chip_never_exceeds_the_column(monkeypatch):
+    """Font-independent, so it means something on any machine: whatever font
+    resolves, the chosen size must fit."""
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    for text in ("short", "Requirement→evidence matrix, zero invention",
+                 "Goal coverage · weighted forecast · board PD",
+                 "an absurdly long stat line " * 4):
+        f = screenshots.fit_chip(d, text, CHIP_COL_W)
+        width = d.textlength(text, font=f) + screenshots.CHIP_PAD
+        assert width <= CHIP_COL_W or f.size == 15, (
+            f"{text[:30]!r} renders {width}px in a {CHIP_COL_W}px column")
+
+
+def test_a_short_chip_keeps_its_full_size():
+    """Shrinking must be a response to overflow, not a tax on every chip."""
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    assert screenshots.fit_chip(d, "Stage-aware tracking", CHIP_COL_W).size == 25
+
+
+def test_every_real_stat_fits_in_the_font_CI_actually_uses():
+    """The local font is Arial and the runner's is DejaVu, which is wider —
+    resume-deepdive fit locally at 594px and overflowed at 695px on the
+    runner. Testing with whatever font happens to resolve here would have
+    passed on the broken build, so this SKIPS rather than pretends."""
+    import json
+    from PIL import ImageDraw
+    if _dejavu(25) is None:
+        pytest.skip("DejaVu not installed — cannot check the runner's font")
+    import cards
+    monkey = lambda size, bold=True: _dejavu(size)
+    original, cards._font = cards._font, monkey
+    try:
+        d = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        with open(os.path.join(ROOT, "content", "calendar.json")) as fh:
+            topics = json.load(fh)["topics"]
+        over = []
+        for t in topics:
+            f = screenshots.fit_chip(d, t["stat"], CHIP_COL_W)
+            w = d.textlength(t["stat"], font=f) + screenshots.CHIP_PAD
+            if w > CHIP_COL_W:
+                over.append((t["id"], round(w)))
+        assert not over, f"chips overflow in DejaVu: {over}"
+    finally:
+        cards._font = original
