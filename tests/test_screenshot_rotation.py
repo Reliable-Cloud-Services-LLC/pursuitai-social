@@ -190,3 +190,76 @@ def test_a_card_leaves_the_cursor_alone(repo, monkeypatch):
     """Otherwise three of every four posts would skip sections, and the
     rotation would sample the list rather than walk it."""
     assert _publish_one(repo, monkeypatch, "card")["shot_index"] == 3
+
+
+# --- a topic we know the right section for skips the rotation ---------------
+#
+# 2026-09-09: a post about PRICING shipped the features section. pricing-plans
+# tags the whole #pricing SECTION (6.13 tall/wide), which the aspect guard
+# rejects — correctly, since scaling it to 16:9 makes an illegible sliver — so
+# it fell through to the cursor, which happened to be on `features`. The
+# fallback worked exactly as designed and still produced the wrong image,
+# while a clean `pricing` capture sat unused.
+
+def test_a_named_section_wins_over_the_rotation(repo, monkeypatch):
+    """The rotation is the right default for a topic we have nothing better
+    for, and the wrong one when we know which section the topic is about."""
+    import json
+    sdir = str(repo / "assets" / "screenshots")
+    _seed(sdir, run.SECTION_ORDER)
+    monkeypatch.setattr(screenshots, "capture_all", lambda *a, **k: [])
+    monkeypatch.setattr(screenshots, "capture_topic",
+                        lambda *a, **k: (None, None))
+    with open(run.STATE, "w") as f:
+        # cursor sits on `features` — the exact state that shipped the bug
+        json.dump({"topic_index": 0, "run_count": 0, "shot_index": 1}, f)
+    run.prepare(force_format="screenshot", force_topic="pricing-plans")
+    with open(run.PENDING) as f:
+        media = json.load(f)["media_x"]
+    assert "pricing" in media, f"pricing-plans got {media}"
+    assert "features" not in media
+
+
+def test_a_topic_with_no_named_section_still_rotates(repo, monkeypatch):
+    """The map is an override for the few, not a replacement for the many."""
+    import json
+    sdir = str(repo / "assets" / "screenshots")
+    _seed(sdir, run.SECTION_ORDER)
+    monkeypatch.setattr(screenshots, "capture_all", lambda *a, **k: [])
+    monkeypatch.setattr(screenshots, "capture_topic",
+                        lambda *a, **k: (None, None))
+    with open(run.STATE, "w") as f:
+        json.dump({"topic_index": 0, "run_count": 0, "shot_index": 1}, f)
+    # Derived, not hardcoded: prepare indexes the performance-weighted
+    # rotation cycle, which omits weak topics — naming a topic literally
+    # here fails the day it drops out (fit-scoring did exactly that).
+    with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+        cal = json.load(f)
+    unmapped = next(t["id"] for t in run.publishable_topics(cal)
+                    if t["id"] not in run.SECTION_FOR_TOPIC)
+    run.prepare(force_format="screenshot", force_topic=unmapped)
+    with open(run.PENDING) as f:
+        assert "features" in json.load(f)["media_x"]
+
+
+def test_section_files_returns_nothing_when_the_capture_is_missing(tmp_path):
+    """A named section whose capture failed must fall through to the
+    rotation, not hand back a path to a file that is not there."""
+    assert run.section_files("pricing", str(tmp_path)) == (None, None)
+
+
+def test_every_named_section_is_one_we_actually_capture():
+    """Drift guard: a map entry naming a section screenshots.py does not
+    produce is silently a no-op — it falls through to the rotation and
+    reintroduces the exact bug this map exists to fix."""
+    captured = {name for name, *_ in screenshots.SECTIONS}
+    unknown = set(run.SECTION_FOR_TOPIC.values()) - captured
+    assert not unknown, f"named sections never captured: {unknown}"
+
+
+def test_every_named_topic_is_a_real_topic():
+    import json
+    with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+        ids = {t["id"] for t in json.load(f)["topics"]}
+    unknown = set(run.SECTION_FOR_TOPIC) - ids
+    assert not unknown, f"map names topics that do not exist: {unknown}"
