@@ -85,6 +85,21 @@ def select_format(run_count, topic_count):
 # list they were selected from.
 SECTION_ORDER = ("hero", "features", "pricing")
 
+# Topics whose own anchor cannot be composed, and the generic section that
+# IS the right picture for them anyway.
+#
+# pricing-plans tags the whole #pricing SECTION, not a card — 6.13 tall/wide,
+# which screenshots.is_composable rejects because scaling it to a 16:9 frame
+# makes an illegible sliver. Before this map it then fell through to the
+# ROTATION, and on 2026-09-09 a post about pricing shipped the features
+# section: the fallback working exactly as designed and still producing the
+# wrong image, while a clean `pricing` capture sat unused.
+#
+# The rotation is the right default for a topic we have nothing better for.
+# It is the wrong default when we know precisely which section the topic is
+# about — so name those here rather than leaving it to a cursor.
+SECTION_FOR_TOPIC = {"pricing-plans": "pricing"}
+
 # Captured, but deliberately NOT published, and why. Inspected against the
 # live site on 2026-08-26 at both capture viewports — every one of these was
 # going to ship unlooked-at, which is the mistake OPERATIONS.md already
@@ -104,6 +119,14 @@ SECTIONS_WITHHELD = {
     "why": "text-dense with a dead lower half — legible on desktop, "
            "unreadable at feed size",
 }
+
+
+def section_files(name, sdir):
+    """(x, ig) for a named capture, or (None, None) if it is not on disk."""
+    xp = os.path.join(sdir, f"{name}_x.png")
+    ip = os.path.join(sdir, f"{name}_ig.png")
+    return (xp, ip) if os.path.exists(xp) and os.path.exists(ip) else (None,
+                                                                       None)
 
 
 def pick_section(shot_index, sdir):
@@ -265,11 +288,21 @@ def prepare(force_format=None, force_topic=None):
                 screenshots.capture_all()
             except Exception as e:
                 print(f"[prepare] screenshot refresh failed ({e})")
-            shot_x, shot_ig = pick_section(
-                state.get("shot_index", 0),
-                os.path.join(ROOT, "assets", "screenshots"))
+            sdir = os.path.join(ROOT, "assets", "screenshots")
+            # A named section first: for a topic we KNOW the right section
+            # for, the rotation is worse than no rotation.
+            named = SECTION_FOR_TOPIC.get(topic["id"])
+            shot_x, shot_ig = section_files(named, sdir) if named else (None,
+                                                                       None)
             if shot_x:
-                print(f"[prepare] section={os.path.basename(shot_x)[:-6]}")
+                print(f"[prepare] section={named} (matched to "
+                      f"{topic['id']})")
+            else:
+                shot_x, shot_ig = pick_section(state.get("shot_index", 0),
+                                               sdir)
+                if shot_x:
+                    print(f"[prepare] section="
+                          f"{os.path.basename(shot_x)[:-6]} (rotation)")
 
     card_x = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_x.png")
     card_ig = os.path.join(ROOT, "assets", "cards", f"{topic['id']}_ig.png")
