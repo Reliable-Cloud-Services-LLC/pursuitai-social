@@ -19,6 +19,8 @@ import sys
 
 import requests
 
+import stale_channel
+
 TIMEOUT = 15
 HEARTBEAT_WINDOW_DAYS = 7
 
@@ -128,38 +130,46 @@ def failure(topic, fmt, results):
 def heartbeat_stats(log_path, today=None):
     """(confirmed posts in the last 7 days, date of the most recent one).
 
-    Counts a run only when a channel actually reported "posted" — a run
-    that logged nothing but failures is not a sign of life.
+    What counts as a confirmed post is defined ONCE, in stale_channel, and
+    imported here. The heartbeat and the staleness alarm answering that
+    question differently would mean the two disagreed about whether the
+    channel was alive — in the middle of an outage, which is the worst
+    possible moment to be ambiguous.
     """
-    if not os.path.exists(log_path):
-        return 0, None
     today = (datetime.date.fromisoformat(today) if today
              else datetime.date.today())
     cutoff = today - datetime.timedelta(days=HEARTBEAT_WINDOW_DAYS)
-    count, last = 0, None
-    with open(log_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-                when = datetime.date.fromisoformat(entry["date"])
-            except (ValueError, KeyError):
-                continue
-            channels = entry.get("channels") or {}
-            if not any(c.get("status") == "posted" for c in channels.values()):
-                continue
-            if last is None or when > datetime.date.fromisoformat(last):
-                last = entry["date"]
-            if when > cutoff:
-                count += 1
-    return count, last
+    dates = stale_channel.confirmed_dates(log_path)
+    count = sum(1 for d in dates if d > cutoff)
+    return count, (dates[-1].isoformat() if dates else None)
 
 
 def heartbeat(log_path, today=None):
+    """Weekly sign of life — and of DEATH.
+
+    The verdict used to be "OK" whenever the trailing 7-day count was
+    non-zero, which is how it reported OK on 2026-09-28 while the channel
+    had been dark since the 23rd: two posts landed inside the window before
+    the outage started, and a trailing count cannot tell the difference
+    between "posting" and "stopped five days ago". Staleness is measured
+    from the LAST post, not from the window's total.
+    """
     count, last = heartbeat_stats(log_path, today)
-    state = "OK" if count else "NO POSTS"
+    on = (datetime.date.fromisoformat(today) if today
+          else datetime.date.today())
+    dark = stale_channel.dark_days(
+        datetime.date.fromisoformat(last) if last else None, on)
+    if last is None:
+        # Nothing is stale if nothing ever posted. A fresh clone reporting
+        # "STALE — 26 days dark" is technically arithmetic and practically
+        # a lie about what happened.
+        state = "NO POSTS"
+    elif len(dark) >= stale_channel.STALE_AFTER_DAYS:
+        state = f"STALE — {len(dark)} scheduled day(s) dark"
+    elif count:
+        state = "OK"
+    else:
+        state = "NO POSTS"
     return _send(f"*PursuitAI social heartbeat — {state}*\n"
                  f"{count} confirmed post(s) in the last "
                  f"{HEARTBEAT_WINDOW_DAYS} days. "

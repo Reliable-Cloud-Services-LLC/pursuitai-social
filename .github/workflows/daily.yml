@@ -277,13 +277,17 @@ jobs:
 
       # pending.json still commits: the publish job is a separate run that
       # may happen hours later, so the reviewed post has to persist.
+      # scripts/commit_and_push.sh, shared with the publish job. This step
+      # used a bare `git push` until 2026-09-29, when a newly-unblocked
+      # run's prepare collided with the publish of a run approved minutes
+      # earlier — and the day's post was lost at the very moment the queue
+      # was recovering from an outage.
       - name: Commit pending post
-        run: |
-          git config user.name "pursuitai-bot"
-          git config user.email "bot@pursuitai.net"
-          git add content/pending.json || true
-          git commit -m "prepare $(date -u +%F)" || echo "nothing to commit"
-          git push
+        env:
+          PUSH_FAILURE_HINT: >-
+            pending.json is what the publish job reads, so without it this
+            run has nothing to post. Re-dispatch once the branch is clean.
+        run: scripts/commit_and_push.sh "prepare $(date -u +%F)" content/pending.json
 
       # After the push, so Slack can actually fetch the card image.
       - name: Send for review
@@ -400,34 +404,8 @@ jobs:
       # that still cannot land fails the step LOUDLY.
       - name: Commit state + post log
         if: always()
-        run: |
-          git config user.name "pursuitai-bot"
-          git config user.email "bot@pursuitai.net"
-          git add -A content logs || true
-          if git diff --cached --quiet; then
-            echo "nothing to commit"
-            exit 0
-          fi
-          git commit -m "post log $(date -u +%F)"
-          for attempt in 1 2 3; do
-            if git push; then
-              echo "pushed on attempt $attempt"
-              exit 0
-            fi
-            echo "push rejected — rebasing onto origin/$GITHUB_REF_NAME"
-            git fetch origin "$GITHUB_REF_NAME"
-            # --autostash because the publish job syncs the bucket INTO the
-            # working tree before this runs. Any tracked file that sync
-            # touches leaves the tree dirty, and a plain rebase then aborts
-            # with "cannot rebase: You have unstaged changes" — which is how
-            # the 2026-07-30 run lost its push. The retry must not depend on
-            # the tree being clean, because this job deliberately dirties it.
-            git rebase --autostash "origin/$GITHUB_REF_NAME" || {
-              echo "::error::rebase failed — the post log could not be"
-              echo "::error::saved. The rotation will re-serve this topic"
-              echo "::error::and duplicate it. Fix the branch by hand."
-              exit 1
-            }
-          done
-          echo "::error::could not push the post log after 3 attempts"
-          exit 1
+        env:
+          PUSH_FAILURE_HINT: >-
+            The post log is the only record that a post happened; without
+            it the rotation re-serves this topic and duplicates it.
+        run: scripts/commit_and_push.sh "post log $(date -u +%F)" content logs

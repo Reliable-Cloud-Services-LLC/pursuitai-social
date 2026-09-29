@@ -260,14 +260,22 @@ def test_the_commit_step_cannot_lose_the_post_log_silently():
     leaves assets/ dirty so rebase refuses, and if develop had also moved
     the push was rejected and the log vanished — which re-serves the topic
     later as a duplicate. It survived 2026-07-30 only because develop had
-    not moved that hour."""
-    text = _daily_text()
-    # everything from the step name to EOF — it is the last step in the job
-    step = text[text.index("Commit state + post log"):]
-    assert "git pull --rebase || true" not in step, (
-        "the swallowed-failure form is back")
-    assert "::error::" in step, "a lost post log must fail loudly"
-    assert "exit 1" in step, "a lost post log must fail the step"
+    not moved that hour.
+
+    The rebase-and-retry that fixed it now lives in
+    scripts/commit_and_push.sh, shared with the two other jobs that write
+    to develop — prepare had its own bare `git push` and lost a post to a
+    concurrent write on 2026-09-29, which is what made one copy necessary.
+    The BEHAVIOUR is tested against real repositories in
+    tests/test_commit_push.py; what this asserts is that the publish job is
+    still wired to it, because a step that quietly went back to its own
+    push would pass every test over there.
+    """
+    step = _daily_text()[_daily_text().index("Commit state + post log"):]
+    assert "commit_and_push.sh" in step, \
+        "the post-log commit no longer routes through the shared helper"
+    assert "PUSH_FAILURE_HINT" in step, \
+        "a lost post log must say what it costs — the topic is duplicated"
 
 
 def test_every_apt_step_is_time_boxed():
@@ -313,12 +321,10 @@ def test_no_tracked_file_sits_under_a_gitignored_path():
         f"`git rm --cached`: {ignored}")
 
 
-def test_the_post_log_rebase_survives_a_dirty_tree():
-    """The publish job dirties the working tree on purpose (it syncs the
-    bucket down for X's byte upload). A plain rebase in the push-retry
-    would abort on exactly the state this job creates."""
-    daily = _daily_text()
-    retry = daily[daily.index("push rejected"):]
-    assert "rebase --autostash" in retry, (
-        "the push retry rebases without --autostash, so it aborts on the "
-        "dirty tree this job itself creates")
+# test_the_post_log_rebase_survives_a_dirty_tree USED to live here as a grep
+# for "rebase --autostash" in daily.yml. The retry moved into
+# scripts/commit_and_push.sh, and the guarantee is now tested by DRIVING it:
+# tests/test_commit_push.py::test_a_dirty_tree_does_not_block_the_rebase
+# commits with a genuinely dirty tree against a remote that has moved. That
+# is strictly stronger than the scan it replaces — the scan would pass
+# against a script containing the flag and nothing that works.

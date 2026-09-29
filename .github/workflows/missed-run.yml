@@ -71,3 +71,41 @@ jobs:
               f"{os.environ['ACTIONS_URL']}")
           sys.exit(1)
           PY
+
+      # The broader question, and the one nothing else in this repo asked:
+      # has a post actually REACHED a channel lately?
+      #
+      # `if: always()` because the step above exits 1 on a missed day, and
+      # these are independent failures — a day that was dropped AND a
+      # channel that has been dark a week is exactly when you want both
+      # said out loud, not one of them swallowed by the other's exit code.
+      #
+      # Deliberately in THIS workflow rather than daily.yml: the outage
+      # this was written for was daily.yml's own concurrency group being
+      # held by an unapproved run, so anything living inside daily.yml
+      # would have been queued behind the failure it was meant to report.
+      - name: Has a post reached a channel lately?
+        if: always()
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          import stale_channel, notify
+
+          stale, message = stale_channel.check(
+              os.path.join("logs", "posted.jsonl"),
+              os.environ["REPO"], os.environ["GH_TOKEN"])
+          print(f"[stale-channel] {message}")
+          if not stale:
+              sys.exit(0)
+
+          notify.alert(
+              f":rotating_light: *The social channel has gone dark*\n"
+              f"{message}\n{os.environ['ACTIONS_URL']}")
+          sys.exit(1)
+          PY
