@@ -461,6 +461,11 @@ def upload_video(repo_rel_path, token, owner_urn):
 
     part_ids = []
     total = len(instructions)
+    # Printed because the multipart path is the one that can corrupt a video
+    # silently — a mis-sliced part uploads and finalizes cleanly. A log line
+    # saying how many parts were sent turns "it probably used one part" into
+    # a fact, in the publish log as well as in the validator.
+    print(f"[linkedin] uploading {size:,} bytes in {total} part(s)")
     with open(path, "rb") as f:
         for n, part in enumerate(instructions, 1):
             first, last = part.get("firstByte"), part.get("lastByte")
