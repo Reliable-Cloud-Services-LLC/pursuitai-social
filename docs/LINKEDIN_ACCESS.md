@@ -264,7 +264,11 @@ tracked separately — but use the real slug for anything here.
       [verified the app](https://www.linkedin.com/help/linkedin/answer/a548360/associate-an-app-with-a-linkedin-page)**
       — this is an explicit Development-tier review criterion, so it must be
       done BEFORE submitting, not after
-- [x] **Legal name: Reliable Cloud Services LLC.** Decided 2026-08-30. The
+- [x] **Legal name: `RELIABLE CLOUD SERVICES, L.L.C.`** — the registry's
+      punctuation, VERBATIM (Maryland SDAT Dept ID W19522465, verified
+      2026-10-02). Attempt 1 submitted "Reliable Cloud Services LLC" and
+      failed identity vetting on the mismatch; see the correction below.
+      Decided 2026-08-30. The
       form states it "will use the provided business name for verifying its
       active registration", so the only workable answer is the entity that
       actually survives a registry lookup — not the brand we would prefer to
@@ -389,9 +393,14 @@ answer is no.
 > Community Management API for the following reason:
 > **Access Denied: Business verification failed**"
 
+The portal states it more precisely — **"Identity vetting failed"**, with the
+reason and an appeal link. See the correction below; the portal wording is
+the one that identifies the cause.
+
 Application id `266127073`, CRM `015285037679362`, app `PursuitAI-App`
-(`78b4lrsxr06b7q`). Submitted as legal name **Reliable Cloud Services LLC**,
-no alternate name, Page management only.
+(`78b4lrsxr06b7q`). Submitted as legal name **Reliable Cloud Services LLC**
+— WITHOUT the registry's comma and periods, which is what failed — no
+alternate name, Page management only.
 
 **That app is now burned.** LinkedIn: "You won't be able to re-apply for
 Development tier access with your existing app." A third app is required,
@@ -399,26 +408,82 @@ and it burns the same way if the underlying problem is unchanged. Every
 attempt costs an app, which is why the next step is a question, not a
 resubmission.
 
-### Most likely cause — nothing connects the website to the legal entity
+### CORRECTION (2026-10-02): the cause is UNKNOWN; two theories are dead
 
-Not confirmed by LinkedIn, who gave only the one line. But the review
-criteria include "Verified organization website and domain address", and
-checked on 2026-08-30:
+The section this replaces theorised that vetting failed because
+pursuitai.net names no operating legal entity. That is **unproven**, and it
+is recorded rather than deleted because a legal-pages change was drafted on
+its basis before the real denial text surfaced.
 
-* **pursuitai.net names no operating legal entity anywhere.** Not the
-  footer, not /terms, not /privacy. Those pages name Stripe and Anthropic
-  as third parties and never say who runs the service.
-* The LinkedIn Page is **PursuitAI**, not Reliable Cloud Services LLC.
-* The business email domain is **pursuitai.net**.
+LinkedIn's actual denial, read from the portal:
 
-So a reviewer asked to tie "Reliable Cloud Services LLC" to this website,
-Page and domain finds nothing to tie it with. The declaration was truthful;
-it was simply unevidenced, and unevidenced is what "business verification"
-checks.
+> **Identity vetting failed**
+> "We were unable to verify that your organization is a legally registered,
+> active entity. If you wish to appeal, click here to submit supporting
+> documentation."
 
-Worth separating: this is a real gap independent of LinkedIn. Terms of
-Service are a contract, and these name no counterparty. Most commercial SaaS
-states its operating entity in Terms or Privacy for exactly that reason.
+That is a claim about the ENTITY, not the website. And the entity passes on
+the public record — Maryland SDAT, checked 2026-10-02:
+
+| field | value |
+|---|---|
+| Department ID | **W19522465** |
+| Business name | **RELIABLE CLOUD SERVICES, L.L.C.** |
+| Status | **ACTIVE** |
+| Good standing | **THIS BUSINESS IS IN GOOD STANDING** |
+| Type / formed | Domestic LLC, 03/20/2019 |
+| Principal office | 23006 Blue Flag Cir, Clarksburg, MD 20871 |
+
+**Two theories were raised and both are dead:**
+
+1. *Forfeiture / lost good standing.* Maryland forfeits entities that miss
+   the April 15 annual report, which would read exactly as "not active".
+   **Disproven**: status ACTIVE, in good standing.
+2. *Exact-name mismatch.* The registry prints
+   `RELIABLE CLOUD SERVICES, L.L.C.`; attempt 1 submitted
+   `Reliable Cloud Services LLC`. **Unsupported**: SDAT's own search for the
+   submitted string returns the entity (1 result, Active). A registry that
+   resolves both spellings is not evidence that a mismatch broke the lookup.
+
+So **the cause is not known.** LinkedIn gave one line and no detail, and
+vetting of this kind typically runs through a third-party KYB vendor whose
+matching rules are not observable from outside — which is why guessing at
+the mechanism has now been wrong twice.
+
+**The consequence for the appeal: do not assert a cause.** An appeal that
+leads with a diagnosis invites a reviewer to reject the diagnosis rather
+than look at the record. Supply the verifiable facts, note that the public
+registry resolves the entity under either spelling, and ask what
+specifically could not be verified. The entity being demonstrably registered
+and active is the whole argument; it does not need a theory attached.
+
+Still worth doing regardless: submit the registry's punctuation verbatim.
+It costs nothing and removes one variable.
+
+### Two LinkedIn Pages exist — pick one (found 2026-10-02)
+
+Both resolve, with different names:
+
+| slug | Page name |
+|---|---|
+| `linkedin.com/company/pursuit-ai` | Pursuit AI |
+| `linkedin.com/company/pursuitai-rcs` | PursuitAI |
+
+pursuitai.net links to `pursuit-ai` (twice, including the JSON-LD `sameAs`).
+A Development-tier criterion is "Application verified by LinkedIn Page
+associated with same organization", so the app, the application form and the
+website must all name the SAME Page. Confirm which one verified the app
+under My Apps → Settings before submitting anything.
+
+NB the `pursuitai-rcs` slug publicly ties the product to RCS, which is a
+presentation decision worth making deliberately rather than inheriting.
+
+### The website gap is still real — just not this
+
+Terms of Service are a contract and pursuitai.net's name no counterparty;
+the liability clause caps "RCS'S AGGREGATE LIABILITY" for an acronym the
+document never defines. Worth fixing on its own merits. It is NOT what
+blocked API access.
 
 ### Before attempt 2
 
