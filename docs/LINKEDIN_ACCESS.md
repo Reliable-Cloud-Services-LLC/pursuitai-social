@@ -460,7 +460,21 @@ and active is the whole argument; it does not need a theory attached.
 Still worth doing regardless: submit the registry's punctuation verbatim.
 It costs nothing and removes one variable.
 
-### Two LinkedIn Pages exist — pick one (found 2026-10-02)
+### Attempt 1 appeal — SUBMITTED 2026-10-02
+
+Filed via Developer Support, Form Type "Vetting Appeal", API Program
+"Community Management", against app `78b4lrsxr06b7q`. The appeal supplies
+the public registry record (SDAT W19522465, ACTIVE, in good standing) and
+asks which specific element could not be verified — deliberately asserting
+no cause, since both theories died and a wrong diagnosis invites a reviewer
+to reject the diagnosis rather than read the record.
+
+**The app is tied to `linkedin.com/company/pursuit-ai`** — confirmed under
+My Apps → Settings, and the same Page pursuitai.net links to. So the
+"Application verified by LinkedIn Page associated with same organization"
+criterion was already satisfied and is NOT a candidate cause.
+
+### Two LinkedIn Pages exist — the app uses pursuit-ai (found 2026-10-02)
 
 Both resolve, with different names:
 
@@ -469,11 +483,9 @@ Both resolve, with different names:
 | `linkedin.com/company/pursuit-ai` | Pursuit AI |
 | `linkedin.com/company/pursuitai-rcs` | PursuitAI |
 
-pursuitai.net links to `pursuit-ai` (twice, including the JSON-LD `sameAs`).
-A Development-tier criterion is "Application verified by LinkedIn Page
-associated with same organization", so the app, the application form and the
-website must all name the SAME Page. Confirm which one verified the app
-under My Apps → Settings before submitting anything.
+pursuitai.net links to `pursuit-ai` (twice, including the JSON-LD `sameAs`),
+and `pursuit-ai` is also the Page the app is verified against — so those two
+agree. The duplicate Page is a presentation problem, not an access one.
 
 NB the `pursuitai-rcs` slug publicly ties the product to RCS, which is a
 presentation decision worth making deliberately rather than inheriting.
