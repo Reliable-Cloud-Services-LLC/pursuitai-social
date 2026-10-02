@@ -45,6 +45,12 @@ out.
   fires rather than on a schedule of its own. Reports scheduled days
   immediately before today on which no run was created. This is the
   backstop for the alarm's blind spot; it is retroactive by nature.
+- **Dark-channel alarm** — a step on `missed-run.yml`, so same schedule.
+  The only one that asks whether a post actually **reached a channel**,
+  rather than whether a run was created. Fires on the second consecutive
+  scheduled day with no confirmed post, and names the run holding the
+  approval gate when there is one. See below for why the other three could
+  not see a six-day outage.
 - **Heartbeat** — `heartbeat.yml`, Mondays 14:23 UTC. Weekly liveness.
   (UTC like the rest of this section — it used to be written in ET, which
   made it the one time here you had to convert before comparing it to a
@@ -97,6 +103,48 @@ The residual hole cannot be closed from inside GitHub Actions: if every
 scheduled workflow is dropped for several days running, nothing reports
 anything until one fires again — and then the gap check reports the whole
 outage at once.
+
+### An unapproved run blocks every run behind it
+
+`daily.yml` declares `concurrency: {group: daily-post,
+cancel-in-progress: false}`. A run parked at the `social-publish` approval
+gate still **occupies** that group. GitHub allows one running plus one
+queued, so every later day's run sits behind it, and each new day displaces
+the previously queued one.
+
+On 2026-09-24 a run was prepared, reviewed and never approved. What
+followed:
+
+| date | run | what happened |
+|---|---|---|
+| 09-23 | 35899069825 | posted — the last one for six days |
+| 09-24 | 36037729396 | **waiting** on approval; holds the group |
+| 09-25, 09-26, 09-28 | three runs | cancelled before starting a single job |
+| 09-29 | 36614910522 | pending, zero jobs |
+
+The review notification lives inside `prepare`, and `prepare` never ran —
+so the outage **suppressed its own evidence**. No Slack arrived, which read
+as "quiet day" rather than "blocked".
+
+Every monitor said healthy, and each for a defensible reason:
+
+- `missed_run.check` and `preceding_gap` ask whether a run was **created**,
+  deliberately — an unapproved run is the operator exercising the gate.
+  Runs were created every day.
+- the weekly heartbeat counted two posts inside its trailing 7-day window,
+  because they landed just before the outage began. A trailing count cannot
+  distinguish "posting" from "stopped five days ago".
+
+**If the channel goes quiet, look for a run in `waiting` first.** Approving
+or rejecting it drains the queue. The dark-channel alarm now reports this
+case by name, and the heartbeat's verdict is measured from the last post
+rather than from a window total.
+
+One more thing to expect when you drain it: approving the stale run puts
+its `publish` and the released run's `prepare` in flight at once, and they
+both write to `develop`. That collision is what lost the 2026-09-29 post —
+all three writers now share `scripts/commit_and_push.sh`, which rebases and
+retries.
 
 ### An `ad` takes 9–13 minutes to prepare, and that is not a hang
 
@@ -319,7 +367,7 @@ Compliance, pronunciation, freshness, card-overflow and the claims schema
 all check whether a post is **permitted**. None check whether it is
 **good**.
 
-All three of these passed every automated gate and were caught by a human
+All four of these passed every automated gate and were caught by a human
 looking at the result:
 
 - a video that shipped **silent**, with text pulsing in and out
@@ -327,14 +375,21 @@ looking at the result:
 - a screenshot that was perfectly rendered and **about the wrong feature** —
   8(a) copy over a picture of Opportunity Discovery, Grants and AI Fit
   Scoring
+- six days of **no posts at all**, while three monitors reported healthy
 
 The third is the instructive one. Nothing was broken: the image was sharp,
 correctly cropped, on-brand, and every check passed. It was simply not about
 the thing the post was about, and no gate has an opinion on that. Relevance
 is not a property any of these tests can see.
 
+The fourth is a different lesson from the first three: the gate is not only
+something to pass, it is something that can **stick**. An approval nobody
+gives is indistinguishable from a quiet week unless something is watching
+the output rather than the machinery.
+
 That is the work the approval gate exists to make possible. Look at the
-post, not just the checkmark.
+post, not just the checkmark — and if there is no post to look at, find out
+why before assuming there was nothing to say.
 
 ---
 
