@@ -34,6 +34,7 @@ a human roughly every two months. See docs/LINKEDIN_ACCESS.md.
 import json
 import os
 import time
+from urllib.parse import quote
 
 import requests
 
@@ -56,6 +57,28 @@ IMAGE_TRIES, IMAGE_DELAY = 30, 4     # 2min
 # here with a legible message rather than as a 413 mid-publish.
 MAX_PIXELS = 36_152_320
 ALLOWED_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif")
+
+# --- Videos API ------------------------------------------------------------
+# A different API from Images, not a variant of it: multipart upload with a
+# per-part ETag, an explicit finalize step, and a transcode that can fail
+# with a reason. The `ad` format is 1 post in 4, so without this LinkedIn
+# would silently cover three formats out of four.
+VIDEO_SUFFIXES = (".mp4",)
+
+# "Length: Three seconds to 30 minutes. File size: Between 75kb and 500MB.
+# File format: MP4."
+#
+# NB the schema table separately says "Maximum allowed Videos size is 5GB"
+# for fileSizeBytes, which contradicts the 500MB specification above it.
+# The tighter documented bound is used: our ads are a few MB, so the choice
+# costs nothing, and refusing locally beats a transcode failure after a
+# multipart upload has already been spent.
+MIN_VIDEO_BYTES = 75 * 1024
+MAX_VIDEO_BYTES = 500 * 1024 * 1024
+
+# Transcode is slower than an image resize and the cost of giving up early
+# is the same as it is there: publishing against media members cannot see.
+VIDEO_TRIES, VIDEO_DELAY = 60, 5     # 5min
 
 
 class LinkedInError(RuntimeError):
@@ -294,3 +317,213 @@ def token_days_left(now=None):
     if not raw:
         return None
     return int((int(raw) - (now if now is not None else time.time())) // 86400)
+
+
+def check_video(path):
+    """Refuse a video LinkedIn documents as unsupported. Returns its size.
+
+    DURATION IS NOT CHECKED HERE, deliberately. LinkedIn requires 3s-30min,
+    but measuring needs ffprobe and the publish job has no ffmpeg — only
+    prepare installs it. Plumbing the measurement through pending.json would
+    be real work to guard a case that cannot arise: adspot.SCENES totals
+    ~14.2s before narration scaling, so our ads are an order of magnitude
+    clear of the floor and three orders clear of the ceiling. If that ever
+    changes, LinkedIn reports it as PROCESSING_FAILED and
+    _await_video_available surfaces its processingFailureReason verbatim.
+    """
+    if not path.lower().endswith(VIDEO_SUFFIXES):
+        raise LinkedInError(
+            f"{os.path.basename(path)}: LinkedIn's Videos API supports "
+            f"{', '.join(VIDEO_SUFFIXES)}")
+    size = os.path.getsize(path)
+    if not MIN_VIDEO_BYTES <= size <= MAX_VIDEO_BYTES:
+        raise LinkedInError(
+            f"{os.path.basename(path)} is {size:,} bytes; the documented "
+            f"range is {MIN_VIDEO_BYTES:,}-{MAX_VIDEO_BYTES:,}")
+    return size
+
+
+def _part_id(response, part_no, total):
+    """The upload-part id, read from the ETag response header.
+
+    "Callers should get the IDs as ETags from the response headers when they
+    upload the videos."
+
+    The docs show the value two ways — a quoted hex digest in the schema
+    table ("e4383924336106965d6cd2a111beaceb") and an unquoted path in the
+    live sample (/ambry-video/signedId/AQ...bin). Strip surrounding quotes
+    when present and pass anything else through, so both forms work; sending
+    a quoted id where an unquoted one was meant fails finalize with nothing
+    useful to read.
+    """
+    etag = response.headers.get("etag") or response.headers.get("ETag")
+    if not etag:
+        raise LinkedInError(
+            f"video part {part_no}/{total} uploaded but returned no ETag — "
+            f"refusing to finalize an upload whose parts cannot be named")
+    return etag.strip('"')
+
+
+def upload_video(repo_rel_path, token, owner_urn):
+    """Upload a local MP4, returning its urn:li:video URN.
+
+    Three steps, all required: initialize to register the upload and receive
+    per-part byte ranges, PUT each range and keep its ETag, then finalize
+    with those ids in instruction order.
+    """
+    path = _abs(repo_rel_path)
+    size = check_video(path)
+
+    r = requests.post(f"{API}/videos?action=initializeUpload",
+                      headers=_headers(token),
+                      data=json.dumps({"initializeUploadRequest": {
+                          "owner": owner_urn,
+                          "fileSizeBytes": size,
+                          "uploadCaptions": False,
+                          "uploadThumbnail": False}}),
+                      timeout=120)
+    _check(r, "video upload initialization")
+    value = (r.json() or {}).get("value") or {}
+    video_urn = value.get("video")
+    instructions = value.get("uploadInstructions") or []
+    # Present and empty-string for a single-part upload in LinkedIn's own
+    # sample, so its absence is not an error — but it must be echoed back.
+    upload_token = value.get("uploadToken", "")
+    if not video_urn or not instructions:
+        raise LinkedInError(
+            f"initializeUpload returned no upload target: {value}")
+
+    part_ids = []
+    total = len(instructions)
+    with open(path, "rb") as f:
+        for n, part in enumerate(instructions, 1):
+            first, last = part.get("firstByte"), part.get("lastByte")
+            url = part.get("uploadUrl")
+            if url is None or first is None or last is None:
+                raise LinkedInError(f"upload instruction {n}/{total} is "
+                                    f"incomplete: {part}")
+            # Sliced from the RANGES LinkedIn sent, not a hardcoded chunk
+            # size. The docs say to "split -b 4194303" but then describe
+            # parts as 0-4194303 inclusive, which is 4194304 bytes — the two
+            # disagree by one, and a part sliced to the wrong length fails
+            # finalize. The instructions are authoritative; the prose is not.
+            f.seek(first)
+            chunk = f.read(last - first + 1)
+            up = requests.put(url,
+                              headers={"Authorization": f"Bearer {token}",
+                                       "Content-Type":
+                                           "application/octet-stream"},
+                              data=chunk, timeout=300)
+            _check(up, f"video part {n}/{total} upload")
+            part_ids.append(_part_id(up, n, total))
+
+    fin = requests.post(f"{API}/videos?action=finalizeUpload",
+                        headers=_headers(token),
+                        data=json.dumps({"finalizeUploadRequest": {
+                            "video": video_urn,
+                            "uploadToken": upload_token,
+                            # "The order needs to be the same as the order of
+                            # parts in the upload instructions."
+                            "uploadedPartIds": part_ids}}),
+                        timeout=120)
+    _check(fin, "video upload finalization")
+    _await_video_available(video_urn, token)
+    return video_urn
+
+
+def _await_video_available(video_urn, token, tries=VIDEO_TRIES,
+                           delay=VIDEO_DELAY):
+    """Block until LinkedIn reports the video AVAILABLE.
+
+    Same contract as _await_available for images, and the same reason: the
+    Posts API will happily accept a video that is still processing, and the
+    result is a post members cannot see.
+
+    One thing the image path has no equivalent of: PROCESSING_FAILED carries
+    a `processingFailureReason`, so a failure here can say WHY instead of
+    just that it happened.
+    """
+    for attempt in range(tries):
+        # URN encoded, per the documented GET form
+        # (urn%3Ali%3Avideo%3A...). Images are fetched unencoded and work,
+        # so that path is left alone rather than changed on a hunch.
+        r = requests.get(f"{API}/videos/{quote(video_urn, safe='')}",
+                         headers=_headers(token, json_body=False), timeout=60)
+        _check(r, "video status")
+        data = r.json() or {}
+        status = data.get("status")
+        if status == "AVAILABLE":
+            return
+        if status == "PROCESSING_FAILED":
+            raise LinkedInError(
+                f"video processing failed for {video_urn}: "
+                f"{data.get('processingFailureReason') or 'no reason given'}")
+        if attempt < tries - 1:
+            time.sleep(delay)
+    raise LinkedInError(
+        f"video {video_urn} never became AVAILABLE after "
+        f"{tries * delay}s — refusing to publish a post whose video members "
+        f"would not see")
+
+
+def upload_media(repo_rel_path, token, owner_urn):
+    """Upload image or video, returning its URN.
+
+    The upload half of post_media, exposed separately so the validator can
+    prove the chain WITHOUT publishing — and so it proves the same code the
+    publish job runs, rather than a parallel implementation that can drift.
+    """
+    if is_video(repo_rel_path):
+        return upload_video(repo_rel_path, token, owner_urn)
+    return upload_image(repo_rel_path, token, owner_urn)
+
+
+def is_video(repo_rel_path):
+    return (repo_rel_path or "").lower().endswith(VIDEO_SUFFIXES)
+
+
+def post_media(repo_rel_path, commentary, alt_text=None):
+    """Publish a single-media post, image or video, to the Page.
+
+    The ONE entry point callers use, so a new format cannot reach LinkedIn
+    through a path that only understands images — which is exactly what
+    happened before this existed: `ad` is 1 post in 4 and post_image's
+    check_image rejected its .mp4, so a quarter of the calendar could not
+    reach the channel at all.
+    """
+    if is_video(repo_rel_path):
+        return post_video(repo_rel_path, commentary, title=alt_text)
+    return post_image(repo_rel_path, commentary, alt_text=alt_text)
+
+
+def post_video(repo_rel_path, commentary, title=None):
+    """Publish a single-video post to the Page. Returns {"id", "url"}."""
+    token = os.environ["LINKEDIN_ACCESS_TOKEN"]
+    org_urn = f"urn:li:organization:{os.environ['LINKEDIN_ORG_ID']}"
+    video_urn = upload_video(repo_rel_path, token, org_urn)
+
+    payload = {
+        "author": org_urn,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+        "distribution": {"feedDistribution": "MAIN_FEED",
+                         "targetEntities": [],
+                         "thirdPartyDistributionChannels": []},
+        # Video content carries `title`, where an image carries `altText` —
+        # the Posts API documents them as different fields on the same
+        # media object, not as synonyms.
+        "content": {"media": {"id": video_urn,
+                              "title": title or "PursuitAI"}},
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+    }
+    r = requests.post(f"{API}/posts", headers=_headers(token),
+                      data=json.dumps(payload), timeout=120)
+    _check(r, "post creation")
+    post_id = r.headers.get("x-restli-id")
+    if not post_id:
+        raise LinkedInError(
+            "post created but LinkedIn returned no x-restli-id header — "
+            "refusing to log a post we cannot identify afterwards")
+    print(f"[linkedin] posted {_permalink(post_id)}")
+    return {"id": post_id, "url": _permalink(post_id)}

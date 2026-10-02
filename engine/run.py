@@ -421,7 +421,10 @@ def _post_ig(pending):
 
 def _post_linkedin(pending):
     import post_linkedin
-    return post_linkedin.post_image(pending["media_linkedin"],
+    # post_media, not post_image: the `ad` format's asset is an .mp4, and
+    # routing every format through the images path is what made a quarter of
+    # the calendar unpostable to LinkedIn.
+    return post_linkedin.post_media(pending["media_linkedin"],
                                     pending["text_linkedin"],
                                     alt_text=pending.get("topic"))
 
