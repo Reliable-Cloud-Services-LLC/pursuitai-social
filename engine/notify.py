@@ -69,7 +69,19 @@ def _send_blocks(text, blocks):
     return True
 
 
-def pending_review(pending, media_url=None, review_url=None):
+# What the LinkedIn asset IS, named from its extension rather than measured.
+# Measuring would mean stat-ing or opening a file this module may not have —
+# notify runs after the commit step and must never raise, and a cosmetic
+# label is not worth a failure mode. Named per FORMAT rather than hardcoded:
+# a card's x-variant is landscape (1600x900) but AD_RATIO is "square", so a
+# single "16:9" label would be wrong one run in four.
+def asset_label(rel_path):
+    return ("MP4 · narrated video" if (rel_path or "").lower()
+            .endswith((".mp4", ".mov")) else "PNG · landscape card")
+
+
+def pending_review(pending, media_url=None, review_url=None,
+                   linkedin_url=None):
     """Ask a human to review the prepared post.
 
     There are no approve/reject buttons: interactive Slack actions need an
@@ -92,6 +104,31 @@ def pending_review(pending, media_url=None, review_url=None):
     blocks.append(_section("*X*\n```" + (pending.get("text_x") or "") + "```"))
     blocks.append(_section("*Instagram*\n```"
                            + (pending.get("text_ig") or "") + "```"))
+
+    # LinkedIn is posted BY HAND — the API needs w_organization_social, which
+    # only the vetted Community Management product grants, and that access is
+    # under appeal. Until it lands, this block is the whole handoff: the copy
+    # in a fenced block (Slack gives it tap-to-copy on mobile, so the line
+    # breaks and em dashes survive, which is exactly what retyping destroys)
+    # and a link to the real asset.
+    #
+    # A LINK rather than an attachment because an incoming webhook cannot
+    # upload a file. The rendered media is already public — Instagram fetches
+    # it from the same bucket — so the link downloads the genuine asset.
+    #
+    # NB the image block above shows the POSTER STILL for a video format; an
+    # .mp4 in an image block makes Slack reject the block and lose the whole
+    # notification. So for an `ad` the preview is a still and this link is the
+    # only route to the video.
+    text_li = pending.get("text_linkedin")
+    if text_li:
+        blocks.append(_section("*LinkedIn — post this by hand*\n```"
+                               + text_li + "```"))
+        if linkedin_url:
+            blocks.append(_section(
+                f"<{linkedin_url}|⬇ Download the LinkedIn asset> · "
+                f"{asset_label(pending.get('media_linkedin'))}"))
+
     if review_url:
         blocks.append(_section(f"<{review_url}|Approve or reject this run →>"))
     return _send_blocks(f"Ready for review: {topic} ({fmt})", blocks)
