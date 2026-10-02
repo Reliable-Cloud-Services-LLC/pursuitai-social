@@ -52,15 +52,50 @@ def test_aws_region_is_not_hardcoded_to_an_r2_ism():
     assert not offenders, f"region hardcoded to 'auto': {offenders}"
 
 
+def publish_step():
+    """The publish step, found by the command it runs rather than its name.
+
+    Splitting on the step's TITLE is what let this rot: the step was called
+    "Publish to X + Instagram" and the assertion list was hand-maintained,
+    so adding a third channel updated neither.
+    """
+    daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
+    step = daily.split("engine/run.py --publish", 1)[0]
+    return step[step.rindex("      - name:"):]
+
+
 @pytest.mark.parametrize("secret", [
     "X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET",
     "IG_USER_ID", "IG_ACCESS_TOKEN", "MEDIA_BASE_URL", "NOTIFY_WEBHOOK_URL",
 ])
 def test_publish_job_receives_every_credential_it_needs(secret):
-    daily = open(os.path.join(WORKFLOWS, "daily.yml")).read()
-    publish = daily.split("Publish to X + Instagram", 1)[1].split("run:", 1)[0]
-    assert f"secrets.{secret}" in publish, \
+    assert f"secrets.{secret}" in publish_step(), \
         f"publish step is missing {secret}"
+
+
+def test_every_channel_gate_reaches_the_publish_step():
+    """Derived from run.py's POSTERS, so a new channel cannot be added
+    without its credential being wired.
+
+    This is the test that was missing. LinkedIn was built across four PRs —
+    Images API, Videos API, member authorship, a live-proven upload — and
+    the publish step never passed LINKEDIN_ACCESS_TOKEN, so POSTERS gated
+    the channel off on EVERY run and logged "skipped: not set". Nothing
+    failed. The suite was green throughout.
+    """
+    import re
+    run_py = open(os.path.join(ROOT, "engine", "run.py")).read()
+    block = run_py[run_py.index("POSTERS = {"):]
+    block = block[:block.index("}")]
+    gates = dict(re.findall(r'"(\w+)":\s*\("([A-Z_]+)"', block))
+    assert gates, "could not parse POSTERS — has its shape changed?"
+
+    step = publish_step()
+    missing = {ch: var for ch, var in gates.items()
+               if f"secrets.{var}" not in step}
+    assert not missing, (
+        f"publish step cannot see these channels' credentials, so they will "
+        f"silently skip on every run: {missing}")
 
 
 # ---------- voice deps stay out of the test job ----------
