@@ -150,7 +150,13 @@ def _await_available(image_urn, token, tries=IMAGE_TRIES, delay=IMAGE_DELAY):
     how an invisible post gets created.
     """
     for attempt in range(tries):
-        r = requests.get(f"{API}/images/{image_urn}",
+        # URN encoded. We send X-Restli-Protocol-Version: 2.0.0, which
+        # requires path keys be encoded — an unencoded urn:li:image:... is
+        # read as path variables and rejected with "Syntax exception in path
+        # variables" (400). The Images doc's GET sample shows the URN raw,
+        # but that sample also omits the protocol header; the Videos doc,
+        # which keeps it, shows the encoded form. Observed live 2026-10-02.
+        r = requests.get(f"{API}/images/{quote(image_urn, safe='')}",
                          headers=_headers(token, json_body=False), timeout=60)
         _check(r, "image status")
         status = (r.json() or {}).get("status")
@@ -165,15 +171,20 @@ def _await_available(image_urn, token, tries=IMAGE_TRIES, delay=IMAGE_DELAY):
         f"refusing to publish a post whose image members would not see")
 
 
-def upload_image(repo_rel_path, token, org_urn):
-    """Upload a local image, returning its urn:li:image URN."""
+def upload_image(repo_rel_path, token, owner_urn):
+    """Upload a local image, returning its urn:li:image URN.
+
+    `owner_urn` is a person OR an organization — the Images API documents
+    both, and which one we send is the whole difference between posting to
+    the Page and posting to a profile.
+    """
     path = _abs(repo_rel_path)
     check_image(path)
 
     r = requests.post(f"{API}/images?action=initializeUpload",
                       headers=_headers(token),
                       data=json.dumps(
-                          {"initializeUploadRequest": {"owner": org_urn}}),
+                          {"initializeUploadRequest": {"owner": owner_urn}}),
                       timeout=120)
     _check(r, "image upload initialization")
     value = (r.json() or {}).get("value") or {}
@@ -194,14 +205,69 @@ def upload_image(repo_rel_path, token, org_urn):
     return image_urn
 
 
+# Resolved once per process: the publish job posts one thing, but
+# post_media -> post_image/post_video would otherwise ask twice.
+_PERSON_URN = None
+
+
+def person_urn(token):
+    """This token's own urn:li:person, asked of the API.
+
+    Derived rather than stored as a secret: a stored person URN is one more
+    value to keep in sync with the token, and the failure mode of getting it
+    wrong is posting as somebody else.
+    """
+    global _PERSON_URN
+    if _PERSON_URN:
+        return _PERSON_URN
+    r = requests.get("https://api.linkedin.com/v2/userinfo",
+                     headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    _check(r, "member identity lookup")
+    sub = (r.json() or {}).get("sub")
+    if not sub:
+        raise LinkedInError(
+            "userinfo returned no `sub`, so the author URN cannot be "
+            "resolved — the token lacks the `profile` scope. Re-mint it with "
+            "`profile` alongside w_member_social.")
+    _PERSON_URN = f"urn:li:person:{sub}"
+    return _PERSON_URN
+
+
+def author_urn(token):
+    """Who the post is authored by: the Page if we can, else the member.
+
+    LINKEDIN_ORG_ID is the switch, and it is absent on purpose today.
+    Posting as the Page needs `w_organization_social`, which only the vetted
+    Community Management product grants — that request was denied and is
+    under appeal. The self-serve route grants `w_member_social`, which
+    authors as a person.
+
+    So this reads as a capability check rather than a mode flag: set
+    LINKEDIN_ORG_ID when the Page access lands and posting moves to the Page
+    with no code change. Until then it is a profile, and that is announced
+    at publish time rather than inferred from silence — posting to the wrong
+    author is not something to discover from the feed.
+    """
+    org = os.environ.get("LINKEDIN_ORG_ID")
+    if org:
+        return f"urn:li:organization:{org}"
+    urn = person_urn(token)
+    print(f"[linkedin] LINKEDIN_ORG_ID unset — authoring as {urn} "
+          f"(a member profile, NOT the Pursuit AI Page)")
+    return urn
+
+
 def post_image(repo_rel_path, commentary, alt_text=None):
     """Publish a single-image post to the Page. Returns {"id", "url"}."""
     token = os.environ["LINKEDIN_ACCESS_TOKEN"]
-    org_urn = f"urn:li:organization:{os.environ['LINKEDIN_ORG_ID']}"
-    image_urn = upload_image(repo_rel_path, token, org_urn)
+    # One URN for both the asset owner and the post author. They MUST match:
+    # "For images with member URN owners, the caller needs to match the
+    # image owner" — a mismatch is a 403 at publish, after the upload.
+    author = author_urn(token)
+    image_urn = upload_image(repo_rel_path, token, author)
 
     payload = {
-        "author": org_urn,
+        "author": author,
         "commentary": commentary,
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
@@ -499,11 +565,13 @@ def post_media(repo_rel_path, commentary, alt_text=None):
 def post_video(repo_rel_path, commentary, title=None):
     """Publish a single-video post to the Page. Returns {"id", "url"}."""
     token = os.environ["LINKEDIN_ACCESS_TOKEN"]
-    org_urn = f"urn:li:organization:{os.environ['LINKEDIN_ORG_ID']}"
-    video_urn = upload_video(repo_rel_path, token, org_urn)
+    # Same rule as images: "For videos with member URN owners, the caller
+    # needs to match the video owner."
+    author = author_urn(token)
+    video_urn = upload_video(repo_rel_path, token, author)
 
     payload = {
-        "author": org_urn,
+        "author": author,
         "commentary": commentary,
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",

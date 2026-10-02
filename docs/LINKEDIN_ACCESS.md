@@ -202,6 +202,67 @@ so a pass is evidence about the real path rather than a parallel one.
 
 ---
 
+## MEMBER POSTING IS PROVEN — live, 2026-10-02
+
+Run against a real `w_member_social` token on app `78r1pxbwy1a5mg`:
+
+```
+[1] token valid — Aqeel Butt → urn:li:person:S8tpf7RIhR
+[2] scope w_member_social granted · token has 59 days left
+[3] uploaded and AVAILABLE: urn:li:image:D4E10AQEzimgJkzAJsw — no post created
+```
+
+**The versioned `/rest` surface accepts a person-owned upload and lets a
+`w_member_social` token read the status back.** So the member path is a
+one-field change: `author` and the asset `owner` become the Person URN. The
+Images API, the AVAILABLE poll and the `x-restli-id` read all carry over,
+and the legacy `/v2/ugcPosts` implementation is NOT needed.
+
+**Documentation discrepancy, recorded not designed around.** The Images doc
+states: *"`w_member_social` permission are write-only and tokens with only
+`w_member_social` permissions would be unable to perform a GET call for
+rest/images."* That token performed exactly that GET and got `AVAILABLE`.
+Observed behaviour wins; if LinkedIn ever enforces the documented
+restriction, `_await_available` is where it will surface, as a 403.
+
+### The bug this uncovered — latent since August
+
+The first live run failed with `Syntax exception in path variables` (400)
+on the status poll. Cause: `_await_available` built
+`GET /rest/images/urn:li:image:...` **unencoded**, while we send
+`X-Restli-Protocol-Version: 2.0.0`, which requires path keys be encoded.
+
+Two things made it survive two months unnoticed:
+
+* The Images doc's GET sample shows the URN raw — but that sample also
+  omits the protocol header. The Videos doc, which keeps the header, shows
+  the encoded form. Following one sample literally while sending the other
+  one's headers is what produced the bug.
+* This file recorded the LinkedIn app as "validated" on 2026-08-27. What
+  actually ran that day was `--check-app`, which never touches the upload
+  path. A confident-sounding note was mistaken for evidence, and the
+  encoding bug would have failed the FIRST real post on either route.
+
+### How authorship is configured
+
+`LINKEDIN_ORG_ID` is the switch, and its absence is the current state:
+
+| `LINKEDIN_ORG_ID` | author | route |
+|---|---|---|
+| unset | `urn:li:person:…`, derived from the token | B — member, live now |
+| set | `urn:li:organization:…` | A — the Page, when the appeal lands |
+
+The person URN is derived from `/v2/userinfo` rather than stored, so there
+is no second secret to drift out of sync with the token — getting it wrong
+would mean posting as somebody else. The asset `owner` and the post
+`author` always come from the same call, because *"the caller needs to
+match the image owner"* and a mismatch is a 403 AFTER the upload is spent.
+
+Publishing as a member prints the author URN, so posting to a profile when
+someone meant the Page is announced rather than discovered from the feed.
+
+---
+
 ## The self-serve route: member posting (verified 2026-10-02)
 
 After the rejection, a second route was checked against the docs. It is real,

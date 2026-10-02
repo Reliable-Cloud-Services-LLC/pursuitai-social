@@ -407,21 +407,47 @@ def check_member(tok, do_upload, explicit_file):
         urn = post_linkedin.upload_image(rel, tok, person_urn)
     except post_linkedin.LinkedInError as e:
         print(f"  ✗ {e}")
-        print("\n    VERDICT: the versioned /rest surface REFUSED a "
-              "person-owned upload.\n"
-              "    The member path must use the legacy endpoints the Share "
-              "on LinkedIn\n"
-              "    docs describe — /v2/assets?action=registerUpload then "
-              "/v2/ugcPosts.\n"
-              "    That is a separate implementation, not a field swap.")
+        # WHERE it failed is the whole answer, and an earlier version of
+        # this mode threw that away: it printed "the versioned surface
+        # REFUSED a person-owned upload" for ANY failure, including one
+        # three calls deep. On 2026-10-02 that fired on a status-poll bug
+        # of ours and would have sent us to build the wrong implementation
+        # — which is the exact mistake the probe exists to prevent.
+        stage = str(e).split(" failed")[0]
+        if stage.startswith("image upload initialization"):
+            print("\n    VERDICT: the versioned /rest surface refused to "
+                  "REGISTER a person-owned upload.\n"
+                  "    The member path needs the legacy endpoints — "
+                  "/v2/assets?action=registerUpload\n"
+                  "    then /v2/ugcPosts. A separate implementation, not a "
+                  "field swap.")
+        elif stage.startswith("image status"):
+            print("\n    VERDICT: INCONCLUSIVE — and specifically NOT a "
+                  "refusal.\n"
+                  "    initializeUpload and the byte upload both SUCCEEDED, "
+                  "so the versioned\n"
+                  "    surface does accept a person-owned upload. Only "
+                  "reading the result back\n"
+                  "    failed. LinkedIn documents that `w_member_social` is "
+                  "write-only for\n"
+                  "    versioned GETs, so a 403 here is expected and means "
+                  "the upload is fine\n"
+                  "    but unverifiable; a 400 is more likely our own "
+                  "request being malformed.")
+        else:
+            print(f"\n    VERDICT: failed at `{stage}` — read the error "
+                  f"above before\n"
+                  f"    concluding anything about which implementation to "
+                  f"build.")
         sys.exit(1)
     ok(f"uploaded and AVAILABLE: {urn} — no post was created")
     print("\n    VERDICT: the versioned /rest surface ACCEPTS a person-owned "
-          "upload.\n"
-          "    post_linkedin.py works for members by swapping the author URN "
-          "— the\n"
-          "    Images API, the AVAILABLE poll and the x-restli-id read all "
-          "carry over.")
+          "upload AND\n"
+          "    lets this token read the status back. post_linkedin.py works "
+          "for members by\n"
+          "    swapping the author URN — Images API, the AVAILABLE poll and "
+          "the x-restli-id\n"
+          "    read all carry over.")
     print("\nMember chain validated. 🚀")
 
 
