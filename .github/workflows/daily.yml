@@ -367,7 +367,7 @@ jobs:
           fi
           python engine/run.py --approve --expect "$EXPECT"
 
-      - name: Publish to X + Instagram
+      - name: Publish to X, Instagram + LinkedIn
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
@@ -377,6 +377,17 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          # LinkedIn. run.py's POSTERS gates the channel on
+          # LINKEDIN_ACCESS_TOKEN, and this step never passed it — so every
+          # run since the channel was built logged "skipped: not set",
+          # whatever the repository secret held. A credential the publish
+          # step cannot see is the same as no credential.
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          # Deliberately passed while UNSET. Absent means author as the
+          # member, which is the state today; setting the secret moves
+          # posting to the Page with no workflow edit when the vetting
+          # appeal lands. An unset secret arrives as "", which is falsy.
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
           SKIP: ${{ inputs.skip }}
         run: |
           args=""

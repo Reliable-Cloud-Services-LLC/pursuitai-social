@@ -225,6 +225,40 @@ python scripts/validate_linkedin.py --member --upload --file <ad>.mp4
 
 ---
 
+## The channel was wired everywhere EXCEPT the publish step
+
+Found 2026-10-02 while setting the repository secrets. The publish step was
+named `Publish to X + Instagram` and passed no LinkedIn credentials at all.
+`run.py`'s `POSTERS` gates the channel on `LINKEDIN_ACCESS_TOKEN`, so with
+that variable absent from the step's env it skipped on EVERY run:
+
+```
+2026-09-24  card        linkedin=skipped  LINKEDIN_ACCESS_TOKEN not set
+2026-09-30  screenshot  linkedin=skipped  LINKEDIN_ACCESS_TOKEN not set
+2026-10-01  card        linkedin=skipped  LINKEDIN_ACCESS_TOKEN not set
+```
+
+The repository secret existed. A credential the publish step cannot see is
+the same as no credential.
+
+Four PRs built this channel — Images API, Videos API, member authorship, a
+live-proven upload — and none of them could ever have fired. Nothing failed;
+the suite was green throughout, because every test asserted on code and the
+gap was in the wiring between the code and its credentials.
+
+**The guard that was missing** is now
+`test_every_channel_gate_reaches_the_publish_step`, which derives the check
+from `POSTERS` rather than a hand-maintained list, so a new channel cannot be
+added without its credential being wired. The old test split the workflow on
+the step's TITLE and asserted against a hardcoded list of secrets — adding a
+third channel updated neither.
+
+`LINKEDIN_ORG_ID` is passed to the step while deliberately UNSET: absent
+means author as the member, and setting the secret later moves posting to
+the Page with no workflow edit.
+
+---
+
 ## MEMBER POSTING IS PROVEN — live, 2026-10-02
 
 Run against a real `w_member_social` token on app `78r1pxbwy1a5mg`:
