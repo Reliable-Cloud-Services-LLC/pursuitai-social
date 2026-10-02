@@ -149,6 +149,76 @@ publishes to our own Page. There is no honest screencast to record.
 
 ---
 
+## The self-serve route: member posting (verified 2026-10-02)
+
+After the rejection, a second route was checked against the docs. It is real,
+it needs no review at all, and it has one hard limitation.
+
+### Posting to the PAGE self-serve is impossible
+
+[Getting Access](https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access)
+carries the complete list of permissions obtainable without approval:
+
+> **Open Permissions (Consumer)** … "Open Permissions are the only
+> permissions that are available to all developers without special
+> approval."
+
+| Product | Permission |
+|---|---|
+| Sign in with LinkedIn (OIDC) | `profile` |
+| Sign in with LinkedIn (OIDC) | `email` |
+| **Share on LinkedIn** | **`w_member_social`** |
+
+`w_organization_social` is not on it. It exists only inside the vetted
+Community Management API.
+
+**Being a Page ADMINISTRATOR does not substitute.** The role is checked in
+ADDITION to the scope, never instead of it — the Posts API error table says a
+403 means "Ensure the required OAuth scope (`w_organization_social`, …) is
+granted **and** that the authenticated member has the necessary company page
+role." We hold the second condition and cannot obtain the first self-serve.
+
+So the self-serve route authors as `urn:li:person:{id}`. That is a product
+decision — posts come from a person, not the brand — not an implementation
+detail to be worked around later.
+
+### What it costs and what it buys
+
+- **No review.** [Share on LinkedIn](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin):
+  "add the Share on LinkedIn product which will grant you `w_member_social`."
+- **Rate limit 150/member/day**, against our 3–5.
+- **Still 60 days.** Token lifespan is a property of LinkedIn OAuth, not of
+  the tier, so the human re-authorization step is unchanged.
+
+### THE TRAP: it burns the app for Community Management
+
+The Community Management API must be the ONLY product on its application.
+Adding Share on LinkedIn to an app permanently disqualifies that app from
+ever requesting CMA. **Route A and Route B need two separate apps.**
+
+### The one thing the docs do not answer
+
+The versioned Posts API lists `w_member_social` in its own permissions table
+and documents `author` as "Person URN or Organization URN" — so on paper
+`post_linkedin.py` works for a member by swapping one field. But the Share on
+LinkedIn documentation describes the LEGACY endpoints (`/v2/ugcPosts`,
+`/v2/assets?action=registerUpload`), and nothing states whether an app
+holding only the self-serve product may call the versioned `/rest/*` surface.
+
+One is a field swap; the other is a separate implementation. Rather than
+guess, ask LinkedIn:
+
+```bash
+export LINKEDIN_ACCESS_TOKEN=...          # from the Share on LinkedIn app
+python scripts/validate_linkedin.py --member --upload
+```
+
+The image upload is the probe: it exercises the versioned surface with a
+person-owned asset and publishes nothing, because an uploaded image attached
+to no post appears nowhere. The command prints a VERDICT either way.
+
+---
+
 ## The Development tier application
 
 Submit at **My Apps → your app → Products → Community Management API**.

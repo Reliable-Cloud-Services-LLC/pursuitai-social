@@ -65,6 +65,11 @@ def main():
     ap.add_argument("--file", metavar="REPO_REL_PATH",
                     help="image to upload with --upload; defaults to the "
                          "newest LinkedIn card")
+    ap.add_argument("--member", action="store_true",
+                    help="validate the MEMBER posting chain (Share on "
+                         "LinkedIn / w_member_social) instead of the Page "
+                         "chain. Posts would author as a person, not the "
+                         "organization — see docs/LINKEDIN_ACCESS.md.")
     args = ap.parse_args()
 
     if args.check_app:
@@ -74,6 +79,8 @@ def main():
         "LINKEDIN_ACCESS_TOKEN not set")
     if args.discover:
         return discover(tok, args.ttl_seconds)
+    if args.member:
+        return check_member(tok, args.upload, args.file)
     org_id = os.environ.get("LINKEDIN_ORG_ID") or fail(
         "LINKEDIN_ORG_ID not set")
     org_urn = f"urn:li:organization:{org_id}"
@@ -290,6 +297,125 @@ def check_app():
 
     print("\nApp credentials look right. Next: mint an access token, then "
           "run --discover.")
+
+
+# ---------------------------------------------------------------------------
+# Member (Share on LinkedIn) chain
+# ---------------------------------------------------------------------------
+
+# The ONE thing LinkedIn's documentation does not answer, and the reason this
+# mode exists.
+#
+# Share on LinkedIn is self-serve and grants w_member_social — verified in
+# the Open Permissions table on
+# learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access,
+# which states plainly: "Open Permissions are the only permissions that are
+# available to all developers without special approval."
+#
+# The versioned Posts API lists w_member_social in its OWN permissions table
+# and documents `author` as "Person URN or Organization URN". So on paper our
+# existing post_linkedin.py works for a member by swapping one field.
+#
+# BUT the Share on LinkedIn documentation describes the LEGACY endpoints
+# (/v2/ugcPosts, /v2/assets?action=registerUpload), and nothing states
+# whether an app holding ONLY the self-serve product may call the VERSIONED
+# /rest/* surface. Those are two different implementations — one is a field
+# swap, the other is a day of work — and guessing wrong means writing the
+# wrong one.
+#
+# This asks LinkedIn instead of guessing. The image upload is the honest
+# probe: it exercises the versioned surface with a person-owned asset and
+# costs nothing visible, because an uploaded image that is never attached to
+# a post appears nowhere.
+MEMBER_SCOPE = "w_member_social"
+
+
+def person_urn_from(userinfo):
+    """Person URN from an OpenID Connect userinfo payload.
+
+    `sub` IS the member id, asked of the API rather than read off a profile
+    URL — that carries a vanity slug (`/in/aqeelbutt`), not the id, and a
+    URN built from a slug is silently wrong rather than loudly invalid.
+
+    Raises instead of returning None: a missing `sub` means the token lacks
+    the `profile` scope, and continuing would build "urn:li:person:None" and
+    surface it as an opaque 400 from LinkedIn three calls later.
+    """
+    sub = (userinfo or {}).get("sub")
+    if not sub:
+        raise ValueError(
+            "userinfo returned no `sub` — the token lacks the `profile` "
+            "scope, so the Person URN cannot be resolved. Re-mint the token "
+            "with `profile` ticked alongside w_member_social.")
+    return f"urn:li:person:{sub}"
+
+
+def check_member(tok, do_upload, explicit_file):
+    """Validate the member chain WITHOUT publishing anything."""
+    print(f"[0] pinned API version {post_linkedin.LINKEDIN_VERSION}")
+
+    print("[1] token validity + person URN")
+    r = requests.get("https://api.linkedin.com/v2/userinfo",
+                     headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+    if r.status_code != 200:
+        fail(f"token rejected ({r.status_code}): {r.text[:200]}")
+    info = r.json() or {}
+    try:
+        person_urn = person_urn_from(info)
+    except ValueError as e:
+        fail(str(e))
+    ok(f"token valid — {info.get('name', 'unknown')} → {person_urn}")
+
+    print("[2] scope")
+    days, status, scopes = post_linkedin.token_state()
+    if scopes:
+        if MEMBER_SCOPE in scopes:
+            ok(f"scope {MEMBER_SCOPE} granted")
+        else:
+            fail(f"token lacks {MEMBER_SCOPE}. Granted: {', '.join(scopes)}. "
+                 f"Add the Share on LinkedIn product, then re-mint.")
+    else:
+        print("    (no client credentials for introspection — scope "
+              "unverified; a 403 at step 3 is what it would have told you)")
+    if status not in ("unknown", "active"):
+        fail(f"LinkedIn reports this token as {status.upper()}.")
+    if days is not None and days < MIN_DAYS:
+        fail(f"token expires in {days} day(s) — it cannot carry the "
+             f"schedule. Re-authorize first.")
+    elif days is not None:
+        ok(f"token has {days} days left")
+
+    if not do_upload:
+        print("\nToken and scope look right. Re-run with --upload to answer "
+              "the question that\nmatters: whether the VERSIONED Images API "
+              "accepts a person-owned upload.")
+        return
+
+    print("[3] versioned Images API with a person owner (nothing is posted)")
+    rel = explicit_file or _newest_card()
+    if not rel:
+        fail("no LinkedIn card to upload — render one, or pass --file")
+    ok(f"target: {rel}")
+    try:
+        urn = post_linkedin.upload_image(rel, tok, person_urn)
+    except post_linkedin.LinkedInError as e:
+        print(f"  ✗ {e}")
+        print("\n    VERDICT: the versioned /rest surface REFUSED a "
+              "person-owned upload.\n"
+              "    The member path must use the legacy endpoints the Share "
+              "on LinkedIn\n"
+              "    docs describe — /v2/assets?action=registerUpload then "
+              "/v2/ugcPosts.\n"
+              "    That is a separate implementation, not a field swap.")
+        sys.exit(1)
+    ok(f"uploaded and AVAILABLE: {urn} — no post was created")
+    print("\n    VERDICT: the versioned /rest surface ACCEPTS a person-owned "
+          "upload.\n"
+          "    post_linkedin.py works for members by swapping the author URN "
+          "— the\n"
+          "    Images API, the AVAILABLE poll and the x-restli-id read all "
+          "carry over.")
+    print("\nMember chain validated. 🚀")
 
 
 # Entry point LAST, deliberately. Python executes a module top to bottom, so
