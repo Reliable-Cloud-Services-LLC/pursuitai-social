@@ -63,8 +63,10 @@ def main():
                     help="token TTL from the portal's Token Details, used "
                          "with --discover to compute the expiry timestamp")
     ap.add_argument("--file", metavar="REPO_REL_PATH",
-                    help="image to upload with --upload; defaults to the "
-                         "newest LinkedIn card")
+                    help="image OR video to upload with --upload; defaults "
+                         "to the newest LinkedIn card. Pass an `ad` mp4 to "
+                         "exercise the Videos API, which is the half with "
+                         "multipart upload and a transcode to fail at.")
     ap.add_argument("--member", action="store_true",
                     help="validate the MEMBER posting chain (Share on "
                          "LinkedIn / w_member_social) instead of the Page "
@@ -155,11 +157,16 @@ def main():
         if not rel:
             fail("no LinkedIn card to upload — render one, or pass --file")
         ok(f"target: {rel}")
+        # upload_media, not upload_image: an `ad` is an .mp4 and goes
+        # through the Videos API — multipart upload, finalize, transcode.
+        # That is the half most likely to break, so it is the half worth
+        # proving, and proving it on the images path would prove nothing.
         try:
-            urn = post_linkedin.upload_image(rel, tok, org_urn)
+            urn = post_linkedin.upload_media(rel, tok, org_urn)
         except post_linkedin.LinkedInError as e:
             fail(str(e))
-        ok(f"uploaded and AVAILABLE: {urn} — no post was created")
+        kind = "video" if post_linkedin.is_video(rel) else "image"
+        ok(f"{kind} uploaded and AVAILABLE: {urn} — no post was created")
 
     print("\nAll checks passed — the LinkedIn chain is ready. 🚀")
 

@@ -149,6 +149,59 @@ publishes to our own Page. There is no honest screencast to record.
 
 ---
 
+## Video (the `ad` format) — built 2026-10-02, UNPROVEN AGAINST LIVE API
+
+`ad` is 1 post in 4. Until now every LinkedIn post went through
+`post_image`, whose `check_image` accepts only jpg/jpeg/png/gif — so a
+quarter of the calendar could never reach LinkedIn. `post_media` now
+dispatches on the file suffix and `ad` goes through the
+[Videos API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api),
+which is a different API from Images rather than a variant of it:
+
+1. `POST /rest/videos?action=initializeUpload` with `fileSizeBytes` →
+   returns a video URN, an `uploadToken`, and per-part byte ranges.
+2. `PUT` each range. **The response ETag is that part's id.**
+3. `POST /rest/videos?action=finalizeUpload` with the ids IN ORDER.
+4. Poll `GET /rest/videos/{url-encoded urn}` until `AVAILABLE`.
+
+Three places the documentation contradicts itself, each handled:
+
+* **Part size.** The prose says `split -b 4194303` while the instructions
+  describe parts as `0 - 4194303` INCLUSIVE, which is 4194304 bytes. The
+  code slices from the ranges LinkedIn sends, never a constant. A part of
+  the wrong length uploads cleanly, finalizes cleanly, and yields a corrupt
+  video with no error to read.
+* **ETag form.** The schema shows a quoted hex digest; the live sample
+  shows an unquoted `/ambry-video/signedId/…bin` path. Surrounding quotes
+  are stripped when present and anything else passes through.
+* **Size cap.** The specifications say 75kb–500MB; the schema table says
+  5GB. The tighter bound is enforced — our ads are a few MB, so the choice
+  costs nothing.
+
+**Duration is NOT checked locally.** LinkedIn requires 3s–30min, measuring
+needs ffprobe, and the publish job has no ffmpeg (only prepare installs
+it). `adspot.SCENES` totals ~14.2s before narration scaling, so our ads sit
+an order of magnitude clear of the floor. If that changes, LinkedIn reports
+`PROCESSING_FAILED` and the error carries its `processingFailureReason`
+verbatim — which the image path has no equivalent of.
+
+### This has never run against LinkedIn
+
+There is no token, so it is built from the specification and tested against
+a fake that answers in the documented shapes. That is NOT the same as
+working. Prove it in one command as soon as a token exists — it uploads for
+real and publishes nothing:
+
+```bash
+export LINKEDIN_ACCESS_TOKEN=... LINKEDIN_ORG_ID=...
+python scripts/validate_linkedin.py --upload --file assets/video/pipeline_ad.mp4
+```
+
+`--upload` routes through `upload_media`, the same function publish calls,
+so a pass is evidence about the real path rather than a parallel one.
+
+---
+
 ## The self-serve route: member posting (verified 2026-10-02)
 
 After the rejection, a second route was checked against the docs. It is real,
