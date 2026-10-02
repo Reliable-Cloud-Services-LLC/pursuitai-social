@@ -70,3 +70,40 @@ def test_member_mode_never_publishes():
     member_half = source[source.index("def check_member("):]
     assert "post_image" not in member_half, \
         "the member validator must never call the publishing path"
+
+
+def test_member_mode_uploads_through_the_dispatcher():
+    """An `ad` is an .mp4 and must go through the Videos API.
+
+    The org-mode branch was switched to upload_media when the Videos API
+    landed; this one was not, because that edit used a plain .replace() with
+    no assert and silently did nothing. The result was that
+    `--member --upload --file <ad>.mp4` was refused LOCALLY by check_image
+    and never reached LinkedIn — a validator proving a path the publish job
+    does not take proves nothing.
+    """
+    src = open(os.path.join(ROOT, "scripts", "validate_linkedin.py")).read()
+    block = src[src.index("def check_member("):]
+    live = "\n".join(l for l in block.splitlines()
+                     if not l.strip().startswith("#"))
+    assert "upload_media" in live
+    assert "upload_image" not in live
+
+
+def test_the_verdict_names_the_api_it_exercised():
+    """Saying "Images API" after a video run is the same class of mistake as
+    captioning a screenshot "card" in the review message — a label matters
+    exactly when someone reads it to decide something."""
+    src = open(os.path.join(ROOT, "scripts", "validate_linkedin.py")).read()
+    block = src[src.index("def check_member("):]
+    assert 'kind = "Videos" if post_linkedin.is_video' in block
+    assert "{kind} API ACCEPTS" in block
+
+
+def test_the_part_count_is_reported():
+    """The multipart path can corrupt a video silently — a mis-sliced part
+    uploads and finalizes cleanly. Logging the part count is what turned
+    "it probably used one part" into a verified two."""
+    src = open(os.path.join(ROOT, "engine", "post_linkedin.py")).read()
+    block = src[src.index("def upload_video("):]
+    assert "part(s)" in block[:block.index("\ndef ")]

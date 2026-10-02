@@ -398,13 +398,19 @@ def check_member(tok, do_upload, explicit_file):
               "accepts a person-owned upload.")
         return
 
-    print("[3] versioned Images API with a person owner (nothing is posted)")
+    # upload_media, not upload_image — the same dispatcher publish uses. The
+    # org-mode branch above was switched when the Videos API landed and this
+    # one was not, so `--member --upload --file <ad>.mp4` was refused locally
+    # by check_image and never reached LinkedIn at all. Proving the chain on
+    # a path the publish job does not take proves nothing.
+    kind = "Videos" if post_linkedin.is_video(explicit_file) else "Images"
+    print(f"[3] versioned {kind} API with a person owner (nothing is posted)")
     rel = explicit_file or _newest_card()
     if not rel:
         fail("no LinkedIn card to upload — render one, or pass --file")
     ok(f"target: {rel}")
     try:
-        urn = post_linkedin.upload_image(rel, tok, person_urn)
+        urn = post_linkedin.upload_media(rel, tok, person_urn)
     except post_linkedin.LinkedInError as e:
         print(f"  ✗ {e}")
         # WHERE it failed is the whole answer, and an earlier version of
@@ -414,14 +420,15 @@ def check_member(tok, do_upload, explicit_file):
         # of ours and would have sent us to build the wrong implementation
         # — which is the exact mistake the probe exists to prevent.
         stage = str(e).split(" failed")[0]
-        if stage.startswith("image upload initialization"):
+        if stage.startswith(("image upload initialization",
+                             "video upload initialization")):
             print("\n    VERDICT: the versioned /rest surface refused to "
                   "REGISTER a person-owned upload.\n"
                   "    The member path needs the legacy endpoints — "
                   "/v2/assets?action=registerUpload\n"
                   "    then /v2/ugcPosts. A separate implementation, not a "
                   "field swap.")
-        elif stage.startswith("image status"):
+        elif stage.startswith(("image status", "video status")):
             print("\n    VERDICT: INCONCLUSIVE — and specifically NOT a "
                   "refusal.\n"
                   "    initializeUpload and the byte upload both SUCCEEDED, "
@@ -441,13 +448,17 @@ def check_member(tok, do_upload, explicit_file):
                   f"build.")
         sys.exit(1)
     ok(f"uploaded and AVAILABLE: {urn} — no post was created")
-    print("\n    VERDICT: the versioned /rest surface ACCEPTS a person-owned "
-          "upload AND\n"
-          "    lets this token read the status back. post_linkedin.py works "
-          "for members by\n"
-          "    swapping the author URN — Images API, the AVAILABLE poll and "
-          "the x-restli-id\n"
-          "    read all carry over.")
+    # Name the API that was actually exercised. Saying "Images API" after a
+    # video run is the same class of mistake as captioning a screenshot
+    # "card" in the review message: a label is load-bearing precisely when
+    # someone is reading it to decide something.
+    print(f"\n    VERDICT: the versioned /rest {kind} API ACCEPTS a "
+          f"person-owned upload AND\n"
+          f"    lets this token read the status back. post_linkedin.py works "
+          f"for members by\n"
+          f"    swapping the author URN — upload, the AVAILABLE poll and the "
+          f"x-restli-id read\n"
+          f"    all carry over.")
     print("\nMember chain validated. 🚀")
 
 

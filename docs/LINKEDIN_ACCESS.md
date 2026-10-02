@@ -185,20 +185,43 @@ an order of magnitude clear of the floor. If that changes, LinkedIn reports
 `PROCESSING_FAILED` and the error carries its `processingFailureReason`
 verbatim — which the image path has no equivalent of.
 
-### This has never run against LinkedIn
+### PROVEN LIVE 2026-10-02
 
-There is no token, so it is built from the specification and tested against
-a fake that answers in the documented shapes. That is NOT the same as
-working. Prove it in one command as soon as a token exists — it uploads for
-real and publishes nothing:
+Run against a real `w_member_social` token, twice, uploading for real and
+publishing nothing:
 
-```bash
-export LINKEDIN_ACCESS_TOKEN=... LINKEDIN_ORG_ID=...
-python scripts/validate_linkedin.py --upload --file assets/video/pipeline_ad.mp4
+```
+# the shipping artifact — 14.17s, 1080x1080 h264, 893KB
+[linkedin] uploading 893,252 bytes in 1 part(s)
+✓ uploaded and AVAILABLE: urn:li:video:D4E10AQFti5koQoyt0w
+
+# a 42.5s loop, deliberately over the 4MiB part boundary
+[linkedin] uploading 5,972,766 bytes in 2 part(s)
+✓ uploaded and AVAILABLE: urn:li:video:D4E10AQHwegsO2w2PuA
 ```
 
-`--upload` routes through `upload_media`, the same function publish calls,
-so a pass is evidence about the real path rather than a parallel one.
+The second run is the one that mattered. At 893KB the real ad is a SINGLE
+part, so it never touches byte-range slicing, multiple ETags, or finalize
+ordering — the three things most likely to be silently wrong. The looped
+file forces two parts, and reaching AVAILABLE proves the reassembly was
+byte-correct: a mis-sliced part uploads and finalizes cleanly, then fails
+the transcode. It did not.
+
+The part count is now printed by `upload_video` — in the publish log as
+well as the validator — because "it probably used one part" is not a fact.
+
+Still unproven: **narration surviving LinkedIn's transcode.** The local
+render is silent (no torch/kokoro/misaki/spaCy on this machine), and the
+Videos API handles bytes, so audio is irrelevant to upload, finalize and
+transcode. Only a CI-rendered ad would close that, and the first scheduled
+`ad` does it for free.
+
+To re-prove after any change:
+
+```bash
+export LINKEDIN_ACCESS_TOKEN=...          # LINKEDIN_ORG_ID optional
+python scripts/validate_linkedin.py --member --upload --file <ad>.mp4
+```
 
 ---
 
