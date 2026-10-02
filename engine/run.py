@@ -606,8 +606,16 @@ def notify_pending():
     # previous render of a post that had just been fixed.
     media_url = (media.public_url(rel, cache_bust=True)
                  if base and rel else None)
+    # The LinkedIn asset is the x-variant, which for an `ad` is the VIDEO —
+    # deliberately not poster_for()'d like media_url above. The image block
+    # needs something Slack will render; this link needs the real file, which
+    # is what gets attached to the manual post.
+    li_rel = pending.get("media_linkedin")
+    linkedin_url = (media.public_url(li_rel, cache_bust=True)
+                    if base and li_rel else None)
     sent = notify.pending_review(pending, media_url=media_url,
-                                 review_url=os.environ.get("REVIEW_URL"))
+                                 review_url=os.environ.get("REVIEW_URL"),
+                                 linkedin_url=linkedin_url)
     if sent:
         print(f"[notify] review request sent for {pending['topic']}")
     else:
