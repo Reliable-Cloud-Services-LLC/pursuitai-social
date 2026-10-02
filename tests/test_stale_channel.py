@@ -174,11 +174,30 @@ def test_two_dark_days_fire(tmp_path):
     assert "2026-09-24" in message and "2026-09-25" in message
 
 
-def test_the_real_outage_would_have_been_caught_on_the_saturday():
-    """Against the actual post log, not a fixture. The outage began on
-    2026-09-24 and a human found it on the 29th; this fires on the 26th."""
-    stale, _ = stale_channel.check(REAL_LOG, today=SAT)
+def test_the_real_outage_would_have_been_caught_on_the_saturday(tmp_path):
+    """Against the REAL post log, sliced at the outage.
+
+    The outage began 2026-09-24 and a human found it on the 29th; the alarm
+    fires on the 26th. Real entries, real code path — but the slice matters:
+    the first version of this test read the live log, which passed when
+    written and FAILED IN CI four days later, because the 09-24 post was
+    approved in the meantime and the log it asserts about is appended to
+    every day. An assertion about a historical fact must not be read from a
+    file whose future changes can falsify it.
+    """
+    frozen = tmp_path / "posted.jsonl"
+    with open(REAL_LOG) as src, open(frozen, "w") as out:
+        for line in src:
+            if not line.strip():
+                continue
+            if json.loads(line).get("date", "") <= WED.isoformat():
+                out.write(line)
+    assert stale_channel.last_confirmed_post(str(frozen)) == WED, \
+        "the slice should end on the last pre-outage post"
+
+    stale, message = stale_channel.check(str(frozen), today=SAT)
     assert stale is True
+    assert "2026-09-24" in message and "2026-09-25" in message
 
 
 def test_the_threshold_never_fires_on_the_engines_real_history():
@@ -335,19 +354,32 @@ def test_heartbeat_verdicts(tmp_path, monkeypatch, entries, expect):
 WORKFLOWS = os.path.join(ROOT, ".github", "workflows")
 
 
-def _wf(name):
-    import yaml
-    with open(os.path.join(WORKFLOWS, name)) as f:
-        return yaml.safe_load(f)
+def _text(name):
+    return open(os.path.join(WORKFLOWS, name)).read()
 
 
-def _steps(doc):
-    return [s for job in doc["jobs"].values() for s in job.get("steps", [])]
+def _step_blocks(name):
+    """Workflow steps as raw text.
+
+    Deliberately NOT a YAML parse. test_workflow_config.py reads these files
+    as text for the same reason: a parser is a dependency, the repo keeps
+    those minimal, and the first version of this file added PyYAML to a
+    local venv and nowhere else — green locally, ModuleNotFoundError in CI.
+    """
+    marker = "      - name:"
+    parts = _text(name).split(marker)
+    return [marker + p for p in parts[1:]]
+
+
+def _step_with(name, needle):
+    for block in _step_blocks(name):
+        if needle in block:
+            return block
+    return None
 
 
 def test_the_alarm_is_wired_into_the_missed_run_workflow():
-    runs = "\n".join(s.get("run", "") for s in _steps(_wf("missed-run.yml")))
-    assert "stale_channel" in runs, \
+    assert _step_with("missed-run.yml", "stale_channel"), \
         "the module exists but nothing calls it — a monitor that never runs"
 
 
@@ -359,21 +391,22 @@ def test_the_alarm_does_not_live_in_the_daily_workflow():
     failure it was meant to report — which is exactly what happened to the
     review notification.
     """
-    runs = "\n".join(s.get("run", "") for s in _steps(_wf("daily.yml")))
-    assert "stale_channel" not in runs
+    assert "stale_channel" not in _text("daily.yml")
 
 
 def test_the_alarm_runs_even_when_the_same_day_check_failed():
     """The step before it exits 1 on a missed day. Without `if: always()`
     a dropped run would silence the dark-channel report — two failures,
     one of them swallowed by the other's exit code."""
-    step = next(s for s in _steps(_wf("missed-run.yml"))
-                if "stale_channel" in s.get("run", ""))
-    assert step.get("if") == "always()"
+    step = _step_with("missed-run.yml", "stale_channel")
+    assert "if: always()" in step
 
 
 def test_the_workflow_can_read_runs_for_the_diagnostic():
     """The approval-gate diagnostic needs `actions: read`. Without it the
     alarm still fires with the right verdict, but drops the one line that
     tells the operator what to click."""
-    assert _wf("missed-run.yml")["permissions"].get("actions") == "read"
+    text = _text("missed-run.yml")
+    perms = text[text.index("permissions:"):]
+    perms = perms[:perms.index("\njobs:")]
+    assert "actions: read" in perms
