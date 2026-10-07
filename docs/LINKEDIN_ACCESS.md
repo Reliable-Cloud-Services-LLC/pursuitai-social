@@ -819,6 +819,53 @@ blocked API access.
 
 ---
 
+## Attempt 2 — SUBMITTED 2026-10-07 (route A)
+
+The first application where every Development-tier criterion corroborates
+every other. Attempt 1 failed with four fields that pointed at four
+different things; this one points at one organization throughout.
+
+| Review criterion | Attempt 1 | Attempt 2 |
+|---|---|---|
+| Approved use case | (not recorded) | **Direct Advertiser** — "manage only owned and operated LinkedIn activity/data streams" |
+| Verified business email address | never verified; denial went to a personal address | **`aqeel@reliablecloudllc.com` — verified 2026-10-07** |
+| Verified organization | RELIABLE CLOUD SERVICES, L.L.C. (ACTIVE, W19522465) | same |
+| Verified organization website + domain | pursuitai.net — named no RCS entity | **reliablecloudllc.com** + `/privacy.html`, which names the entity |
+| App verified by Page of same organization | `company/pursuit-ai` — not an RCS Page | **`company/reliable-cloud-services`** |
+
+App: **Reliable Cloud Services Social Publisher**, Page association
+**irreversible** and set to the RCS Page. Other use case declared: Page
+management + Page analytics. Profile management and Employee advocacy
+deliberately NOT declared — permissions arrive with the PRODUCT, not the
+checkbox ("Once your API access is approved, the corresponding permissions
+are automatically granted to your application"), so a narrower declared
+intent costs no scope and keeps the review surface small.
+
+### Correction: the business email IS collected and verified separately
+
+An earlier revision of this file said the business-email field was not on
+the access request form. That was wrong — it is not on the *use-case* page,
+which is what made it look absent, but LinkedIn does collect it and sends
+its own verification mail, exactly as the docs say. Confirmed by receiving
+and completing that verification at the business address on 2026-10-07.
+
+### What is NOT yet confirmed
+
+- **Super-admin verification of the app by the RCS Page.** The criteria say
+  *"Ensure a **super admin** of the LinkedIn Page associated with your
+  organization has verified your application"*; the create-app form says
+  only "a Page Admin". Admin is not stated to be sufficient. This is a
+  separate action in the portal and it is the one remaining criterion.
+- Whether the Oct 2 appeal on attempt 1 ever gets a human response. Leave
+  it open: it is the only channel where a person reads the registry
+  evidence, and the access form has no free-text field to argue in.
+
+### Do not touch this app
+
+Community Management must be the only product, and a *pending* request
+counts. No Advertising API, no Events, nothing — see the Advertising API
+dead end recorded above.
+
 ## The whole sequence, in order
 
 Nothing below can be done out of order — each step's output is the next
