@@ -8,21 +8,31 @@ name: Missed-run alarm
 # the day just passes. The weekly heartbeat cannot see it; a Tuesday that
 # never happened would stay invisible until the next Monday.
 #
-# Runs at 17:07 UTC — 210 minutes after the 13:37 post window.
+# Runs at 17:07 UTC — 714 minutes after the 05:13 post window.
 #
-# That margin is set from OBSERVED delay, not a guess. Consecutive
-# scheduled runs queue late, and consistently:
+# That margin is set from OBSERVED delay, not a guess, and the observation
+# has been re-taken. The original band was 210 minutes, sized against a
+# delay measured in early August:
 #   2026-07-30  13:30 -> 15:28   118 min
 #   2026-07-31  13:30 -> 15:33   123 min
 #   2026-08-03  13:37 -> 16:05   148 min   (:37 did not spare it)
-# So ~2h is the TYPICAL delay here, not the worst case. An alarm at 16:05
-# (the first draft) left only ~25 minutes of headroom over typical — one
-# slower-than-usual morning and it cries wolf. An alarm that cries wolf is
-# worse than no alarm, because the next real one gets dismissed.
+# Those numbers are no longer true. Measured over 20 runs in 2026-10,
+# daily.yml queues min 171 / median 259 / max 456 minutes late — so 210
+# minutes is now BELOW typical. An alarm with negative headroom reports a
+# late run as a missing one, and an alarm that cries wolf is worse than no
+# alarm, because the next real one gets dismissed.
 #
-# 08-03 is the slower morning that draft was waiting for: the run was
-# created at 16:05:01Z, one second after the alarm's own slot. 210 minutes
-# absorbed it with an hour to spare, which is what the band is for.
+# It did not actually misfire, by luck rather than design: this alarm is
+# delayed by the same scheduler it is watching (123-322 min observed), so
+# its real check time drifted later in step with the thing it checks. That
+# is not a margin, it is a coincidence, and it would evaporate the first
+# time the two delays diverged.
+#
+# Moving the post to 05:13 restores the band by making it enormous: 714
+# minutes, against a worst-ever observed delay of 456. The alarm's own
+# delay now only adds to that. Keep the gap well clear of the measured
+# maximum, not of some remembered typical — see
+# test_the_alarm_runs_well_after_the_observed_delay, which enforces it.
 #
 # Also off the hour and off :30, per GitHub's own mitigation.
 
