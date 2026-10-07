@@ -340,8 +340,37 @@ carries the complete list of permissions obtainable without approval:
 | Sign in with LinkedIn (OIDC) | `email` |
 | **Share on LinkedIn** | **`w_member_social`** |
 
-`w_organization_social` is not on it. It exists only inside the vetted
-Community Management API.
+`w_organization_social` is not on it.
+
+**CORRECTION (2026-10-07): Community Management is not the only product that
+grants it.** [Increasing
+Access](https://learn.microsoft.com/en-us/linkedin/marketing/increasing-access)
+lists `w_organization_social` under BOTH Community Management and the
+**Advertising API**. That is a real second route, and it was checked
+properly before being ruled out — recorded here so nobody retraces it:
+
+- **It is vetted by the same gate.** [Ads
+  overview](https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads/ads-overview):
+  *"Advertising API | **Vetted Product** with development and standard
+  tiers"*, and *"API calls succeed only when made with correct
+  scopes/permissions assigned to the app after the vetting process."*
+  Switching products does not route around an ORGANISATION-level
+  verification failure.
+- **It requires an ad account we do not have.** *"Requires Enterprise or
+  Business Ad Account with one authenticated user as account
+  administrator"*, and quick-start step 2 has you map a nine-digit Campaign
+  Manager account id onto the app.
+- **The use case does not match.** The product is *"manage LinkedIn's
+  campaign management platform on behalf of clients"*; quick-start step 1
+  warns to check restrictions so the application *"is not rejected due to a
+  restricted use case"*. We post one organic card a day to our own Page.
+- **It would also forfeit the CM route on that app** — CM must be the only
+  product (see the dedicated-app prerequisite below), and a pending product
+  request counts.
+
+So the conclusion is unchanged, but for a better reason: the self-serve
+route authors as a member because every route to `w_organization_social`
+runs through the same vetting.
 
 **Being a Page ADMINISTRATOR does not substitute.** The role is checked in
 ADDITION to the scope, never instead of it — the Posts API error table says a
@@ -558,7 +587,7 @@ answer is no.
 
 ---
 
-## Attempt 1 — REJECTED 2026-08-30
+## Attempt 1 — REJECTED (portal 2026-08-30; email 2026-09-01)
 
 > "At this time we are unable to grant you Development Tier access to our
 > Community Management API for the following reason:
@@ -630,6 +659,79 @@ and active is the whole argument; it does not need a theory attached.
 
 Still worth doing regardless: submit the registry's punctuation verbatim.
 It costs nothing and removes one variable.
+
+### A THIRD theory, and unlike the first two it is documented (2026-10-07)
+
+The section above says the cause is unknown. It is now narrower than that.
+
+[Community Management App
+Review](https://learn.microsoft.com/en-us/linkedin/marketing/community-management-app-review)
+states the requirement outright:
+
+> "Be prepared to share your **business email address** … Your business
+> email address will have to be verified. … **Personal email addresses
+> won't pass the vetting process.**"
+
+and lists **"Verified business email address"** as its own line item in the
+Development-tier review criteria, separate from "Verified organization".
+
+**The evidence that this applies to us.** The denial for application
+`266127073` (CRM `015285037679362`) was emailed to
+**the owner's personal `@gmail.com` address**, and the
+`@reliablecloudllc.com` business address is NOT registered with LinkedIn, so it cannot
+have been verified against the app. Whatever went in the form field, no
+business email was ever verified for attempt 1. That criterion fails on its
+face.
+
+Not proven: that the form's business-email FIELD held the personal address.
+A denial notice may route to the account email regardless of what was typed.
+The decisive artefact would be a LinkedIn verification mail at
+`reliablecloudllc.com`, which was never received. Either way it is a
+blocker on the next attempt.
+
+**Consequence for the appeal filed 2026-10-02: it argues the wrong case.**
+It supplies SDAT registry evidence for an entity-registration question,
+and the appeal form has no business-email field — so if this is the
+failing criterion, no registry document can reach it.
+
+### The likelier shape of the problem: nothing corroborates anything
+
+Read the four review criteria against what attempt 1 actually presented:
+
+| criterion | what the reviewer saw |
+|---|---|
+| Verified business email address | a personal `@gmail.com` |
+| Verified organization | RELIABLE CLOUD SERVICES, L.L.C. — real and ACTIVE |
+| Verified organization website and domain | pursuitai.net — which names no RCS entity anywhere |
+| App verified by Page of the same organization | `company/pursuit-ai` ("Pursuit AI") — not an RCS Page |
+
+The entity is demonstrably registered. What is missing is any public thread
+tying THAT entity to this app, this website, this Page or this email. On
+that reading the denial is not "we could not find the registration" but
+**"we could not verify this applicant is that organization"** — which is
+also why a correct registry record did not help.
+
+This subsumes the website gap noted below and the email finding above; they
+are the same failure seen from different sides.
+
+**Two coherent ways out, and they differ on a decision already taken once:**
+
+- **A — apply as Reliable Cloud Services.** Entity RCS, website
+  `reliablecloudllc.com` (live; its own title reads "Reliable Cloud
+  Services"), business email `aqeel@reliablecloudllc.com`, app verified by
+  an RCS Page. Every field corroborates every other, and **nothing on
+  pursuitai.net changes** — so PursuitAI's public separation from RCS is
+  untouched.
+- **B — make pursuitai.net evidence the entity.** Name RCS as operating
+  entity on the site. Fixes the ToS counterparty gap too, but publicly ties
+  PursuitAI to RCS. The earlier reasoning that declaring RCS "does not
+  weaken the separation" held *because the legal name was a private
+  declaration*. B breaks that premise; A preserves it. Flagged as a
+  conflict, not a recommendation — it is a business decision.
+
+**Also unverified on our side:** the criteria say *"Ensure a **super
+admin** of the LinkedIn Page … has verified your application."* Admin is
+not stated to be sufficient. Check the role before attempt 2.
 
 ### Attempt 1 appeal — SUBMITTED 2026-10-02
 
