@@ -856,6 +856,21 @@ So for the first time every Development-tier criterion is met and they all
 point at the same organization. Nothing further is actionable on this
 application; it is now a review-queue wait.
 
+### LinkedIn sends NO acknowledgement on submission
+
+Do not read silence as a failed submission. Attempt 1's only correspondence
+was the OUTCOME ("Regarding your access request CRM:015285037679362"),
+emailed 2026-09-01 against prerequisites confirmed 08-27 and a portal
+rejection on 08-30 — so on the order of 2-5 days, with nothing at all at
+submission time. There is no published SLA; that precedent is the only
+figure we have.
+
+Revisiting the access-request survey link after completing it returns *"You
+have either already completed the survey or your session has expired"* with
+a 0% progress bar. That is the normal response to a finished survey, not
+evidence of a lost submission. The pending/in-review status on the app's
+Products tab is the place to confirm.
+
 ### What is NOT yet confirmed
 
 - Whether the Oct 2 appeal on attempt 1 ever gets a human response. Leave
