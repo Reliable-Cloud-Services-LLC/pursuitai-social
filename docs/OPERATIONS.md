@@ -21,7 +21,7 @@ _Last reviewed: 2026-08-27._
 | **LinkedIn** | Manual by necessity — no API access for a first-party publishing bot. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
 | **Facebook** | Not wired. |
 | **Rotation** | 23 of 24 topics publishable. `card → screenshot → card → ad`. |
-| **Cron** | Mon–Sat 13:37 UTC, `daily.yml`. Late is normal; dropped happens. |
+| **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
 
 The one blocked topic is `capability-statement` — **UNVERIFIABLE**, not
 pending work. Its central claim cannot be traced to a source, so it stays
@@ -66,23 +66,38 @@ GitHub documents it: *"The `schedule` event can be delayed during periods
 of high loads… If the load is sufficiently high enough, some queued jobs
 may be dropped."*
 
-Observed here, twice, almost identically:
+**Not one scheduled run has ever started on time**, and the lag is
+growing. Re-measured 2026-10-07 across all four crons in this repo:
 
-| date | cron | fired | late |
-|---|---|---|---|
-| 2026-07-30 | 13:30 | 15:28 | 118 min |
-| 2026-07-31 | 13:30 | 15:33 | 123 min |
+| week of | median delay |
+|---|---|
+| 2026-08-17 | 29 min |
+| 2026-08-24 | 86 min |
+| 2026-08-31 | **208 min** — step change, cause unknown |
+| 2026-09-28 | 299 min |
+| 2026-10-05 | 442 min |
 
-So ~2h is **typical**, not the tail. The missed-run alarm sits at 17:07 —
-210 minutes after the cron — because an alarm that cries wolf is worse
-than no alarm: the next real one gets dismissed.
+`daily.yml` alone, n=20: **min 171, median 259, max 456** minutes late.
+It is not specific to this workflow or this repo — `pursuit-ai`'s 04:00 UTC
+Sunday scan runs 78–248 min late too. The delay is in run CREATION, so
+nothing in the workflow file can shorten it.
+
+The response was to stop fighting it and give it room: the post cron moved
+from 13:37 to **05:13**, so even the worst delay ever measured still lands
+the review ping before 9 AM ET. The missed-run alarm sits at 17:07 —
+**714 minutes after the cron** — because an alarm that cries wolf is
+worse than no alarm: the next real one gets dismissed.
+
+This is a buffer, not a cure. If the median passes ~7h the buffer is spent,
+and the fix is to create the run over the API (`workflow_dispatch`) from a
+scheduler that honours a clock.
 
 **Do not "fix" a late run.** Only a *missing* one is a problem.
 
 ### …and some days it does not run at all
 
 On **2026-08-27** GitHub dropped *every* scheduled run for this repo — the
-post at 13:37 and the alarm at 17:07. No run records, no failures, no
+post (then at 13:37) and the alarm at 17:07. No run records, no failures, no
 incident on GitHub's status page. Nothing on our side had changed: cron
 intact, workflow `active`, default branch correct, YAML valid.
 

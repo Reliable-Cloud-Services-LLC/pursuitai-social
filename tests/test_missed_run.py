@@ -105,11 +105,17 @@ def test_the_query_is_scoped_to_today():
 # ---------- a LATE run is not a MISSING run ----------
 
 def test_the_alarm_runs_well_after_the_observed_delay():
-    """Two consecutive scheduled runs queued almost identically late:
-    118 min (2026-07-30) and 123 min (2026-07-31). So ~2h is TYPICAL here,
-    not the worst case, and the margin must clear typical by a wide band —
-    an alarm that cries wolf is worse than none, because the next real one
-    gets dismissed."""
+    """The margin must clear the measured WORST, not a remembered typical.
+
+    The first version of this test asserted >= 180, sized against 118 min
+    (2026-07-30) and 123 min (2026-07-31). Re-measured 2026-10-07 over 20
+    runs, daily.yml queues min 171 / median 259 / max 456 minutes late — so
+    the old threshold had fallen below typical, and a 13:37 post with a
+    17:07 alarm (210 min) would still have passed it while reporting late
+    runs as missing ones.
+
+    480 clears the worst delay ever observed here. If a future measurement
+    beats it, raise this and move the cron — do not lower it."""
     import re
     wf = open(os.path.join(ROOT, ".github", "workflows",
                            "missed-run.yml")).read()
@@ -118,9 +124,10 @@ def test_the_alarm_runs_well_after_the_observed_delay():
                               "daily.yml")).read()
     post_h, post_m = _cron_hm(daily)
     gap = (alarm_h * 60 + alarm_m) - (post_h * 60 + post_m)
-    assert gap >= 180, (
-        f"only {gap} min after the post window. Observed delay is ~123 "
-        f"min TYPICAL, so this leaves too little headroom.")
+    assert gap >= 480, (
+        f"only {gap} min after the post window. Measured delay is 259 min "
+        f"MEDIAN and 456 min MAX (2026-10-07, n=20), so this leaves too "
+        f"little headroom — a late run would be reported as a missing one.")
 
 
 def _cron_hm(workflow_text):

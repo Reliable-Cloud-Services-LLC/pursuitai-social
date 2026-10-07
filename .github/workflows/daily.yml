@@ -21,14 +21,58 @@ name: Daily social post
 # disabling the workflow in the Actions tab — also works and is faster).
 on:
   schedule:
-    # 13:37 UTC = 9:37 AM ET — still the B2B engagement window, but OFF the
-    # half hour. GitHub: "The schedule event can be delayed during periods
-    # of high loads... High load times include the start of every hour" and
-    # "If the load is sufficiently high enough, some queued jobs may be
-    # dropped." Their own mitigation is "schedule your workflow to run at a
-    # different time of the hour". :30 is the second-busiest slot after
-    # :00 — the 2026-07-30 run queued 118 minutes late on it.
-    - cron: "37 13 * * 1-6"   # Mon–Sat; give Sunday a rest
+    # 05:13 UTC. NOT the post time — the time we START, so the delay has
+    # somewhere to go.
+    #
+    # The old value was 13:37 UTC, picked as 9:37 AM ET and moved off :30
+    # per GitHub's own mitigation ("schedule your workflow to run at a
+    # different time of the hour"). Measured over 20 scheduled runs in
+    # 2026-10, that mitigation did NOT work: not one run has ever started
+    # on time, and the lag is growing.
+    #
+    #   median delay, by week, across all four crons in this repo
+    #     2026-08-17    29 min
+    #     2026-08-24    86 min
+    #     2026-08-31   208 min   <- step change, cause unknown
+    #     2026-09-28   299 min
+    #     2026-10-05   442 min
+    #
+    #   daily.yml alone, n=20:  min 171  median 259  max 456 minutes late
+    #
+    # Two of GitHub's documented behaviours are in play and neither is
+    # bounded: "The schedule event can be delayed during periods of high
+    # loads" and "If the load is sufficiently high enough, some queued jobs
+    # may be dropped." A dropped run is why missed-run.yml exists.
+    #
+    # The delay is in run CREATION — GitHub does not create the run until
+    # hours after the cron time — so nothing in this file can shorten it.
+    # Concurrency, runner labels, job layout all apply AFTER creation.
+    # Chasing it by nudging the minute is what the old comment was doing.
+    #
+    # So: start early enough that the delay lands inside the window instead
+    # of past it. The job only PREPARES; publish waits on human approval, so
+    # what this time really controls is when the review ping arrives.
+    # At 05:13 UTC, against observed delays:
+    #     min    171 min -> 08:04 UTC = 04:04 ET
+    #     median 259 min -> 09:32 UTC = 05:32 ET
+    #     max    456 min -> 12:49 UTC = 08:49 ET   <- still before 9 AM
+    # The worst run we have ever measured still gets the ping in before the
+    # workday. That is the whole design.
+    #
+    # NB this is a MITIGATION, not a fix. It buys headroom against a lag
+    # that is still growing, and it does nothing about a dropped run. The
+    # real fix is to stop using GitHub's scheduler and create the run over
+    # the API (workflow_dispatch) from something that honours a clock —
+    # EventBridge, a Worker, a launchd agent. If the median passes ~7h this
+    # buffer is spent and that work can no longer be deferred.
+    #
+    # DST: GitHub cron is always UTC, so 05:13 UTC is 01:13 EDT and 00:13
+    # EST — the effective ET time shifts an hour each November and March.
+    # At 13:37 that mattered (9:37 vs 8:37 AM, straddling the window we
+    # were aiming at). Here it is absorbed by hours of buffer. An
+    # API-driven trigger would make it exactly right rather than merely
+    # harmless.
+    - cron: "13 05 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
     inputs:
       format:
