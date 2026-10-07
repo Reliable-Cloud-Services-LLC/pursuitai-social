@@ -831,7 +831,7 @@ different things; this one points at one organization throughout.
 | Verified business email address | never verified; denial went to a personal address | **`aqeel@reliablecloudllc.com` — verified 2026-10-07** |
 | Verified organization | RELIABLE CLOUD SERVICES, L.L.C. (ACTIVE, W19522465) | same |
 | Verified organization website + domain | pursuitai.net — named no RCS entity | **reliablecloudllc.com** + `/privacy.html`, which names the entity |
-| App verified by Page of same organization | `company/pursuit-ai` — not an RCS Page | **`company/reliable-cloud-services`** |
+| App verified by Page of same organization | `company/pursuit-ai` — not an RCS Page | **`company/reliable-cloud-services`** — verified 2026-10-07 |
 
 App: **Reliable Cloud Services Social Publisher**, Page association
 **irreversible** and set to the RCS Page. Other use case declared: Page
@@ -849,13 +849,15 @@ which is what made it look absent, but LinkedIn does collect it and sends
 its own verification mail, exactly as the docs say. Confirmed by receiving
 and completing that verification at the business address on 2026-10-07.
 
+### All five criteria are satisfied — the application is complete
+
+The app was verified from the RCS Page on 2026-10-07, closing the last one.
+So for the first time every Development-tier criterion is met and they all
+point at the same organization. Nothing further is actionable on this
+application; it is now a review-queue wait.
+
 ### What is NOT yet confirmed
 
-- **Super-admin verification of the app by the RCS Page.** The criteria say
-  *"Ensure a **super admin** of the LinkedIn Page associated with your
-  organization has verified your application"*; the create-app form says
-  only "a Page Admin". Admin is not stated to be sufficient. This is a
-  separate action in the portal and it is the one remaining criterion.
 - Whether the Oct 2 appeal on attempt 1 ever gets a human response. Leave
   it open: it is the only channel where a person reads the registry
   evidence, and the access form has no free-text field to argue in.
