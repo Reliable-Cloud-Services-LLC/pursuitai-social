@@ -729,6 +729,38 @@ are the same failure seen from different sides.
   declaration*. B breaks that premise; A preserves it. Flagged as a
   conflict, not a recommendation — it is a business decision.
 
+**Route A's open question is now ANSWERED (2026-10-07): the app's verifying
+Page does NOT scope which Pages it can post to.** [Organization Access
+Control by
+Role](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/organization-access-control-by-role)
+is explicit that runtime access follows the AUTHENTICATED MEMBER:
+
+> "A role defines the privileges that a member has within the organization.
+> You must be an **authenticated member with role type `ADMINISTRATOR`** for
+> an organization to use many of the Organization APIs."
+
+and `rw_organization_admin` is *"Restricted to organizations in which the
+authenticated member has the role type `ADMINISTRATOR`"*. `GET
+/organizationAcls?q=roleAssignee` returns a PAGINATED LIST of every
+organization the member holds a role on — plural by construction. No page
+in the docs limits an application to the Page that verified it; that
+association is an application-time ownership check.
+
+So: app verified by the **Reliable Cloud Services** Page
+(`company/reliable-cloud-services`), token held by an admin of both, posting
+to **Pursuit AI** (`company/pursuit-ai`). RCS Pages exist and both resolve.
+
+**Residual risk, and why it does not justify delay.** The CM review page
+reserves the right to impose *"all other requirements or restrictions that
+LinkedIn separately communicates to you (e.g. during or after the vetting
+process)"*, so a grant could in principle arrive scoped. That cannot be
+pre-tested — the probe endpoint itself needs a permission we do not hold.
+But note **the scope question cannot burn an app: only a REJECTION does.**
+If vetting passes and the grant turns out narrower than expected, we hold an
+approved app and the conversation is a support ticket, not a third attempt.
+Route A maximises the chance of passing vetting, which is the only step that
+costs anything.
+
 **Also unverified on our side:** the criteria say *"Ensure a **super
 admin** of the LinkedIn Page … has verified your application."* Admin is
 not stated to be sufficient. Check the role before attempt 2.
