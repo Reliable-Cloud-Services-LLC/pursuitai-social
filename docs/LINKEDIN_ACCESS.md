@@ -819,6 +819,43 @@ blocked API access.
 
 ---
 
+## Member posting DISABLED 2026-10-08 — the channel is Page-only now
+
+While attempt 2 is in review, the daily post no longer goes out under a
+personal profile. It used to, and that was never a decision: the fallback
+simply fired whenever the Page scope was missing, so a company's daily
+post appeared under an individual's name because of an absent env var.
+
+**Defaulting to the wrong author is worse than defaulting to no post.** A
+skipped channel is visible in the run log and costs one day. A misattributed
+post is already in the feed by the time anyone looks at it, and the only way
+to undo it is to delete something the audience may have seen.
+
+**What changed.** `LINKEDIN_ORG_ID` was the AUTHOR switch; it is now the
+ON/OFF switch for the whole channel:
+
+| LINKEDIN_ACCESS_TOKEN | LINKEDIN_ORG_ID | behaviour |
+|---|---|---|
+| unset | — | skipped (unchanged) |
+| set | **unset** | **skipped** — was: posted as a member |
+| set | set | posted as the Pursuit AI Page |
+
+No new secret, and nothing to remember: the variable is unset *precisely
+while* Page access is pending, so setting it when the appeal lands both
+authorises the Page and re-enables the channel, with no code or workflow
+edit. `LINKEDIN_ALLOW_MEMBER_POST=1` is an opt-in escape hatch for posting
+as a person deliberately; it must be exactly `1`, because a truthy-looking
+value is not consent.
+
+Enforced in two places on purpose — `run.publish()` skips the channel, and
+`post_linkedin.author_urn()` raises rather than return a person URN. The
+second is defence in depth: in the normal flow it is unreachable, but it is
+the last thing between a direct call and a post under somebody's profile.
+
+The manual route is untouched: `scripts/preview.py --linkedin` still prints
+the copy and card to paste by hand. A human pasting a post has already
+chosen the author.
+
 ## Attempt 2 — SUBMITTED 2026-10-07 (route A)
 
 The first application where every Development-tier criterion corroborates

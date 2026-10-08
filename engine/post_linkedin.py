@@ -234,7 +234,7 @@ def person_urn(token):
 
 
 def author_urn(token):
-    """Who the post is authored by: the Page if we can, else the member.
+    """Who the post is authored by: the Page, or nothing.
 
     LINKEDIN_ORG_ID is the switch, and it is absent on purpose today.
     Posting as the Page needs `w_organization_social`, which only the vetted
@@ -242,17 +242,38 @@ def author_urn(token):
     under appeal. The self-serve route grants `w_member_social`, which
     authors as a person.
 
-    So this reads as a capability check rather than a mode flag: set
-    LINKEDIN_ORG_ID when the Page access lands and posting moves to the Page
-    with no code change. Until then it is a profile, and that is announced
-    at publish time rather than inferred from silence — posting to the wrong
-    author is not something to discover from the feed.
+    It used to fall back to that person. It no longer does. The fallback was
+    never a decision anyone made about where the brand publishes — it was
+    just what happened when the Page scope was missing, and the result was a
+    company's daily post going out under an individual's profile. Defaulting
+    to "wrong author" is worse than defaulting to "no post": a skipped
+    channel is visible in the run log and costs one day, while a misattributed
+    post is already in the feed by the time anyone notices.
+
+    So: set LINKEDIN_ORG_ID when Page access lands and posting resumes to the
+    Page with no code change. LINKEDIN_ALLOW_MEMBER_POST=1 restores the member
+    path for anyone who wants it deliberately. The manual route
+    (`scripts/preview.py --linkedin`) is unaffected either way — a human
+    pasting a post has already chosen the author.
     """
     org = os.environ.get("LINKEDIN_ORG_ID")
     if org:
         return f"urn:li:organization:{org}"
+    if os.environ.get("LINKEDIN_ALLOW_MEMBER_POST") != "1":
+        # Defence in depth. run.publish() already skips LinkedIn when the Page
+        # is not available, so in the normal flow we never get here — but this
+        # function is the last thing standing between a direct call and a post
+        # appearing under somebody's personal profile. Refusing is the right
+        # default for that: an author you did not intend is not a small bug,
+        # and it is not visible from the code that calls this.
+        raise RuntimeError(
+            "refusing to author as a member profile: LINKEDIN_ORG_ID is "
+            "unset, so this post would appear under a personal profile "
+            "rather than the Pursuit AI Page. Set LINKEDIN_ORG_ID once Page "
+            "access lands, or LINKEDIN_ALLOW_MEMBER_POST=1 to post as a "
+            "person on purpose.")
     urn = person_urn(token)
-    print(f"[linkedin] LINKEDIN_ORG_ID unset — authoring as {urn} "
+    print(f"[linkedin] LINKEDIN_ALLOW_MEMBER_POST=1 — authoring as {urn} "
           f"(a member profile, NOT the Pursuit AI Page)")
     return urn
 

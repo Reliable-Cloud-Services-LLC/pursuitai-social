@@ -48,6 +48,21 @@ def clean(monkeypatch):
     tests — a cached URN would make the org case pass for the wrong reason."""
     monkeypatch.setattr(li, "_PERSON_URN", None)
     monkeypatch.delenv("LINKEDIN_ORG_ID", raising=False)
+    monkeypatch.delenv("LINKEDIN_ALLOW_MEMBER_POST", raising=False)
+
+
+@pytest.fixture
+def member_mode(monkeypatch):
+    """Opt in to member authoring.
+
+    These tests cover the member path's MECHANICS — URN lookup, caching,
+    owner/author matching — which are unchanged and still reachable. What
+    changed on 2026-10-08 is that the path is no longer the automatic
+    fallback, so exercising it now takes an explicit opt-in. Requiring the
+    fixture here is the point: a test that reaches the member path without
+    asking for it would mean the default had regressed.
+    """
+    monkeypatch.setenv("LINKEDIN_ALLOW_MEMBER_POST", "1")
 
 
 def test_the_page_is_used_when_we_have_page_access(monkeypatch):
@@ -59,12 +74,12 @@ def test_the_page_is_used_when_we_have_page_access(monkeypatch):
         "with a Page configured there is nothing to look up"
 
 
-def test_it_falls_back_to_the_member_profile(monkeypatch):
+def test_member_mode_authors_as_the_profile(monkeypatch, member_mode):
     monkeypatch.setattr(li, "requests", FakeUserinfo({"sub": SUB}))
     assert li.author_urn("tok") == PERSON
 
 
-def test_the_member_case_announces_itself(monkeypatch, capsys):
+def test_the_member_case_announces_itself(monkeypatch, capsys, member_mode):
     """Negative control on silence. Posting to a profile when someone meant
     the Page is not something to discover from the feed."""
     monkeypatch.setattr(li, "requests", FakeUserinfo({"sub": SUB}))
@@ -75,7 +90,8 @@ def test_the_member_case_announces_itself(monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("payload", [{}, {"sub": ""}, {"name": "Aqeel"}])
-def test_a_token_without_profile_scope_fails_legibly(monkeypatch, payload):
+def test_a_token_without_profile_scope_fails_legibly(monkeypatch, payload,
+                                                    member_mode):
     """Returning None would build "urn:li:person:None" and surface as an
     opaque 400 from LinkedIn three calls later."""
     monkeypatch.setattr(li, "requests", FakeUserinfo(payload))
@@ -83,7 +99,7 @@ def test_a_token_without_profile_scope_fails_legibly(monkeypatch, payload):
         li.author_urn("tok")
 
 
-def test_the_lookup_happens_once(monkeypatch):
+def test_the_lookup_happens_once(monkeypatch, member_mode):
     fake = FakeUserinfo({"sub": SUB})
     monkeypatch.setattr(li, "requests", fake)
     li.author_urn("tok")
@@ -97,7 +113,8 @@ def test_the_lookup_happens_once(monkeypatch):
     (None, PERSON),
     ("109876", "urn:li:organization:109876"),
 ], ids=["member", "page"])
-def test_the_asset_owner_matches_the_post_author(monkeypatch, org, expected):
+def test_the_asset_owner_matches_the_post_author(monkeypatch, org, expected,
+                                                member_mode):
     """"For images with member URN owners, the caller needs to match the
     image owner." Uploading as one URN and authoring as another is a 403 at
     publish — AFTER the upload has been spent."""
@@ -128,7 +145,7 @@ def test_the_asset_owner_matches_the_post_author(monkeypatch, org, expected):
     assert seen["owner"] == seen["author"] == expected
 
 
-def test_video_authors_the_same_way(monkeypatch):
+def test_video_authors_the_same_way(monkeypatch, member_mode):
     """The ad format must not drift from the card format on authorship."""
     monkeypatch.setattr(li, "requests", FakeUserinfo({"sub": SUB}))
     monkeypatch.setenv("LINKEDIN_ACCESS_TOKEN", "tok")
@@ -170,3 +187,52 @@ def test_the_image_status_url_encodes_the_urn():
     block = block[:block.index("\ndef ")]
     assert "quote(image_urn" in block
     assert "{API}/images/{image_urn}" not in block
+
+
+# ---------------------------------------------------------------------------
+# Page-only authoring (2026-10-08)
+#
+# The member fallback is gone. It worked, and that was the problem: with no
+# LINKEDIN_ORG_ID the daily company post went out under a personal profile,
+# which is not a publishing decision anyone made — it is just what the code
+# did when the Page scope was missing.
+# ---------------------------------------------------------------------------
+
+def test_refuses_to_author_as_a_member_by_default(monkeypatch):
+    """No org id and no explicit opt-in: refuse rather than post as a person."""
+    monkeypatch.delenv("LINKEDIN_ORG_ID", raising=False)
+    monkeypatch.delenv("LINKEDIN_ALLOW_MEMBER_POST", raising=False)
+    with pytest.raises(RuntimeError) as exc:
+        li.author_urn("tok")
+    msg = str(exc.value)
+    # The error has to say what to DO, not just that it refused.
+    assert "LINKEDIN_ORG_ID" in msg and "LINKEDIN_ALLOW_MEMBER_POST" in msg
+    assert "personal profile" in msg
+
+
+def test_org_id_still_authors_as_the_page(monkeypatch):
+    """Negative control for the refusal: the Page path must be untouched, or
+    the fix would simply have broken LinkedIn instead of scoping it."""
+    monkeypatch.setenv("LINKEDIN_ORG_ID", "123456")
+    monkeypatch.delenv("LINKEDIN_ALLOW_MEMBER_POST", raising=False)
+    assert li.author_urn("tok") == "urn:li:organization:123456"
+
+
+def test_member_posting_is_available_but_opt_in(monkeypatch):
+    """Deliberate member posting still works — it just cannot be the default."""
+    monkeypatch.delenv("LINKEDIN_ORG_ID", raising=False)
+    monkeypatch.setenv("LINKEDIN_ALLOW_MEMBER_POST", "1")
+    monkeypatch.setattr(li, "person_urn", lambda token: PERSON)
+    assert li.author_urn("tok") == PERSON
+
+
+def test_opt_in_must_be_exactly_one(monkeypatch):
+    """A truthy-looking value is not consent. 'false'/'0'/'' must all refuse,
+    or the escape hatch becomes an accident waiting for a typo."""
+    monkeypatch.delenv("LINKEDIN_ORG_ID", raising=False)
+    for value in ("0", "false", "", "yes", "true"):
+        monkeypatch.setenv("LINKEDIN_ALLOW_MEMBER_POST", value)
+        if value == "1":
+            continue
+        with pytest.raises(RuntimeError):
+            li.author_urn("tok")

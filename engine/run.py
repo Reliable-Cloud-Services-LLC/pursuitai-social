@@ -428,6 +428,31 @@ def _post_linkedin(pending):
                                     pending["text_linkedin"],
                                     alt_text=pending.get("topic"))
 
+def _linkedin_not_ready():
+    """Why LinkedIn is not postable right now, or None when it is.
+
+    Posting as a MEMBER is no longer an automatic fallback. It was, and it
+    worked — but it put the daily post out under a personal profile rather
+    than the Pursuit AI Page, which is a publishing decision nobody made on
+    purpose; it was simply what happened when the Page scope was missing.
+
+    LINKEDIN_ORG_ID is the readiness signal and needs no new secret: it is
+    unset precisely while Page access is pending, and setting it (when the
+    Community Management appeal lands) both authorises the Page and turns
+    this channel back on, with no code change and nothing to remember.
+
+    LINKEDIN_ALLOW_MEMBER_POST=1 is a deliberate escape hatch for posting as
+    a person on purpose. It is opt-in so that it can never be the thing that
+    happens by default.
+    """
+    if os.environ.get("LINKEDIN_ORG_ID"):
+        return None
+    if os.environ.get("LINKEDIN_ALLOW_MEMBER_POST") == "1":
+        return None
+    return ("LINKEDIN_ORG_ID not set — Page access still pending, and "
+            "posting as a member is not automatic")
+
+
 # channel -> (env var proving credentials are present, poster)
 #
 # LinkedIn ships INERT: with no LINKEDIN_ACCESS_TOKEN the loop below marks it
@@ -440,6 +465,14 @@ POSTERS = {
     "ig": ("IG_USER_ID", _post_ig),
     "linkedin": ("LINKEDIN_ACCESS_TOKEN", _post_linkedin),
 }
+
+# channel -> extra readiness check, for channels where HAVING credentials and
+# SHOULD WE PUBLISH are different questions. Deliberately a separate map
+# rather than a third slot on POSTERS: four tests and the workflow-config
+# oracle construct or parse POSTERS by shape, so widening that tuple is a
+# contract change rippling well beyond this file for no benefit. A channel
+# with no entry here is governed by its credential alone, as before.
+NOT_READY = {"linkedin": _linkedin_not_ready}
 
 def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
             force=False):
@@ -494,6 +527,8 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
         f"skippable — the single-channel re-post path depends on it.")
     results = {}
     for ch, (env_var, poster) in POSTERS.items():
+        not_ready = NOT_READY.get(ch)
+        reason = not_ready() if not_ready else None
         if disabled[ch]:
             results[ch] = {"status": "disabled", "id": None, "error": None}
             print(f"[publish] {ch} disabled by flag")
@@ -501,6 +536,13 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
             results[ch] = {"status": "skipped", "id": None,
                            "error": f"{env_var} not set"}
             print(f"[publish] {ch} SKIPPED: {env_var} not set")
+        elif reason:
+            # Credentials present, but posting would not go where it should.
+            # SKIPPED, not failed: nothing is broken, the channel just is not
+            # ours to publish to yet, and a failure here would redden a run
+            # whose other channels went out fine.
+            results[ch] = {"status": "skipped", "id": None, "error": reason}
+            print(f"[publish] {ch} SKIPPED: {reason}")
         else:
             try:
                 # A poster returns a bare id, or a dict when it has more to
