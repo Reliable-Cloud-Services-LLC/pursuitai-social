@@ -427,10 +427,20 @@ jobs:
           # whatever the repository secret held. A credential the publish
           # step cannot see is the same as no credential.
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
-          # Deliberately passed while UNSET. Absent means author as the
-          # member, which is the state today; setting the secret moves
-          # posting to the Page with no workflow edit when the vetting
-          # appeal lands. An unset secret arrives as "", which is falsy.
+          # Deliberately passed while UNSET, and it is now the ON/OFF
+          # switch for the whole channel, not just the author.
+          #
+          # Absent means SKIP LinkedIn. It used to mean "author as the
+          # member", which worked and was the problem: the company's daily
+          # post went out under a personal profile because the Page scope
+          # was missing, not because anyone chose that. A skipped channel
+          # costs a day and shows up in the run log; a misattributed post is
+          # already in the feed before anyone looks.
+          #
+          # Setting the secret — once the Community Management vetting
+          # appeal lands — moves posting to the Page AND re-enables the
+          # channel, with no workflow edit and no code change. An unset
+          # secret arrives as "", which is falsy.
           LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
           SKIP: ${{ inputs.skip }}
         run: |

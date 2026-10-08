@@ -21,12 +21,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 # Dummy values: presence is what gates a channel, the stubs ignore the values.
-CREDS = {"x": {"X_API_KEY": "test-key"}, "ig": {"IG_USER_ID": "test-uid"}}
+CREDS = {"x": {"X_API_KEY": "test-key"}, "ig": {"IG_USER_ID": "test-uid"},
+         # A token alone is NOT enough for LinkedIn any more — see
+         # the Page-only tests at the bottom of this file.
+         "linkedin": {"LINKEDIN_ACCESS_TOKEN": "test-tok",
+                      "LINKEDIN_ORG_ID": "109876"}}
 
 STUB_OK = {
     "x": 'def post(text, media_path=None, reply_text=None):\n    return {"id": "1234567890", "reply_id": "222",\n            "reply_error": None}\n',
     "ig": ('def post_image(path, caption):\n    return "ig-987"\n\n'
            'def post_reel(path, caption):\n    return "ig-987"\n'),
+    # Mirrors the real signature run._post_linkedin calls — post_media, not
+    # post_image: the `ad` format's asset is an .mp4.
+    "linkedin": ('def post_media(path, caption, alt_text=None):\n'
+                 '    return "urn:li:share:555"\n'),
 }
 STUB_RAISES = {
     "x": ('def post(text, media_path=None, reply_text=None):\n'
@@ -63,7 +71,11 @@ def run(args, cwd, channels=()):
     env = dict(os.environ)
     for var in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN",
                 "X_ACCESS_SECRET", "IG_USER_ID", "IG_ACCESS_TOKEN",
-                "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL"):
+                "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL",
+                # LinkedIn's switches too: a developer with a real token in
+                # their shell would otherwise get different results from CI.
+                "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID",
+                "LINKEDIN_ALLOW_MEMBER_POST"):
         env.pop(var, None)
     for ch in channels:
         env.update(CREDS[ch])
@@ -409,3 +421,57 @@ def test_the_x_handle_lives_in_one_place():
     src = open(os.path.join(ROOT, "engine", "post_x.py")).read()
     code = "\n".join(l.split("#")[0] for l in src.splitlines())
     assert code.count("x.com/") == 1, "the handle is built in more than one place"
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn is Page-only (2026-10-08)
+#
+# A LinkedIn token on its own can post — but only as a person. So for this
+# one channel "do we have credentials" and "should we publish" are different
+# questions, and the gate has to ask both. The failure it prevents is not a
+# crash: it is the company's daily post quietly appearing under somebody's
+# personal profile, which nobody decided and nobody sees until it is live.
+# ---------------------------------------------------------------------------
+
+def test_linkedin_skipped_when_only_a_token_is_present(sandbox):
+    """The live state while the Page appeal is pending."""
+    install(sandbox, "x", "ok")
+    prepare(sandbox)
+    env_extra = {"LINKEDIN_ACCESS_TOKEN": "test-tok"}
+    r = _run_with(["--publish"], sandbox, channels=("x",), extra=env_extra)
+    ch = log_entries(sandbox)[0]["channels"]
+    assert ch["linkedin"]["status"] == "skipped", ch["linkedin"]
+    # The reason has to name the switch, or the next person re-derives it.
+    assert "LINKEDIN_ORG_ID" in ch["linkedin"]["error"]
+    # ...and skipping LinkedIn must not take the rest of the run down.
+    assert ch["x"]["status"] == "posted"
+    assert r.returncode == 0, r.stdout
+
+
+def test_linkedin_publishes_once_the_page_is_configured(sandbox):
+    """Negative control: the gate must OPEN when Page access lands, or this
+    change would be indistinguishable from deleting the channel."""
+    install(sandbox, "x", "ok")
+    install(sandbox, "linkedin", "ok")
+    prepare(sandbox)
+    r = _run_with(["--publish"], sandbox, channels=("x", "linkedin"), extra={})
+    ch = log_entries(sandbox)[0]["channels"]
+    assert ch["linkedin"]["status"] == "posted", ch["linkedin"]
+    assert r.returncode == 0, r.stdout
+
+
+def _run_with(args, cwd, channels=(), extra=None):
+    """run(), plus arbitrary extra env — the LinkedIn cases need a token
+    WITHOUT an org id, which the channels map deliberately cannot express."""
+    env = dict(os.environ)
+    for var in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN",
+                "X_ACCESS_SECRET", "IG_USER_ID", "IG_ACCESS_TOKEN",
+                "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL",
+                "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID",
+                "LINKEDIN_ALLOW_MEMBER_POST"):
+        env.pop(var, None)
+    for ch in channels:
+        env.update(CREDS[ch])
+    env.update(extra or {})
+    return subprocess.run([sys.executable, "engine/run.py"] + args,
+                          cwd=cwd, env=env, capture_output=True, text=True)
