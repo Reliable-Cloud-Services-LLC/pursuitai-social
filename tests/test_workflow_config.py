@@ -363,3 +363,67 @@ def test_no_tracked_file_sits_under_a_gitignored_path():
 # commits with a genuinely dirty tree against a remote that has moved. That
 # is strictly stronger than the scan it replaces — the scan would pass
 # against a script containing the flag and nothing that works.
+
+
+def test_every_channel_is_dispatch_skippable():
+    """Derived from POSTERS, not a hardcoded pair.
+
+    The hardcoded ("x", "ig") above could not see that `linkedin` was
+    missing from the dispatch options while the publish step already
+    handled `[ "$SKIP" = "linkedin" ]` — an unreachable branch, and no way
+    to remediate a LinkedIn-only outage from the UI. Deriving the
+    expectation means adding a fourth channel cannot repeat it.
+    """
+    import sys
+    sys.path.insert(0, os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "engine"))
+    import run as run_mod
+
+    text = _daily_text()
+    block = text[text.index("      skip:"):text.index("      topic:")]
+    missing = [ch for ch in run_mod.POSTERS if f'"{ch}"' not in block]
+    assert not missing, f"channel(s) not skippable from the UI: {missing}"
+
+
+def test_draft_is_dispatchable():
+    """The flag is useless without this.
+
+    --draft exists so a caption can be seen before it is public, but the
+    Page token lives in a repository secret — the first real attempt failed
+    locally with "Organization permissions must be used when using
+    organization as owner", because the developer .env still held the old
+    member token (w_member_social only). A draft can therefore only be made
+    where the secret is, which means the dispatch input IS the feature.
+    """
+    text = _daily_text()
+    assert "      draft:" in text, "no draft input on workflow_dispatch"
+    block = text[text.index("      draft:"):text.index("      skip:")]
+    assert "type: boolean" in block
+    assert "default: false" in block, "drafting must not be the default"
+    assert "--draft" in text, "the input is not wired to the publish step"
+
+
+def test_draft_does_not_reach_prepare():
+    """Same rule as skip: drafting is a PUBLISH-time decision.
+
+    Wiring it to prepare would change what is rendered and reviewed, so the
+    human would approve something other than what ships.
+    """
+    text = _daily_text()
+    assert "--draft" not in text[:text.index("  publish:")], (
+        "draft leaked into the prepare job")
+
+
+def test_the_schedule_cannot_draft():
+    """A cron run must publish for real.
+
+    workflow_dispatch inputs are empty on a schedule event, so this holds
+    today by construction — but a `draft: true` default, or an env default
+    of "1", would silently stop the Page publishing while every run stayed
+    green. That is the exact failure this feature was built to avoid, so it
+    is worth a test rather than a comment.
+    """
+    text = _daily_text()
+    block = text[text.index("      draft:"):text.index("      skip:")]
+    assert "default: true" not in block
+    assert 'LINKEDIN_DRAFT: "1"' not in text
