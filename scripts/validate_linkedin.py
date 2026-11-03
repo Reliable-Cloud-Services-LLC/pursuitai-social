@@ -130,7 +130,7 @@ def main():
             fail(f"member does NOT administer {org_urn}. Roles found: "
                  f"{orgs or 'none'}. Posting will 403.")
 
-    print("[3] token lifetime and scopes")
+    print("[2] token lifetime and scopes")
     days, status, scopes = post_linkedin.token_state()
 
     if status == "unknown":
@@ -165,7 +165,7 @@ def main():
         ok(f"token has {days} days left")
 
     if args.upload:
-        print("[4] image upload (real, but NOTHING is posted)")
+        print("[3] image upload (real, but NOTHING is posted)")
         rel = args.file or _newest_card()
         if not rel:
             fail("no LinkedIn card to upload — render one, or pass --file")

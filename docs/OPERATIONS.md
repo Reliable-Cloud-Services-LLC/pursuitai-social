@@ -93,6 +93,17 @@ Fixed by `post_linkedin.escape_commentary`, applied at the payload
 boundary (not in the caption builder — X and Instagram share those
 captions and would publish the backslashes).
 
+**Verified live on 2026-11-03** via a draft (see below), using the worst
+caption in the calendar: `8a-copilot`, whose `(` sits at **character 5** —
+inside `8(a)`, the most-used term in the product's vocabulary. Unescaped,
+LinkedIn publishes the string `The 8`. Escaped, it renders `8(a)` cleanly
+with no visible backslashes and the caption runs through to the hashtags.
+
+That matters beyond this one topic: every 8(a) caption was headed for the
+same fate, and the surviving fragment would have been short enough that
+nobody would have mistaken it for a real post — unlike exec-analytics,
+which read plausibly and went unnoticed for a month.
+
 `#` and `_` are deliberately **left unescaped**, against the blanket rule,
 because escaping them breaks things that demonstrably work: recompete-radar
 (2026-10-06) carries a `_` at char 430 and three hashtags and published
