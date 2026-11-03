@@ -310,3 +310,66 @@ def test_draft_is_armed_before_publish_runs(monkeypatch):
                             env=os.environ.get("LINKEDIN_DRAFT")))
     run.main(["--publish", "--draft"])
     assert seen["env"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# A draft is a LinkedIn-only concept.
+# ---------------------------------------------------------------------------
+
+def test_draft_forces_the_other_channels_off(monkeypatch):
+    """--draft implies --skip-x --skip-ig, and must not be optional.
+
+    Found while running the first real draft: publishing X and Instagram
+    for real alongside a LinkedIn draft marks the topic CONSUMED, because
+    those two did reach an audience. The rotation then advances, and the
+    caption just drafted for review is never the one that goes out on
+    LinkedIn — a different topic is. The draft would have been a preview of
+    a post that never happens.
+
+    Enforced in run.main() rather than left to the operator: every other
+    guard in this feature assumes a draft costs nothing, and this is the
+    one combination where it silently costs a topic.
+    """
+    import run
+    seen = {}
+    monkeypatch.delenv("LINKEDIN_DRAFT", raising=False)
+    monkeypatch.setattr(run, "publish",
+                        lambda sx, si, sl, force: seen.update(
+                            skip_x=sx, skip_ig=si))
+    run.main(["--publish", "--draft"])
+    assert seen["skip_x"] is True
+    assert seen["skip_ig"] is True
+
+
+def test_draft_does_not_force_linkedin_off(monkeypatch):
+    """Negative control: the one channel it is for stays on."""
+    import run
+    seen = {}
+    monkeypatch.delenv("LINKEDIN_DRAFT", raising=False)
+    monkeypatch.setattr(run, "publish",
+                        lambda sx, si, sl, force: seen.update(skip_li=sl))
+    run.main(["--publish", "--draft"])
+    assert seen["skip_li"] is False
+
+
+def test_without_draft_the_channels_are_untouched(monkeypatch):
+    """Negative control: a normal publish still posts everywhere."""
+    import run
+    seen = {}
+    monkeypatch.delenv("LINKEDIN_DRAFT", raising=False)
+    monkeypatch.setattr(run, "publish",
+                        lambda sx, si, sl, force: seen.update(
+                            skip_x=sx, skip_ig=si))
+    run.main(["--publish"])
+    assert seen["skip_x"] is False
+    assert seen["skip_ig"] is False
+
+
+def test_the_forcing_is_announced(monkeypatch, capsys):
+    """Silently changing what an operator asked for is its own hazard."""
+    import run
+    monkeypatch.delenv("LINKEDIN_DRAFT", raising=False)
+    monkeypatch.setattr(run, "publish", lambda *a, **k: None)
+    run.main(["--publish", "--draft"])
+    out = capsys.readouterr().out
+    assert "--skip-x" in out and "--skip-ig" in out

@@ -731,6 +731,22 @@ def main(argv=None):
         os.environ["LINKEDIN_DRAFT"] = "1"
         print("[run] --draft: LinkedIn will create a DRAFT, not a post. "
               "Nothing will be public and the topic will not be consumed.")
+        # A draft is a LinkedIn-only concept, and this is the one
+        # combination where it is not free. X and Instagram would publish
+        # for REAL, which marks the topic consumed — so the rotation
+        # advances and the caption just drafted for review is never the one
+        # that goes out on LinkedIn. A preview of a post that never happens.
+        #
+        # Forced rather than left to the operator: every other guard in
+        # this feature rests on a draft costing nothing, and an operator
+        # who forgets two flags silently loses a topic. Announced, because
+        # quietly changing what someone asked for is its own hazard.
+        if not (args.skip_x and args.skip_ig):
+            print("[run] --draft implies --skip-x --skip-ig: a real post on "
+                  "the other channels would consume the topic, and the "
+                  "drafted caption would never be the one published.")
+        args.skip_x = True
+        args.skip_ig = True
 
     if args.dry_run:
         p = prepare()
