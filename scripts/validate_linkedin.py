@@ -89,27 +89,40 @@ def main():
     headers = post_linkedin._headers(tok, json_body=False)
 
     print(f"[0] pinned API version {post_linkedin.LINKEDIN_VERSION}")
-    print("[1] token validity")
-    r = requests.get("https://api.linkedin.com/v2/userinfo",
-                     headers={"Authorization": f"Bearer {tok}"}, timeout=30)
-    if r.status_code != 200:
-        fail(f"token rejected ({r.status_code}): {r.text[:200]}")
-    ok(f"token valid — member: {(r.json() or {}).get('name', 'unknown')}")
 
-    print("[2] Page role")
-    # Posting as an organization requires an ADMINISTRATOR (or DSC) role on
-    # that Page. Without it the token still looks fine and the POST fails
-    # with a 403 at publish time, which is the worst moment to find out.
+    print("[1] token validity + Page role")
+    # ONE call answers both, and it must be a call this token is actually
+    # scoped for.
+    #
+    # This used to probe liveness with /v2/userinfo first. That is a MEMBER
+    # endpoint needing openid/profile, and a Page-only token has neither by
+    # design — once member posting was retired we stopped minting those
+    # scopes. So the validator failed at step 1 with
+    # `ACCESS_DENIED: userinfo.GET.NO_VERSION` on a token that was entirely
+    # healthy, which is the worst kind of check: one that fails for a reason
+    # unrelated to the thing it claims to verify.
+    #
+    # organizationAcls needs rw_organization_admin, which the Page chain has,
+    # and the status code separates the two failures that differ in meaning:
+    #   401 -> the token is dead, revoked or malformed        (fatal)
+    #   403 -> live, but missing rw_organization_admin        (not fatal —
+    #          the upload below is the real test, and says so)
+    # Posting as an organization also requires an ADMINISTRATOR (or DSC) role
+    # on that Page; without it the token looks fine and the POST 403s at
+    # publish, which is the worst moment to find out.
     r = requests.get(
         "https://api.linkedin.com/rest/organizationAcls"
         "?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
         headers=headers, timeout=30)
-    if r.status_code != 200:
+    if r.status_code == 401:
+        fail(f"token rejected ({r.status_code}): {r.text[:200]}")
+    elif r.status_code != 200:
         print(f"    (could not read organizationAcls: {r.status_code} "
               f"{r.text[:160]})")
         print("    NOT fatal on its own, but if the upload below 403s, this "
               "is why — grant the member an ADMINISTRATOR role on the Page.")
     else:
+        ok("token accepted by the versioned API")
         orgs = _orgs_in(r.json())
         if org_urn in orgs:
             ok(f"member administers {org_urn}")
