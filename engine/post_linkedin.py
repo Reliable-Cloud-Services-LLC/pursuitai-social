@@ -81,6 +81,57 @@ MAX_VIDEO_BYTES = 500 * 1024 * 1024
 VIDEO_TRIES, VIDEO_DELAY = 60, 5     # 5min
 
 
+# `commentary` is "little text", not plain text. Its grammar reserves
+#     |  {  }  @  [  ]  (  )  <  >  #  \\  *  _  ~
+# and the format doc is explicit: "All reserved characters need to be
+# escaped with a backslash, even if those characters are not used in one of
+# the supported elements or templates."
+# (learn.microsoft.com/.../shares/little-text-format, read 2026-11-03.)
+#
+# What that doc does NOT say is what happens if you skip it, and the answer
+# is the worst available one: LinkedIn returns 201 Created and silently
+# publishes everything up to the offending character. A paren is mention
+# syntax there — MentionElement ::= '@' FallbackText? '(' 'Urn' ')' — so an
+# unescaped "(" sends the parser hunting for a URN and it discards the rest.
+#
+# The Page's first post lost 284 of 570 characters this way, ending at
+# "Upload the RFP packet" with the CTA link and hashtags gone. Worse, the
+# exec-analytics post of 2026-10-02 had been truncated identically for a
+# MONTH without anyone noticing, because the surviving text happened to end
+# on a plausible phrase. Eleven of our 24 topics carry a paren; the earliest
+# sits at character 5, which would have published a 5-character post.
+#
+# Two reserved characters are deliberately NOT escaped, against the blanket
+# rule, because escaping them breaks things that demonstrably work:
+#
+#   _  appears only inside UTM query strings. recompete-radar (2026-10-06)
+#      carries one at character 430 and published complete, link shortened
+#      to lnkd.in. Escaping would put backslashes inside the URL.
+#   #  is our hashtag block. Same post rendered its hashtags correctly, and
+#      posts-api documents sending "#coding" unescaped and LinkedIn
+#      returning "{hashtag|\\#|coding}" — it converts them for us.
+#      Escaping would publish literal "#GovCon" text instead.
+#
+# So: the reserved set minus those two. Backslash goes FIRST, or we escape
+# the backslashes we just added.
+_LITTLE_TEXT_ESCAPE = "\\" + "|{}@[]()<>*~"
+
+
+def escape_commentary(text):
+    """Escape little-text reserved characters so LinkedIn stops truncating.
+
+    Call this at the payload boundary, never in the caption builder — X and
+    Instagram share those captions and would publish the backslashes.
+
+    Not idempotent, by design: escaping twice double-escapes, so a second
+    call is a bug that shows up as visible backslashes rather than as
+    silently-correct output hiding a double-call.
+    """
+    for ch in _LITTLE_TEXT_ESCAPE:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 class LinkedInError(RuntimeError):
     """A LinkedIn API rejection, carrying what LinkedIn actually said."""
 
@@ -289,7 +340,7 @@ def post_image(repo_rel_path, commentary, alt_text=None):
 
     payload = {
         "author": author,
-        "commentary": commentary,
+        "commentary": escape_commentary(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],
@@ -598,7 +649,7 @@ def post_video(repo_rel_path, commentary, title=None):
 
     payload = {
         "author": author,
-        "commentary": commentary,
+        "commentary": escape_commentary(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],
