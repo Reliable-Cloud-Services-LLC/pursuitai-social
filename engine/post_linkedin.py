@@ -81,6 +81,74 @@ MAX_VIDEO_BYTES = 500 * 1024 * 1024
 VIDEO_TRIES, VIDEO_DELAY = 60, 5     # 5min
 
 
+# `commentary` is "little text", not plain text. Its grammar reserves
+#     |  {  }  @  [  ]  (  )  <  >  #  \\  *  _  ~
+# and the format doc is explicit: "All reserved characters need to be
+# escaped with a backslash, even if those characters are not used in one of
+# the supported elements or templates."
+# (learn.microsoft.com/.../shares/little-text-format, read 2026-11-03.)
+#
+# What that doc does NOT say is what happens if you skip it, and the answer
+# is the worst available one: LinkedIn returns 201 Created and silently
+# publishes everything up to the offending character. A paren is mention
+# syntax there — MentionElement ::= '@' FallbackText? '(' 'Urn' ')' — so an
+# unescaped "(" sends the parser hunting for a URN and it discards the rest.
+#
+# The Page's first post lost 284 of 570 characters this way, ending at
+# "Upload the RFP packet" with the CTA link and hashtags gone. Worse, the
+# exec-analytics post of 2026-10-02 had been truncated identically for a
+# MONTH without anyone noticing, because the surviving text happened to end
+# on a plausible phrase. Eleven of our 24 topics carry a paren; the earliest
+# sits at character 5, which would have published a 5-character post.
+#
+# Two reserved characters are deliberately NOT escaped, against the blanket
+# rule, because escaping them breaks things that demonstrably work:
+#
+#   _  appears only inside UTM query strings. recompete-radar (2026-10-06)
+#      carries one at character 430 and published complete, link shortened
+#      to lnkd.in. Escaping would put backslashes inside the URL.
+#   #  is our hashtag block. Same post rendered its hashtags correctly, and
+#      posts-api documents sending "#coding" unescaped and LinkedIn
+#      returning "{hashtag|\\#|coding}" — it converts them for us.
+#      Escaping would publish literal "#GovCon" text instead.
+#
+# So: the reserved set minus those two. Backslash goes FIRST, or we escape
+# the backslashes we just added.
+_LITTLE_TEXT_ESCAPE = "\\" + "|{}@[]()<>*~"
+
+
+def escape_commentary(text):
+    """Escape little-text reserved characters so LinkedIn stops truncating.
+
+    Call this at the payload boundary, never in the caption builder — X and
+    Instagram share those captions and would publish the backslashes.
+
+    Not idempotent, by design: escaping twice double-escapes, so a second
+    call is a bug that shows up as visible backslashes rather than as
+    silently-correct output hiding a double-call.
+    """
+    for ch in _LITTLE_TEXT_ESCAPE:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+# LINKEDIN_DRAFT=1 creates the post as a DRAFT: LinkedIn parses and renders
+# it, Page admins can see it, members cannot. It exists because the escaping
+# fix above could not be verified any other way — our token has
+# w_organization_social but not r_organization_social, so GET /rest/posts is
+# a 403 and there is no reading back what LinkedIn stored. The only way to
+# see how a caption survives the little-text parser is to let it parse one.
+#
+# Exactly "1", matching LINKEDIN_ALLOW_MEMBER_POST above, and off by default.
+# The asymmetry is deliberate: a flag that accidentally publishes costs one
+# live post, while a flag that accidentally DRAFTS makes the Page silently
+# stop publishing while every run still reports success — the same shape as
+# the truncation bug this was built to check.
+def _lifecycle_state():
+    """DRAFT when LINKEDIN_DRAFT=1, PUBLISHED otherwise."""
+    return "DRAFT" if os.environ.get("LINKEDIN_DRAFT") == "1" else "PUBLISHED"
+
+
 class LinkedInError(RuntimeError):
     """A LinkedIn API rejection, carrying what LinkedIn actually said."""
 
@@ -289,14 +357,14 @@ def post_image(repo_rel_path, commentary, alt_text=None):
 
     payload = {
         "author": author,
-        "commentary": commentary,
+        "commentary": escape_commentary(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],
                          "thirdPartyDistributionChannels": []},
         "content": {"media": {"id": image_urn,
                               "altText": alt_text or "PursuitAI"}},
-        "lifecycleState": "PUBLISHED",
+        "lifecycleState": _lifecycle_state(),
         "isReshareDisabledByAuthor": False,
     }
     r = requests.post(f"{API}/posts", headers=_headers(token),
@@ -311,8 +379,23 @@ def post_image(repo_rel_path, commentary, alt_text=None):
         raise LinkedInError(
             "post created but LinkedIn returned no x-restli-id header — "
             "refusing to log a post we cannot identify afterwards")
+    return _result(post_id)
+
+
+def _result(post_id):
+    """What a publish returns, and how loudly it says what it did.
+
+    A draft returns url=None rather than its feed permalink. That URL 404s
+    for anyone without a Page admin role, so handing it back would put a
+    dead link in the run log and in Slack — which is precisely how a draft
+    gets mistaken for a published post days later.
+    """
+    if _lifecycle_state() == "DRAFT":
+        print(f"[linkedin] DRAFT created {post_id} — NOT published, visible "
+              f"to Page admins only. Unset LINKEDIN_DRAFT to publish.")
+        return {"id": post_id, "url": None, "draft": True}
     print(f"[linkedin] posted {_permalink(post_id)}")
-    return {"id": post_id, "url": _permalink(post_id)}
+    return {"id": post_id, "url": _permalink(post_id), "draft": False}
 
 
 def _permalink(post_id):
@@ -598,7 +681,7 @@ def post_video(repo_rel_path, commentary, title=None):
 
     payload = {
         "author": author,
-        "commentary": commentary,
+        "commentary": escape_commentary(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],
@@ -608,7 +691,7 @@ def post_video(repo_rel_path, commentary, title=None):
         # media object, not as synonyms.
         "content": {"media": {"id": video_urn,
                               "title": title or "PursuitAI"}},
-        "lifecycleState": "PUBLISHED",
+        "lifecycleState": _lifecycle_state(),
         "isReshareDisabledByAuthor": False,
     }
     r = requests.post(f"{API}/posts", headers=_headers(token),
@@ -619,5 +702,4 @@ def post_video(repo_rel_path, commentary, title=None):
         raise LinkedInError(
             "post created but LinkedIn returned no x-restli-id header — "
             "refusing to log a post we cannot identify afterwards")
-    print(f"[linkedin] posted {_permalink(post_id)}")
-    return {"id": post_id, "url": _permalink(post_id)}
+    return _result(post_id)

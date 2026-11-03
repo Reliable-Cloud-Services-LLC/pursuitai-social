@@ -84,6 +84,17 @@ on:
         type: choice
         options: ["", "card", "screenshot", "ad"]
         default: ""
+      draft:
+        description: >-
+          LinkedIn only: create the post as a DRAFT instead of publishing
+          it. Page admins see it under Manage posts > Drafts, members see
+          nothing, and the topic is NOT consumed. Implies skipping X and
+          Instagram — a real post on those would consume the topic, so the
+          drafted caption would never be the one that ships. Use to see how
+          LinkedIn renders a caption before it is live. Leave off normally.
+        required: false
+        type: boolean
+        default: false
       skip:
         description: >-
           Skip a channel this run. Use to re-post a topic to the channel
@@ -92,7 +103,7 @@ on:
           normally.
         required: false
         type: choice
-        options: ["", "x", "ig"]
+        options: ["", "x", "ig", "linkedin"]
         default: ""
       topic:
         description: >-
@@ -443,11 +454,18 @@ jobs:
           # secret arrives as "", which is falsy.
           LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
           SKIP: ${{ inputs.skip }}
+          # Empty string on a schedule event, which is falsy — a cron run
+          # can only ever publish for real.
+          DRAFT: ${{ inputs.draft }}
         run: |
           args=""
           [ "$SKIP" = "x" ] && args="--skip-x"
           [ "$SKIP" = "ig" ] && args="--skip-ig"
           [ "$SKIP" = "linkedin" ] && args="--skip-linkedin"
+          # run.py forces --skip-x --skip-ig itself when drafting, so this
+          # stays a single flag; the forcing lives there because it must
+          # hold for a local run too.
+          [ "$DRAFT" = "true" ] && args="$args --draft"
           python engine/run.py --publish $args
 
       # always(): publish exits non-zero on failure, and the failure entry

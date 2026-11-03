@@ -549,7 +549,15 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
                 # report — X threads a CTA reply that can fail on its own.
                 outcome = poster(pending)
                 extra = dict(outcome) if isinstance(outcome, dict) else {}
-                results[ch] = {"status": "posted",
+                # A draft is NOT a post. LinkedIn's draft mode exists to let
+                # a caption be parsed and eyeballed before it reaches the
+                # feed, so it must not read as "published" anywhere: not in
+                # the log, not in the rotation, not in the exit code.
+                # Its own status rather than a boolean on "posted" — a flag
+                # nobody has to look at is a flag that gets missed, which is
+                # how a Page silently stops publishing.
+                status = "drafted" if extra.pop("draft", False) else "posted"
+                results[ch] = {"status": status,
                                "id": extra.pop("id", None) or outcome,
                                "error": None, **extra}
             except Exception as e:
@@ -560,6 +568,7 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     def by(status):
         return [c for c in POSTERS if results[c]["status"] == status]
     posted, failed, skipped = by("posted"), by("failed"), by("skipped")
+    drafted = by("drafted")
 
     # A topic is only consumed once it has actually reached an audience —
     # and never by an out-of-band post, which is a correction or a one-off
@@ -577,13 +586,19 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
             state["shot_index"] = state.get("shot_index", 0) + 1
         state["last_run"] = pending["date"]
         save_json(STATE, state)
+    elif drafted:
+        # Deliberately NOT consuming the topic. A draft reaches nobody, and
+        # burning the topic here would mean the caption we just validated is
+        # never the one that goes out.
+        print("[publish] drafted only - topic NOT consumed, nothing published")
     else:
         print("[publish] nothing posted - topic NOT consumed, will retry")
 
     entry = dict(pending, channels=results,
                  x=results["x"]["id"], ig=results["ig"]["id"],
                  outcome=("posted" if posted and not failed else
-                          "partial" if posted else "failed"))
+                          "partial" if posted else
+                          "drafted" if drafted and not failed else "failed"))
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a") as f:
         f.write(json.dumps(entry) + "\n")
@@ -592,13 +607,20 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     # Spend the approval with it, so it can never authorise a later post.
     approval.clear_approval(APPROVED)
 
-    if failed or not posted:
+    if failed or not (posted or drafted):
         import notify
         notify.failure(pending["topic"], pending["format"], results)
-        print(f"[publish] FAILED - posted={posted} failed={failed} "
-              f"skipped={skipped}")
+        print(f"[publish] FAILED - posted={posted} drafted={drafted} "
+              f"failed={failed} skipped={skipped}")
         sys.exit(1)
-    print(f"[publish] done - posted to {', '.join(posted)}")
+    # Never "posted" when nothing was. The status field being honest does
+    # not help if the one line an operator reads says otherwise.
+    if posted:
+        print(f"[publish] done - posted to {', '.join(posted)}")
+    if drafted:
+        print(f"[publish] DRAFT ONLY - {', '.join(drafted)} created a draft, "
+              f"nothing is public. Review it on the Page, then unset "
+              f"LINKEDIN_DRAFT and re-run to publish.")
 
 def pending_hash():
     """Print the hash of the post being sent for review.
@@ -667,7 +689,7 @@ def notify_pending():
         print("[notify] review request NOT sent - NOTIFY_WEBHOOK_URL unset")
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--approve", action="store_true",
@@ -685,6 +707,11 @@ def main():
     ap.add_argument("--skip-x", action="store_true")
     ap.add_argument("--skip-ig", action="store_true")
     ap.add_argument("--skip-linkedin", action="store_true")
+    ap.add_argument("--draft", action="store_true",
+                    help="LinkedIn only: create the post as a DRAFT instead "
+                         "of publishing it. Page admins can see it, members "
+                         "cannot, and the topic is NOT consumed. Use to see "
+                         "how LinkedIn renders a caption before it is live.")
     ap.add_argument("--force", action="store_true",
                     help="LOCAL DEV ONLY: publish without approval")
     ap.add_argument("--format", dest="fmt", choices=FORMATS,
@@ -694,7 +721,32 @@ def main():
                          "Out-of-band: the rotation does not advance, so a "
                          "correction post cannot skip the topic that was "
                          "actually due.")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+
+    # Before any dispatch: post_linkedin reads LINKEDIN_DRAFT when it builds
+    # the payload, so arming this later would be a flag that does nothing.
+    # A flag rather than an exported variable because the hazard of this
+    # mode is leaving it on, and argv cannot outlive the command.
+    if args.draft:
+        os.environ["LINKEDIN_DRAFT"] = "1"
+        print("[run] --draft: LinkedIn will create a DRAFT, not a post. "
+              "Nothing will be public and the topic will not be consumed.")
+        # A draft is a LinkedIn-only concept, and this is the one
+        # combination where it is not free. X and Instagram would publish
+        # for REAL, which marks the topic consumed — so the rotation
+        # advances and the caption just drafted for review is never the one
+        # that goes out on LinkedIn. A preview of a post that never happens.
+        #
+        # Forced rather than left to the operator: every other guard in
+        # this feature rests on a draft costing nothing, and an operator
+        # who forgets two flags silently loses a topic. Announced, because
+        # quietly changing what someone asked for is its own hazard.
+        if not (args.skip_x and args.skip_ig):
+            print("[run] --draft implies --skip-x --skip-ig: a real post on "
+                  "the other channels would consume the topic, and the "
+                  "drafted caption would never be the one published.")
+        args.skip_x = True
+        args.skip_ig = True
 
     if args.dry_run:
         p = prepare()

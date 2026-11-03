@@ -60,6 +60,85 @@ out.
 
 ## Things that will surprise you
 
+### LinkedIn truncates a post at an unescaped "(" and reports success
+
+`commentary` is **little text**, not plain text. Its grammar reserves
+
+    |  {  }  @  [  ]  (  )  <  >  #  \  *  _  ~
+
+and the format doc says: *"All reserved characters need to be escaped with
+a backslash, even if those characters are not used in one of the supported
+elements or templates."* ([little-text-format][ltf], read 2026-11-03.)
+
+What the docs do **not** say is the consequence, and it is the worst one
+available: LinkedIn returns **201 Created** and publishes everything up to
+the offending character. A paren is mention syntax —
+`MentionElement ::= '@' FallbackText? '(' 'Urn' ')'` — so an unescaped `(`
+sends the parser looking for a URN and it drops the rest of the post.
+
+Two confirmed cases, both found 2026-11-03:
+
+| post | cut at | lost |
+|---|---|---|
+| proposal-drafting, 2026-11-03 | char 286 of 570 | 284 chars (50%) — CTA link + hashtags |
+| exec-analytics, 2026-10-02 | char 247 of 595 | 348 chars (58%) |
+
+The exec-analytics one had been live and truncated for **a month**. Nobody
+noticed, because the surviving text ends on "…top contributors, at-risk
+pursuits" — a plausible-looking phrase. That is the thing to watch for:
+not an error, just less. **11 of 24 topics carry a paren**; the earliest
+sits at character 5, which would have published a 5-character post.
+
+Fixed by `post_linkedin.escape_commentary`, applied at the payload
+boundary (not in the caption builder — X and Instagram share those
+captions and would publish the backslashes).
+
+`#` and `_` are deliberately **left unescaped**, against the blanket rule,
+because escaping them breaks things that demonstrably work: recompete-radar
+(2026-10-06) carries a `_` at char 430 and three hashtags and published
+complete, link shortened to lnkd.in. Escaping `_` would put backslashes in
+a UTM string; escaping `#` would publish literal `#GovCon` text.
+
+[ltf]: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format
+
+### Previewing a LinkedIn post before it is public
+
+```bash
+python engine/run.py --prepare
+python engine/run.py --approve
+python engine/run.py --publish --draft --skip-x --skip-ig
+```
+
+`--draft` sets `lifecycleState: "DRAFT"`. LinkedIn parses and renders the
+post, Page admins see it under **Page → Admin tools → Manage posts →
+Drafts**, members see nothing. Then look at it, and if it reads correctly
+re-run without `--draft` to publish for real.
+
+It exists because the escaping fix above cannot be verified any other way:
+our token has `w_organization_social` but not `r_organization_social`, so
+`GET /rest/posts/{urn}` is a 403 and there is no reading back what LinkedIn
+stored. The only way to see how a caption survives the little-text parser
+is to let it parse one.
+
+**A draft is not a post**, and the code is careful about this in four
+places, because a draft mode that is easy to leave on is a silent-failure
+generator — the same shape as the truncation bug that prompted it:
+
+| | behaviour |
+|---|---|
+| status | `drafted`, its own value — never `posted` |
+| rotation | topic **not** consumed, section **not** burned |
+| exit code | `0` — a deliberate draft is not an incident |
+| summary line | "DRAFT ONLY — nothing is public", never "posted to" |
+
+It is off unless `--draft` is passed (or `LINKEDIN_DRAFT=1` is exported —
+the flag is the mechanism, and exactly `"1"`, matching
+`LINKEDIN_ALLOW_MEMBER_POST`). Prefer the flag: argv cannot outlive the
+command that typed it, and leaving this on is the whole hazard.
+
+Drafts do not auto-expire. Delete one from the Page after reviewing it, or
+they pile up in the admin view.
+
 ### The cron runs ~2 hours late, and that is normal
 
 GitHub documents it: *"The `schedule` event can be delayed during periods
