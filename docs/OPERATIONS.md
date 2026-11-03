@@ -101,6 +101,44 @@ a UTM string; escaping `#` would publish literal `#GovCon` text.
 
 [ltf]: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format
 
+### Previewing a LinkedIn post before it is public
+
+```bash
+python engine/run.py --prepare
+python engine/run.py --approve
+python engine/run.py --publish --draft --skip-x --skip-ig
+```
+
+`--draft` sets `lifecycleState: "DRAFT"`. LinkedIn parses and renders the
+post, Page admins see it under **Page → Admin tools → Manage posts →
+Drafts**, members see nothing. Then look at it, and if it reads correctly
+re-run without `--draft` to publish for real.
+
+It exists because the escaping fix above cannot be verified any other way:
+our token has `w_organization_social` but not `r_organization_social`, so
+`GET /rest/posts/{urn}` is a 403 and there is no reading back what LinkedIn
+stored. The only way to see how a caption survives the little-text parser
+is to let it parse one.
+
+**A draft is not a post**, and the code is careful about this in four
+places, because a draft mode that is easy to leave on is a silent-failure
+generator — the same shape as the truncation bug that prompted it:
+
+| | behaviour |
+|---|---|
+| status | `drafted`, its own value — never `posted` |
+| rotation | topic **not** consumed, section **not** burned |
+| exit code | `0` — a deliberate draft is not an incident |
+| summary line | "DRAFT ONLY — nothing is public", never "posted to" |
+
+It is off unless `--draft` is passed (or `LINKEDIN_DRAFT=1` is exported —
+the flag is the mechanism, and exactly `"1"`, matching
+`LINKEDIN_ALLOW_MEMBER_POST`). Prefer the flag: argv cannot outlive the
+command that typed it, and leaving this on is the whole hazard.
+
+Drafts do not auto-expire. Delete one from the Page after reviewing it, or
+they pile up in the admin view.
+
 ### The cron runs ~2 hours late, and that is normal
 
 GitHub documents it: *"The `schedule` event can be delayed during periods
