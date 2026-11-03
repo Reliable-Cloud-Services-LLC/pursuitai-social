@@ -8,7 +8,10 @@ import os
 import json
 import random
 
+import links
+
 X_LIMIT = 280
+SAFETY_MARGIN = 5
 
 def _claude_variant(topic, platform, brand):
     """Optional: fresh copy via the Claude API. Falls back silently."""
@@ -42,19 +45,88 @@ def _claude_variant(topic, platform, brand):
         print(f"[captions] Claude variant failed, using template: {e}")
         return None
 
-def build_x(topic, brand, fresh=True):
+def build_x(topic, brand, *, fmt, fresh=True):
+    """The tweet body — deliberately carries no link.
+
+    A post containing a URL is demoted in distribution, so the CTA link
+    ships as a threaded reply instead (see build_x_reply). Dropping the
+    CTA block also returns its ~62 characters to the copy, which is what
+    makes the body budget workable.
+
+    `fmt` is required even though the body no longer contains the tagged
+    URL: it keeps the body and its reply built from one signature, so a
+    caller cannot produce a body without knowing what reply pairs with it.
+    """
     body = (_claude_variant(topic, "x", brand) if fresh else None) or topic["hook_x"]
     tags = " ".join(brand["hashtags_x"][:2])
-    cta = f"\n\nFree 14-day trial → {brand['url']}\n{tags}"
-    # trim body if needed (t.co links count as 23 chars; stay conservative)
-    budget = X_LIMIT - len(cta) - 5
+    suffix = f"\n\n{tags}"
+    budget = X_LIMIT - len(suffix) - SAFETY_MARGIN
     if len(body) > budget:
         body = body[:budget].rsplit(" ", 1)[0].rstrip(".,;") + "…"
-    return body + cta
+    return body + suffix
+
+
+def build_x_reply(topic, brand, fmt):
+    """The CTA, posted as a reply to the body so the body stays link-free.
+
+    X counts any URL as 23 characters whatever its real length, so the
+    tagged URL costs the same here as a bare one would.
+    """
+    url = links.build_url(brand["url"], "x", topic["id"], fmt)
+    return f"Free 14-day trial — no credit card, set up in under 2 minutes:\n{url}"
+
+IG_TAG_COUNT = 8
+
+def _ig_hashtags(brand):
+    """Primary tag first, then a random sample of the rest.
+
+    The first entry in hashtags_ig is the category's primary tag and always
+    ships — sampling all 8 from 10 could drop it entirely. Mirrors build_x,
+    which already takes hashtags_x[:2] deterministically.
+    """
+    primary, rest = brand["hashtags_ig"][0], brand["hashtags_ig"][1:]
+    k = min(IG_TAG_COUNT - 1, len(rest))
+    return " ".join([primary] + random.sample(rest, k=k))
+
+# linkedin.com/help/linkedin/answer/a528176 — a post is capped at 3000
+# characters. Our longest hook is well under, so nothing truncates.
+LI_LIMIT = 3000
+LI_HASHTAGS = 3
+
+
+def build_linkedin(topic, brand, *, fmt, fresh=True):
+    """LinkedIn copy for the manual-assisted path.
+
+    Three deliberate differences from the other channels:
+
+      * The link goes in the BODY. LinkedIn hyperlinks a URL in a post, so
+        unlike Instagram there is no reason to hide it in a bio.
+      * Three hashtags, not Instagram's eight. Eight reads as spam to a
+        professional audience.
+      * The longer Instagram hook is the base, since LinkedIn allows 3000
+        characters and rewards substance over a one-liner.
+
+    `fmt` is required, same as build_x — it becomes utm_content.
+    """
+    body = (_claude_variant(topic, "ig", brand) if fresh else None) or topic["hook_ig"]
+    url = links.build_url(brand["url"], "linkedin", topic["id"], fmt)
+    tags = " ".join([brand["hashtags_ig"][0]]
+                    + random.sample(brand["hashtags_ig"][1:], k=LI_HASHTAGS - 1))
+    text = (f"{body}\n\n"
+            f"Start a free 14-day trial — no credit card, set up in under "
+            f"two minutes:\n{url}\n\n{tags}")
+    if len(text) > LI_LIMIT:
+        keep = LI_LIMIT - (len(text) - len(body)) - 1
+        body = body[:keep].rsplit(" ", 1)[0].rstrip(".,;") + "…"
+        text = (f"{body}\n\n"
+                f"Start a free 14-day trial — no credit card, set up in under "
+                f"two minutes:\n{url}\n\n{tags}")
+    return text
+
 
 def build_ig(topic, brand, fresh=True):
     body = (_claude_variant(topic, "ig", brand) if fresh else None) or topic["hook_ig"]
-    tags = " ".join(random.sample(brand["hashtags_ig"], k=min(8, len(brand["hashtags_ig"]))))
+    tags = _ig_hashtags(brand)
     return (f"{body}\n\n"
             f"Start your free 14-day trial — link in bio or {brand['url'].replace('https://', '')}\n"
             f"No credit card. Set up in under 2 minutes.\n\n{tags}")
@@ -64,5 +136,5 @@ if __name__ == "__main__":
     with open(os.path.join(os.path.dirname(here), "content", "calendar.json")) as f:
         cal = json.load(f)
     t = cal["topics"][0]
-    print("--- X ---\n" + build_x(t, cal["brand"], fresh=False))
+    print("--- X ---\n" + build_x(t, cal["brand"], fmt="card", fresh=False))
     print("\n--- IG ---\n" + build_ig(t, cal["brand"], fresh=False))

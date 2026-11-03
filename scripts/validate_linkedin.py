@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""LinkedIn Page-posting pre-flight.
+
+Run this BEFORE trusting the automation, and after every re-authorization.
+It verifies each link in the chain without publishing anything:
+
+  1. Token is valid and identifies a member
+  2. That member holds a role on the target Page (posting fails without it)
+  3. The organization URN resolves
+  4. (--upload) uploads a REAL image and waits for AVAILABLE, proving the
+     half of the flow that actually breaks — but creates no post
+
+The reason this matters more here than on the other channels: LinkedIn
+access tokens last 60 days and programmatic refresh is limited to select
+partners, so this credential dies on a schedule. A chain that worked last
+month says nothing about today.
+
+Usage:
+  export LINKEDIN_ACCESS_TOKEN=... LINKEDIN_ORG_ID=...
+  python scripts/validate_linkedin.py              # checks 1-3
+  python scripts/validate_linkedin.py --upload     # checks 1-4
+
+Exit code 0 = ready to post.
+"""
+import argparse
+import os
+import sys
+
+import requests
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "engine"))
+
+import post_linkedin  # noqa: E402
+
+# Mirrors validate_ig's 7-day gate. A token good for three more days passes
+# every check here and still cannot survive the week — reporting that as
+# "ready" is how the channel dies quietly on a Tuesday.
+MIN_DAYS = 7
+
+
+def fail(msg):
+    print(f"  ✗ {msg}")
+    sys.exit(1)
+
+
+def ok(msg):
+    print(f"  ✓ {msg}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--upload", action="store_true",
+                    help="also upload a real image (never posted) to prove "
+                         "the half of the flow that actually breaks")
+    ap.add_argument("--check-app", action="store_true",
+                    help="validate LINKEDIN_CLIENT_ID/SECRET alone, before "
+                         "any access token exists")
+    ap.add_argument("--discover", action="store_true",
+                    help="print LINKEDIN_ORG_ID and LINKEDIN_TOKEN_EXPIRES_AT "
+                         "for the current token, ready to paste as secrets")
+    ap.add_argument("--ttl-seconds", type=int, default=None,
+                    help="token TTL from the portal's Token Details, used "
+                         "with --discover to compute the expiry timestamp")
+    ap.add_argument("--file", metavar="REPO_REL_PATH",
+                    help="image OR video to upload with --upload; defaults "
+                         "to the newest LinkedIn card. Pass an `ad` mp4 to "
+                         "exercise the Videos API, which is the half with "
+                         "multipart upload and a transcode to fail at.")
+    ap.add_argument("--member", action="store_true",
+                    help="validate the MEMBER posting chain (Share on "
+                         "LinkedIn / w_member_social) instead of the Page "
+                         "chain. Posts would author as a person, not the "
+                         "organization — see docs/LINKEDIN_ACCESS.md.")
+    args = ap.parse_args()
+
+    if args.check_app:
+        return check_app()
+
+    tok = os.environ.get("LINKEDIN_ACCESS_TOKEN") or fail(
+        "LINKEDIN_ACCESS_TOKEN not set")
+    if args.discover:
+        return discover(tok, args.ttl_seconds)
+    if args.member:
+        return check_member(tok, args.upload, args.file)
+    org_id = os.environ.get("LINKEDIN_ORG_ID") or fail(
+        "LINKEDIN_ORG_ID not set")
+    org_urn = f"urn:li:organization:{org_id}"
+    headers = post_linkedin._headers(tok, json_body=False)
+
+    print(f"[0] pinned API version {post_linkedin.LINKEDIN_VERSION}")
+
+    print("[1] token validity + Page role")
+    # ONE call answers both, and it must be a call this token is actually
+    # scoped for.
+    #
+    # This used to probe liveness with /v2/userinfo first. That is a MEMBER
+    # endpoint needing openid/profile, and a Page-only token has neither by
+    # design — once member posting was retired we stopped minting those
+    # scopes. So the validator failed at step 1 with
+    # `ACCESS_DENIED: userinfo.GET.NO_VERSION` on a token that was entirely
+    # healthy, which is the worst kind of check: one that fails for a reason
+    # unrelated to the thing it claims to verify.
+    #
+    # organizationAcls needs rw_organization_admin, which the Page chain has,
+    # and the status code separates the two failures that differ in meaning:
+    #   401 -> the token is dead, revoked or malformed        (fatal)
+    #   403 -> live, but missing rw_organization_admin        (not fatal —
+    #          the upload below is the real test, and says so)
+    # Posting as an organization also requires an ADMINISTRATOR (or DSC) role
+    # on that Page; without it the token looks fine and the POST 403s at
+    # publish, which is the worst moment to find out.
+    r = requests.get(
+        "https://api.linkedin.com/rest/organizationAcls"
+        "?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+        headers=headers, timeout=30)
+    if r.status_code == 401:
+        fail(f"token rejected ({r.status_code}): {r.text[:200]}")
+    elif r.status_code != 200:
+        print(f"    (could not read organizationAcls: {r.status_code} "
+              f"{r.text[:160]})")
+        print("    NOT fatal on its own, but if the upload below 403s, this "
+              "is why — grant the member an ADMINISTRATOR role on the Page.")
+    else:
+        ok("token accepted by the versioned API")
+        orgs = _orgs_in(r.json())
+        if org_urn in orgs:
+            ok(f"member administers {org_urn}")
+        else:
+            fail(f"member does NOT administer {org_urn}. Roles found: "
+                 f"{orgs or 'none'}. Posting will 403.")
+
+    print("[3] token lifetime and scopes")
+    days, status, scopes = post_linkedin.token_state()
+
+    if status == "unknown":
+        print("    No LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET, so this "
+              "falls back to the stored\n"
+              "    LINKEDIN_TOKEN_EXPIRES_AT — which cannot detect a REVOKED "
+              "token (revoked tokens\n"
+              "    keep a future expiry) and cannot show which scopes were "
+              "actually granted.")
+    elif status != "active":
+        fail(f"LinkedIn reports this token as {status.upper()}. "
+             f"Re-authorize before relying on it.")
+    else:
+        ok("LinkedIn reports the token active")
+
+    if scopes:
+        if post_linkedin.REQUIRED_SCOPE in scopes:
+            ok(f"scope {post_linkedin.REQUIRED_SCOPE} granted")
+        else:
+            # The token carries what the member consented to, not what you
+            # meant to tick. Posting 403s without this.
+            fail(f"token lacks {post_linkedin.REQUIRED_SCOPE}. Granted: "
+                 f"{', '.join(scopes)}. Re-mint with that scope ticked.")
+
+    if days is None:
+        print("    No expiry available — set LINKEDIN_TOKEN_EXPIRES_AT, or "
+              "the client credentials for the real value.")
+    elif days < MIN_DAYS:
+        fail(f"token expires in {days} day(s). It will not survive the "
+             f"posting schedule — re-authorize before relying on it.")
+    else:
+        ok(f"token has {days} days left")
+
+    if args.upload:
+        print("[4] image upload (real, but NOTHING is posted)")
+        rel = args.file or _newest_card()
+        if not rel:
+            fail("no LinkedIn card to upload — render one, or pass --file")
+        ok(f"target: {rel}")
+        # upload_media, not upload_image: an `ad` is an .mp4 and goes
+        # through the Videos API — multipart upload, finalize, transcode.
+        # That is the half most likely to break, so it is the half worth
+        # proving, and proving it on the images path would prove nothing.
+        try:
+            urn = post_linkedin.upload_media(rel, tok, org_urn)
+        except post_linkedin.LinkedInError as e:
+            fail(str(e))
+        kind = "video" if post_linkedin.is_video(rel) else "image"
+        ok(f"{kind} uploaded and AVAILABLE: {urn} — no post was created")
+
+    print("\nAll checks passed — the LinkedIn chain is ready. 🚀")
+
+
+# LinkedIn's own samples for this endpoint disagree with each other: the
+# roleAssignee example returns the URN under "organization", the paginated
+# example under "organizationTarget". Reading only one silently finds
+# nothing and reports "member does NOT administer" against a Page they do.
+_ORG_FIELDS = ("organization", "organizationTarget")
+
+
+def _orgs_in(payload):
+    out = []
+    for e in (payload or {}).get("elements", []):
+        for field in _ORG_FIELDS:
+            if e.get(field):
+                out.append(e[field])
+                break
+    return out
+
+
+def _newest_card():
+    d = os.path.join(ROOT, "assets", "linkedin")
+    if not os.path.isdir(d):
+        return None
+    imgs = [f for f in os.listdir(d)
+            if f.lower().endswith(post_linkedin.ALLOWED_SUFFIXES)]
+    if not imgs:
+        return None
+    newest = max(imgs, key=lambda f: os.path.getmtime(os.path.join(d, f)))
+    return os.path.join("assets", "linkedin", newest)
+
+
+
+
+# Documented default: "all access tokens are issued with a 60-day lifespan".
+# Used only when the real TTL is not supplied — see the warning below.
+DEFAULT_TTL_SECONDS = 60 * 86400
+
+
+def discover(tok, ttl_seconds=None):
+    """Print the two derived secrets for a freshly minted token.
+
+    LINKEDIN_ORG_ID is asked of the API rather than read off a Page URL, so
+    it cannot be the id of a Page the token cannot actually post to.
+    """
+    import time
+    headers = post_linkedin._headers(tok, json_body=False)
+    r = requests.get(
+        "https://api.linkedin.com/rest/organizationAcls"
+        "?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+        headers=headers, timeout=30)
+    if r.status_code != 200:
+        fail(f"could not read organizationAcls ({r.status_code}): "
+             f"{r.text[:200]}\n"
+             f"       This needs the rw_organization_admin scope on the "
+             f"token — regenerate it with that scope ticked.")
+    orgs = _orgs_in(r.json())
+    if not orgs:
+        fail("this member administers no Pages. Posting as an organization "
+             "needs an ADMINISTRATOR role — grant it on the Page, then mint "
+             "a fresh token.")
+
+    print("\n# Paste these as repository secrets:\n")
+    for urn in orgs:
+        print(f"LINKEDIN_ORG_ID={urn.rsplit(':', 1)[-1]}"
+              + (f"    # {urn}" if len(orgs) > 1 else ""))
+    if len(orgs) > 1:
+        print("# NB more than one Page — pick the PursuitAI one.")
+
+    ttl = ttl_seconds or DEFAULT_TTL_SECONDS
+    print(f"LINKEDIN_TOKEN_EXPIRES_AT={int(time.time()) + ttl}")
+    if ttl_seconds is None:
+        print(f"\n# ^ assumes the documented {DEFAULT_TTL_SECONDS // 86400}-day "
+              f"lifespan, NOT this token's actual TTL. The portal shows the\n"
+              f"# real value under Token Details; re-run with --ttl-seconds N "
+              f"to use it. Being wrong here\n"
+              f"# only shifts when the expiry alarm fires, but it shifts it "
+              f"in the unhelpful direction if the\n"
+              f"# token was already partly used.")
+
+
+# A token value that cannot possibly be real, used to probe the app
+# credentials on their own. Introspection requires a token argument, but the
+# credential checks happen FIRST, so the response code answers a question
+# about the client id and secret regardless of the token being nonsense.
+_SENTINEL_TOKEN = "not-a-real-token-credential-probe"
+
+
+def check_app():
+    """Validate the app credentials before any access token exists.
+
+    Introspection's documented status codes make this possible:
+
+        401  Invalid client secret
+        400  Invalid client id or token
+        200  Success
+
+    We deliberately send a junk token, so 400 is the EXPECTED healthy answer
+    — it means the secret was accepted and the request got as far as
+    rejecting the token. 401 is the definitive failure.
+
+    The one thing this cannot separate is a wrong client id from the junk
+    token: both are 400. That limit is stated rather than papered over —
+    a wrong client id surfaces the moment a real token is introspected.
+    """
+    cid = os.environ.get("LINKEDIN_CLIENT_ID") or fail(
+        "LINKEDIN_CLIENT_ID not set")
+    secret = os.environ.get("LINKEDIN_CLIENT_SECRET") or fail(
+        "LINKEDIN_CLIENT_SECRET not set")
+    ok(f"client id present ({cid[:4]}…{cid[-2:]}, {len(cid)} chars)")
+    ok(f"client secret present ({len(secret)} chars)")
+
+    r = requests.post(post_linkedin.INTROSPECT_URL,
+                      data={"client_id": cid, "client_secret": secret,
+                            "token": _SENTINEL_TOKEN},
+                      headers={"Content-Type":
+                               "application/x-www-form-urlencoded"},
+                      timeout=30)
+    if r.status_code == 401:
+        fail("LinkedIn rejected the CLIENT SECRET (401). Copy it again from "
+             "the app's Auth tab — the portal shows it once per rotation.")
+    if r.status_code == 400:
+        ok("client secret accepted — LinkedIn rejected only the probe token, "
+           "which is the expected answer")
+        print("\n    NB a 400 cannot distinguish a wrong client ID from the "
+              "junk token this sends.\n"
+              "    A wrong client ID would surface the first time a REAL "
+              "token is introspected.")
+    elif r.status_code == 200:
+        ok("credentials accepted (200) — unexpectedly the probe token was "
+           "also accepted, which is worth a look")
+    else:
+        fail(f"unexpected {r.status_code} from introspection: {r.text[:200]}")
+
+    print("\nApp credentials look right. Next: mint an access token, then "
+          "run --discover.")
+
+
+# ---------------------------------------------------------------------------
+# Member (Share on LinkedIn) chain
+# ---------------------------------------------------------------------------
+
+# The ONE thing LinkedIn's documentation does not answer, and the reason this
+# mode exists.
+#
+# Share on LinkedIn is self-serve and grants w_member_social — verified in
+# the Open Permissions table on
+# learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access,
+# which states plainly: "Open Permissions are the only permissions that are
+# available to all developers without special approval."
+#
+# The versioned Posts API lists w_member_social in its OWN permissions table
+# and documents `author` as "Person URN or Organization URN". So on paper our
+# existing post_linkedin.py works for a member by swapping one field.
+#
+# BUT the Share on LinkedIn documentation describes the LEGACY endpoints
+# (/v2/ugcPosts, /v2/assets?action=registerUpload), and nothing states
+# whether an app holding ONLY the self-serve product may call the VERSIONED
+# /rest/* surface. Those are two different implementations — one is a field
+# swap, the other is a day of work — and guessing wrong means writing the
+# wrong one.
+#
+# This asks LinkedIn instead of guessing. The image upload is the honest
+# probe: it exercises the versioned surface with a person-owned asset and
+# costs nothing visible, because an uploaded image that is never attached to
+# a post appears nowhere.
+MEMBER_SCOPE = "w_member_social"
+
+
+def person_urn_from(userinfo):
+    """Person URN from an OpenID Connect userinfo payload.
+
+    `sub` IS the member id, asked of the API rather than read off a profile
+    URL — that carries a vanity slug (`/in/aqeelbutt`), not the id, and a
+    URN built from a slug is silently wrong rather than loudly invalid.
+
+    Raises instead of returning None: a missing `sub` means the token lacks
+    the `profile` scope, and continuing would build "urn:li:person:None" and
+    surface it as an opaque 400 from LinkedIn three calls later.
+    """
+    sub = (userinfo or {}).get("sub")
+    if not sub:
+        raise ValueError(
+            "userinfo returned no `sub` — the token lacks the `profile` "
+            "scope, so the Person URN cannot be resolved. Re-mint the token "
+            "with `profile` ticked alongside w_member_social.")
+    return f"urn:li:person:{sub}"
+
+
+def check_member(tok, do_upload, explicit_file):
+    """Validate the member chain WITHOUT publishing anything."""
+    print(f"[0] pinned API version {post_linkedin.LINKEDIN_VERSION}")
+
+    print("[1] token validity + person URN")
+    r = requests.get("https://api.linkedin.com/v2/userinfo",
+                     headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+    if r.status_code != 200:
+        fail(f"token rejected ({r.status_code}): {r.text[:200]}")
+    info = r.json() or {}
+    try:
+        person_urn = person_urn_from(info)
+    except ValueError as e:
+        fail(str(e))
+    ok(f"token valid — {info.get('name', 'unknown')} → {person_urn}")
+
+    print("[2] scope")
+    days, status, scopes = post_linkedin.token_state()
+    if scopes:
+        if MEMBER_SCOPE in scopes:
+            ok(f"scope {MEMBER_SCOPE} granted")
+        else:
+            fail(f"token lacks {MEMBER_SCOPE}. Granted: {', '.join(scopes)}. "
+                 f"Add the Share on LinkedIn product, then re-mint.")
+    else:
+        print("    (no client credentials for introspection — scope "
+              "unverified; a 403 at step 3 is what it would have told you)")
+    if status not in ("unknown", "active"):
+        fail(f"LinkedIn reports this token as {status.upper()}.")
+    if days is not None and days < MIN_DAYS:
+        fail(f"token expires in {days} day(s) — it cannot carry the "
+             f"schedule. Re-authorize first.")
+    elif days is not None:
+        ok(f"token has {days} days left")
+
+    if not do_upload:
+        print("\nToken and scope look right. Re-run with --upload to answer "
+              "the question that\nmatters: whether the VERSIONED Images API "
+              "accepts a person-owned upload.")
+        return
+
+    # upload_media, not upload_image — the same dispatcher publish uses. The
+    # org-mode branch above was switched when the Videos API landed and this
+    # one was not, so `--member --upload --file <ad>.mp4` was refused locally
+    # by check_image and never reached LinkedIn at all. Proving the chain on
+    # a path the publish job does not take proves nothing.
+    kind = "Videos" if post_linkedin.is_video(explicit_file) else "Images"
+    print(f"[3] versioned {kind} API with a person owner (nothing is posted)")
+    rel = explicit_file or _newest_card()
+    if not rel:
+        fail("no LinkedIn card to upload — render one, or pass --file")
+    ok(f"target: {rel}")
+    try:
+        urn = post_linkedin.upload_media(rel, tok, person_urn)
+    except post_linkedin.LinkedInError as e:
+        print(f"  ✗ {e}")
+        # WHERE it failed is the whole answer, and an earlier version of
+        # this mode threw that away: it printed "the versioned surface
+        # REFUSED a person-owned upload" for ANY failure, including one
+        # three calls deep. On 2026-10-02 that fired on a status-poll bug
+        # of ours and would have sent us to build the wrong implementation
+        # — which is the exact mistake the probe exists to prevent.
+        stage = str(e).split(" failed")[0]
+        if stage.startswith(("image upload initialization",
+                             "video upload initialization")):
+            print("\n    VERDICT: the versioned /rest surface refused to "
+                  "REGISTER a person-owned upload.\n"
+                  "    The member path needs the legacy endpoints — "
+                  "/v2/assets?action=registerUpload\n"
+                  "    then /v2/ugcPosts. A separate implementation, not a "
+                  "field swap.")
+        elif stage.startswith(("image status", "video status")):
+            print("\n    VERDICT: INCONCLUSIVE — and specifically NOT a "
+                  "refusal.\n"
+                  "    initializeUpload and the byte upload both SUCCEEDED, "
+                  "so the versioned\n"
+                  "    surface does accept a person-owned upload. Only "
+                  "reading the result back\n"
+                  "    failed. LinkedIn documents that `w_member_social` is "
+                  "write-only for\n"
+                  "    versioned GETs, so a 403 here is expected and means "
+                  "the upload is fine\n"
+                  "    but unverifiable; a 400 is more likely our own "
+                  "request being malformed.")
+        else:
+            print(f"\n    VERDICT: failed at `{stage}` — read the error "
+                  f"above before\n"
+                  f"    concluding anything about which implementation to "
+                  f"build.")
+        sys.exit(1)
+    ok(f"uploaded and AVAILABLE: {urn} — no post was created")
+    # Name the API that was actually exercised. Saying "Images API" after a
+    # video run is the same class of mistake as captioning a screenshot
+    # "card" in the review message: a label is load-bearing precisely when
+    # someone is reading it to decide something.
+    print(f"\n    VERDICT: the versioned /rest {kind} API ACCEPTS a "
+          f"person-owned upload AND\n"
+          f"    lets this token read the status back. post_linkedin.py works "
+          f"for members by\n"
+          f"    swapping the author URN — upload, the AVAILABLE poll and the "
+          f"x-restli-id read\n"
+          f"    all carry over.")
+    print("\nMember chain validated. 🚀")
+
+
+# Entry point LAST, deliberately. Python executes a module top to bottom, so
+# a __main__ guard placed mid-file calls main() before anything below it is
+# defined — which is exactly how discover() became a NameError the moment it
+# was appended past the guard. test_entry_point_reaches_argument_parsing
+# runs the script for real so that cannot recur silently.
+if __name__ == "__main__":
+    main()

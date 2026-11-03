@@ -21,11 +21,14 @@ Usage:
 Exit code 0 = ready for autonomous posting.
 """
 import argparse
+import json
 import os
 import sys
+import time
 
 import requests
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GRAPH = "https://graph.facebook.com/v21.0"
 
 def fail(msg):
@@ -35,11 +38,68 @@ def fail(msg):
 def ok(msg):
     print(f"  ✓ {msg}")
 
+VIDEO_SUFFIXES = (".mp4", ".mov")
+
+
+class NoReelTarget(Exception):
+    """Nothing to test, with the reason a human needs."""
+
+
+def resolve_reel_target(explicit, log_path):
+    """Repo-relative path of the video to test.
+
+    `explicit` (--file) wins. It is NOT checked against the filesystem:
+    assets/ is gitignored and the runner's checkout has none of it, so the
+    only existence that matters is the object in the bucket — which the
+    caller establishes with a HEAD, and whose failure message can say so
+    properly. Requiring a local file here would make the flag unusable in
+    CI, which is the one place it has production credentials.
+
+    Without it, the newest video in the post log — a known-good file, which
+    is what you want when asking "does the reel path work", but NOT when
+    asking "was that specific artifact bad". The 2026-08-17 failure went
+    ten days unanswered partly because the default quietly tested a later,
+    healthy file instead.
+    """
+    if explicit:
+        if not explicit.lower().endswith(VIDEO_SUFFIXES):
+            raise NoReelTarget(
+                f"{explicit} is not a video ({', '.join(VIDEO_SUFFIXES)}) — "
+                f"Meta would reject it for a reason unrelated to what you "
+                f"are testing")
+        return explicit.lstrip("/")
+
+    if not os.path.exists(log_path):
+        raise NoReelTarget(f"no post log at {log_path} and no --file given")
+    with open(log_path) as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    for entry in reversed(entries):
+        cand = entry.get("media_ig") or ""
+        if cand.lower().endswith(VIDEO_SUFFIXES):
+            return cand.lstrip("/")
+    raise NoReelTarget(
+        "no video in posted.jsonl to test with — render one first, or name "
+        "one with --file")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--container", action="store_true",
                     help="also create (but never publish) a test container")
+    ap.add_argument("--reel", action="store_true",
+                    help="also create (but never publish) a REELS container. "
+                         "The reel path has different specs from images and "
+                         "reached production untested — this exercises it.")
+    ap.add_argument("--file", metavar="REPO_REL_PATH",
+                    help="test THIS video instead of the newest posted one, "
+                         "e.g. assets/video/pricing-plans_ad.mp4. Needs "
+                         "--reel. The path is relative to the repo and must "
+                         "exist in the BUCKET, which is not the same as "
+                         "existing on your disk.")
     args = ap.parse_args()
+
+    if args.file and not args.reel:
+        fail("--file targets the REEL check; pass --reel too")
 
     tok = os.environ.get("IG_ACCESS_TOKEN") or fail("IG_ACCESS_TOKEN not set")
     uid = os.environ.get("IG_USER_ID") or fail("IG_USER_ID not set")
@@ -60,10 +120,11 @@ def main():
     if missing and d.get("type") != "SYSTEM_USER":
         fail(f"missing scopes: {missing} (have: {sorted(scopes)})")
     ok(f"scopes ok ({'system user' if d.get('type')=='SYSTEM_USER' else ', '.join(sorted(needed))})")
+    token_days_left = None
     if d.get("expires_at", 0):
         import datetime
         exp = datetime.datetime.fromtimestamp(d["expires_at"])
-        days = (exp - datetime.datetime.now()).days
+        days = token_days_left = (exp - datetime.datetime.now()).days
         print(f"    note: token expires {exp:%Y-%m-%d} ({days} days) — "
               "use a System User token for never-expiring")
 
@@ -83,18 +144,64 @@ def main():
     if r.status_code == 200 and r.json().get("data"):
         u = r.json()["data"][0]
         used = u.get("quota_usage", 0)
-        ok(f"quota used {used}/50 in current 24h window")
+        ok(f"quota used {used}/100 in current 24h window")
     else:
         print("    (quota endpoint unavailable — not fatal)")
 
+    # Both media modes need this. Binding it inside the --container branch
+    # made --reel crash with UnboundLocalError before it reached a single
+    # Meta call — the mode existed to print Meta's error and could not get
+    # far enough to ask.
+    base = None
+    if args.container or args.reel:
+        base = os.environ.get("MEDIA_BASE_URL") or fail(
+            "MEDIA_BASE_URL not set")
+
     if args.container:
         print("[5] container creation (fetch test — will NOT publish)")
-        base = os.environ.get("MEDIA_BASE_URL") or fail("MEDIA_BASE_URL not set")
-        test_asset = "assets/cards/fit-scoring_ig.png"
+        # Test an asset that PROVABLY SHIPPED, not one we hope exists.
+        # prepare only syncs the assets it renders that run, so the bucket
+        # holds exactly what past runs produced — and S3 answers 403 (not
+        # 404) for a missing key when listing is private. The previous
+        # version derived a plausible path from the calendar; on a bucket
+        # that had never rendered that topic it 403'd and read as a
+        # credentials problem, mid-credential-setup, to the first person
+        # who ran it. posted.jsonl is the ledger of what actually reached
+        # the bucket: walk it newest-first for a JPEG (Meta accepts no
+        # other image format — see media.as_jpeg).
+        test_asset = None
+        log_path = os.path.join(ROOT, "logs", "posted.jsonl")
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                entries = [json.loads(line) for line in f if line.strip()]
+            for entry in reversed(entries):
+                for key in ("cover_ig", "media_ig"):
+                    rel = entry.get(key) or ""
+                    if rel.lower().endswith((".jpg", ".jpeg")):
+                        test_asset = rel
+                        break
+                if test_asset:
+                    break
+        if not test_asset:
+            # Fresh clone / empty log: fall back to the first publishable
+            # topic's card. May not be uploaded yet — the error below says
+            # exactly that instead of implying broken credentials.
+            sys.path.insert(0, os.path.join(ROOT, "engine"))
+            import compliance
+            with open(os.path.join(ROOT, "content", "calendar.json")) as f:
+                topics = json.load(f)["topics"]
+            publishable = [t for t in topics if compliance.is_publishable(t)]
+            if not publishable:
+                fail("no publishable topic to test with")
+            test_asset = f"assets/cards/{publishable[0]['id']}_ig.jpg"
         url = f"{base.rstrip('/')}/{test_asset}"
         head = requests.head(url, timeout=30)
         if head.status_code != 200:
             fail(f"asset not publicly reachable ({head.status_code}): {url}\n"
+                 f"       NB S3 returns 403 for a MISSING key when listing is\n"
+                 f"       private — this usually means the file was never\n"
+                 f"       uploaded (run a prepare), not that credentials are\n"
+                 f"       wrong.\n"
                  "    push the repo (public) first, or fix MEDIA_BASE_URL")
         ok(f"asset publicly reachable: {url}")
         r = requests.post(f"{GRAPH}/{uid}/media", data={
@@ -105,6 +212,77 @@ def main():
             fail(f"container creation failed: {r.json().get('error', {}).get('message')}")
         ok(f"container {r.json()['id']} created — Instagram fetched your media. "
            "NOT publishing; it expires harmlessly in 24h.")
+
+    # An expiring token passes every CHAIN check and still cannot run a
+    # daily cron — it dies mid-schedule and the failure lands days later,
+    # looking like a regression. The verdict must not say "autonomously"
+    # about a token that will not survive the week. (The operator hit
+    # exactly this: a 0-days token, every check green, rocket emoji.)
+    if token_days_left is not None and token_days_left < 7:
+        print(f"\nChain verified — but this token expires in "
+              f"{token_days_left} day(s), so the engine can NOT post "
+              f"autonomously on it. Mint a System User token "
+              f"(Business Settings → Users → System users) and update "
+              f"IG_ACCESS_TOKEN before relying on the schedule.")
+        sys.exit(1)
+    if args.reel:
+        print("[6] REELS container (fetch + transcode test — will NOT publish)")
+        try:
+            rel = resolve_reel_target(
+                args.file, os.path.join(ROOT, "logs", "posted.jsonl"))
+        except NoReelTarget as e:
+            fail(str(e))
+        print(f"    target: {rel}"
+              + ("  (--file)" if args.file else "  (newest posted video)"))
+        url = f"{base.rstrip('/')}/{rel}"
+        head = requests.head(url, timeout=30)
+        if head.status_code >= 400:
+            fail(f"video not publicly reachable ({head.status_code}): {url}\n"
+                 f"       NB S3 answers 403 for a MISSING key when listing is\n"
+                 f"       private, so this usually means the file was never\n"
+                 f"       uploaded — prepare is what syncs assets to the\n"
+                 f"       bucket — rather than that credentials are wrong.")
+        ok(f"video publicly reachable: {url}")
+
+        payload = {"media_type": "REELS", "video_url": url,
+                   "caption": "[validation container - never published]",
+                   "share_to_feed": "true", "access_token": tok}
+        cover = (os.path.splitext(rel)[0] + "_poster.jpg")
+        if requests.head(f"{base.rstrip('/')}/{cover}",
+                         timeout=30).status_code < 400:
+            payload["cover_url"] = f"{base.rstrip('/')}/{cover}"
+            ok(f"cover reachable: {cover}")
+        r = requests.post(f"{GRAPH}/{uid}/media", data=payload, timeout=120)
+        if r.status_code >= 400:
+            # THE point of this mode: print what Meta actually said. A bare
+            # "400 Bad Request" is what sent the first live reel failure
+            # into a guessing game.
+            try:
+                err = (r.json() or {}).get("error", {})
+            except ValueError:
+                err = {}
+            fail("reel container REJECTED by Meta:\n"
+                 f"       message : {err.get('message')}\n"
+                 f"       user msg: {err.get('error_user_msg')}\n"
+                 f"       subcode : {err.get('error_subcode')}\n"
+                 f"       fbtrace : {err.get('fbtrace_id')}")
+        container = r.json()["id"]
+        ok(f"container {container} accepted — polling transcode…")
+        for _ in range(20):
+            st = requests.get(f"{GRAPH}/{container}",
+                              params={"fields": "status_code,status",
+                                      "access_token": tok},
+                              timeout=60).json()
+            code = st.get("status_code")
+            if code == "FINISHED":
+                ok("transcode FINISHED — the reel path works end to end. "
+                   "NOT publishing; the container expires in 24h.")
+                break
+            if code == "ERROR":
+                fail(f"transcode FAILED: {st.get('status')}")
+            time.sleep(10)
+        else:
+            fail("transcode never finished within 200s")
 
     print("\nAll checks passed — the engine can post autonomously. 🚀")
 

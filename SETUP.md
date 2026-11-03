@@ -1,10 +1,16 @@
 # PursuitAI Social Engine — Setup Guide
 
-One-time setup (~45 min). After this, the engine posts to X and Instagram every day, Mon–Sat at 9:30 AM ET, with zero human involvement.
+One-time setup (~45 min). After this the engine prepares a post every day, Mon–Sat at 9:30 AM ET, and waits for you to approve it. Your daily cost is well under a minute.
 
 ## How it works
 
-GitHub Actions runs `engine/run.py` on a daily cron. Each run picks the next feature topic (round-robin through 24 topics in `content/calendar.json`), rotates the format (branded card → live site screenshot → card → short video), builds captions, and posts through the official X and Instagram APIs. State and a post log are committed back to the repo. If `ANTHROPIC_API_KEY` is set, Claude rewrites each caption fresh so posts never repeat verbatim across cycles.
+GitHub Actions runs `engine/run.py` on a daily cron in two stages.
+
+**Stage 1 — prepare.** Picks the next feature topic (round-robin through 24 topics in `content/calendar.json`), rotates the format (branded card → live screenshot → card → short video), builds captions, commits the media and `content/pending.json`, and sends the whole thing to Slack for review. If `ANTHROPIC_API_KEY` is set, Claude rewrites each caption fresh so posts never repeat verbatim.
+
+**Stage 2 — publish.** Runs only after a human approves. It re-checks that the content still matches what was approved, posts through the official X and Instagram APIs, and commits the state and post log.
+
+Generation is automated. **Publishing is not.** Our audience is a small, reputation-dense professional market, and a single wrong factual claim in front of it is not recoverable — so a person reads every post before it ships. There is no auto-approve, no approve-on-timeout, and no environment variable that bypasses the gate.
 
 ## Step 1 — Create the GitHub repo
 
@@ -21,7 +27,42 @@ GitHub Actions runs `engine/run.py` on a daily cron. Each run picks the next fea
 
 ## Step 2 — X (Twitter) API credentials
 
-1. Log into https://developer.x.com with the **@pursuit_ai** account → sign up for the **Free** tier (allows posting; ~500 writes/month app-level, plenty for 1/day).
+1. Log into https://developer.x.com with the **@pursuit_ai** account and create a developer account.
+
+   > **X posting is not free.** Since February 2026 the X API is
+   > **pay-per-usage**: you buy credits up front and each call consumes
+   > them. Per [docs.x.com](https://docs.x.com/x-api/introduction):
+   > *"The X API uses pay-per-usage pricing. No subscriptions—pay only for
+   > what you use."* There is no monthly write allowance.
+   >
+   > With a zero balance, publishing fails with
+   > `HTTPException: 402 Payment Required — credits depleted`. That is a
+   > billing state, not a credentials problem: `scripts/validate_x.py`
+   > will still pass, because authentication works fine.
+   >
+   > **Rates** ([docs.x.com](https://docs.x.com/x-api/getting-started/pricing)):
+   >
+   > | Operation | Price |
+   > |---|---|
+   > | Standard post | $0.015 |
+   > | **Post containing a URL** | **$0.200** |
+   > | Media metadata | $0.005 |
+   > | Owned reads | $0.001 each |
+   >
+   > **Observed cost: $0.03 per publish** — measured on the first live
+   > post, 2026-07-28. That is two writes at the standard $0.015 rate:
+   > the post plus its threaded CTA reply. The reply carries a URL but
+   > was **not** charged the $0.200 "post with URL" rate.
+   >
+   > Trust the observed figure over the published table — the table is
+   > what led to a $0.215 estimate, 7x too high. At 22 posts a month
+   > that is roughly **$0.66/month**, so $25 of credit lasts about three
+   > years.
+   >
+   > This also settles W4: the threaded reply costs $0.015, not $0.200,
+   > so moving the link out of the post body costs essentially nothing
+   > and keeps the main post from being a link post. Re-measure if the
+   > per-publish charge ever drifts from $0.03.
 2. Create a Project + App. In **App settings → User authentication settings**: enable **OAuth 1.0a**, set App permissions to **Read and write** (website/callback URL can be `https://pursuitai.net`).
 3. In **Keys and tokens**, generate:
    - API Key + Secret → secrets `X_API_KEY`, `X_API_SECRET`
@@ -35,7 +76,7 @@ You don't have an Instagram account yet, so:
 2. **Create a Facebook Page** for PursuitAI (required bridge), then link it: Instagram Settings → Business tools → Connect a Facebook Page.
 3. **Create a Meta app** at https://developers.facebook.com → Create App → type **Business**. Add the **Instagram Graph API** and **Facebook Login for Business** products.
 4. Get a **long-lived access token**:
-   - Open Graph API Explorer (https://developers.facebook.com/tools/explorer), select your app, click "Get User Access Token" with scopes: `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `business_management`.
+   - Open Graph API Explorer (https://developers.facebook.com/tools/explorer), select your app, click "Get User Access Token" with scopes: `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`, `business_management`.
    - Exchange it for a long-lived token (60 days):
      ```
      GET https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=<APP_ID>&client_secret=<APP_SECRET>&fb_exchange_token=<SHORT_TOKEN>
@@ -53,6 +94,8 @@ Note: while your Meta app is in Development mode it can post to accounts that ha
 
 ## Step 4 — GitHub secrets
 
+> Full retrieval instructions for every credential, including what breaks without each one, are in **[SECRETS.md](SECRETS.md)**.
+
 Repo → Settings → Secrets and variables → Actions → New repository secret:
 
 | Secret | Required | Purpose |
@@ -62,32 +105,161 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `IG_USER_ID` | yes | Instagram business account ID |
 | `IG_ACCESS_TOKEN` | yes | long-lived Graph API token |
 | `ANTHROPIC_API_KEY` | optional | fresh Claude-written caption variants |
+| `NOTIFY_WEBHOOK_URL` | strongly recommended | Slack incoming webhook. Alerts on any run that doesn't fully publish, plus a weekly heartbeat. **Without it every failure is silent** — which is exactly how nine runs published nothing while reporting success. |
 
-## Step 5 — First run
+To create the Slack webhook: Slack → your workspace → Apps → **Incoming Webhooks** → Add to Slack → pick the channel → copy the URL. The engine posts a plain `{"text": "..."}` payload; unset the variable and every notification becomes a silent no-op.
+
+## Step 5 — The approval gate
+
+The publish job targets a GitHub **environment** with a required reviewer. GitHub pauses the run and will not start publishing until a named person approves — this is enforced by GitHub, not by our code, so nothing in the repo can bypass it.
+
+1. Repo → **Settings → Environments → New environment** → name it exactly `social-publish`.
+2. Tick **Required reviewers** and add yourself (up to 6 reviewers allowed).
+3. Save.
+
+> Required reviewers are available on GitHub Free **for public repositories**. If this repo is ever made private, this protection silently stops applying — re-check it if you change visibility.
+
+### Set secrets BEFORE dispatching a run
+
+GitHub resolves `${{ secrets.* }}` when a workflow run is **created**, not
+when a job executes. That distinction is invisible in a normal pipeline —
+jobs start seconds after dispatch — but this one pauses for approval, so a
+run can sit for hours between the two.
+
+It cost us a live run. The run was created at 20:43, the X credentials were
+added at 21:00, the publish job executed at 22:09 after approval — and it
+still saw empty values and skipped both channels.
+
+So: **add or change a secret, then dispatch.** If a secret changes while a
+run is waiting for approval, re-dispatch rather than approving the parked
+run — approving it will use the stale values. Nothing is lost by
+re-dispatching: the topic is not consumed by a failed run, so the same post
+is prepared again.
+
+### Your daily routine
+
+1. ~9:32 AM ET a Slack message arrives: the rendered card, both captions, the topic, and a link to the run.
+2. Read it. If it's good, click through → **Review deployments** → approve.
+3. The publish job runs. A failure alerts you; success is silent.
+
+If you don't approve, nothing posts and the topic is **not** consumed — it comes back tomorrow. Approvals expire after 24 hours, and if the next morning's run has already regenerated the post, the old approval no longer matches and is refused. You cannot accidentally publish content you didn't read.
+
+### Why there are no approve/reject buttons in Slack
+
+Interactive Slack buttons require a Slack **app** with an interactivity request URL — that is, a server to receive the callback. There isn't one, and standing one up is a larger change. The Slack message links straight to the GitHub approval screen instead, which is one click.
+
+## Step 6 — First run
+
+Before the first live run, prove the credentials work without posting anything:
+
+```bash
+# Actions → "Tests & credential validation" → Run workflow → validate_credentials = true
+```
+
+That authenticates both platforms and confirms Instagram can fetch your media URL. It publishes nothing.
+
+Then:
 
 1. Repo → Actions → enable workflows.
-2. Run **Daily social post** manually with `dry_run = true`. Check the committed `content/pending.json` + assets — that's exactly what would have gone out.
-3. Happy? Run it again with `dry_run = false`, or just let the 9:30 AM ET cron take over.
+2. Run **Daily social post** manually. The `prepare` job builds the post and Slack messages you; the `publish` job waits for your approval.
+3. Inspect the committed `content/pending.json` and the card. That is exactly what will go out.
+4. Approve it, or simply don't — the run ends with nothing published and the topic intact.
 
-## Ongoing autonomy
+To generate a post locally without any of this:
 
-- **Content**: 24 topics × 4 formats ≈ 3+ months before any topic+format pair repeats; with `ANTHROPIC_API_KEY` set, wording is regenerated every time.
+```bash
+.venv/bin/python engine/run.py --dry-run     # renders and prints, posts nothing
+```
+
+## Voice on animated ads
+
+The `ad` format narrates with Kokoro `af_heart` — the same voice as the
+main app's instructional-video catalogue, whose README makes mixing
+engines a documented mistake.
+
+It is installed **only in the prepare job**, from `requirements-voice.txt`:
+
+| | |
+|---|---|
+| torch (CPU wheel) | ~529 MB |
+| Kokoro model + HF cache | ~454 MB |
+| Synthesis | ~8s for a 21s clip |
+
+Both caches are keyed on `requirements-voice.txt`, so a warm run pays
+almost nothing and only a dependency change re-downloads.
+
+Two things worth knowing:
+
+- **torch must come from the CPU index.** The default resolves the CUDA
+  build — about 2.5 GB of wheels for a GPU no runner has.
+- **Voice is optional, by design.** If any of it is unavailable the ad
+  still renders, silently, and the run continues. Every platform autoplays
+  muted and the on-screen text carries the message, so a silent ad is a
+  complete ad.
+
+Locally:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu torch
+pip install -r requirements-voice.txt
+```
+
+## Ongoing operations
+
+- **Content**: 24 topics × 4 format slots ≈ 96 topic+format pairs, roughly 4 months at 6 posts/week before any pair repeats. With `ANTHROPIC_API_KEY` set, wording is regenerated every time.
 - **Adding topics**: append to `content/calendar.json` — new features, customer stories, promos. Nothing else changes.
-- **Cadence**: edit the cron in `.github/workflows/daily.yml`. Two posts/day: add a second cron line (e.g. `30 21 * * 1-5` for 5:30 PM ET).
-- **Kill switch**: disable the workflow in the Actions tab.
-- **Token maintenance**: X tokens don't expire. IG System User tokens don't expire; user-exchanged tokens need refreshing every ~60 days (the engine will start logging IG failures in `logs/posted.jsonl` if the token lapses — the X side keeps running regardless).
+- **Cadence**: edit the cron in `.github/workflows/daily.yml`. Two posts/day: add a second cron line (e.g. `30 21 * * 1-5` for 5:30 PM ET). Each still needs its own approval.
+- **Kill switch**: disable the workflow in the Actions tab. Not approving is also a kill switch — nothing publishes on its own.
+- **Token maintenance**: X tokens don't expire. IG System User tokens don't expire; user-exchanged tokens need refreshing every ~60 days. When a token lapses the run exits non-zero, Slack alerts you, and `logs/posted.jsonl` records `failed` for that channel — the other channel keeps running.
+- **Silence detection**: the weekly heartbeat reports how many posts actually went out. If it says zero, something is wrong even though no alert fired.
+
+## Attribution (UTM tagging)
+
+Every clickable link the engine emits is tagged so the admin dashboard can
+attribute a visit to a specific post:
+
+```
+utm_source=<platform>   utm_medium=organic
+utm_campaign=<topic_id> utm_content=<format>
+```
+
+All links point at the **public landing page** (`pursuitai.net`), never
+`pursuitai.net/app` — the app URL opens the sign-in screen, which shows a
+first-time visitor none of the marketing they just clicked for.
+
+Three places deliberately show the bare domain instead of a tagged link:
+
+- **Cards, video, and screenshot footers.** The URL is drawn into the image.
+  A UTM string baked into pixels is unclickable and ugly.
+- **Instagram captions.** IG captions are not hyperlinked, so a tagged URL
+  there is ~100 characters a human would have to retype. See below.
+
+### One-time manual step — the Instagram bio link
+
+Instagram's only clickable link is the one in the profile bio, so that is
+where IG attribution comes from. Set it once:
+
+```bash
+.venv/bin/python engine/links.py     # prints the exact URL to paste
+```
+
+Instagram → Edit profile → Website → paste the printed bio link. It is
+generated from `content/calendar.json`, so it cannot drift from the code.
+
+Per-post Instagram attribution is not achievable without a per-post short
+link; the bio link attributes Instagram traffic in aggregate.
 
 ## Platform-rules notes (keep it boring, keep it safe)
 
 - Posting your own product content on a schedule is fully within X automation rules and Instagram platform terms; both endpoints used here are the official, documented publish APIs.
-- Instagram API caps content publishing at 50 posts/24h — we use 1.
+- Instagram allows 100 API-published posts per rolling 24h period — we use 1.
 - Don't add follow/unfollow, DM, or mass-reply automation to this engine; that's where accounts get flagged.
 
 ## Local testing
 
 ```bash
 pip install -r requirements.txt
-python -m playwright install chromium
-python engine/run.py --dry-run          # generate + print, post nothing
-python engine/run.py --skip-ig          # post to X only (after exporting env vars)
+.venv/bin/python -m playwright install chromium
+.venv/bin/python engine/run.py --dry-run          # generate + print, post nothing
+.venv/bin/python engine/run.py --skip-ig          # post to X only (after exporting env vars)
 ```

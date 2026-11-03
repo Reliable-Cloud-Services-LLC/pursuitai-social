@@ -11,9 +11,51 @@ on:
         description: "Also validate X + Instagram credentials (needs secrets)"
         type: boolean
         default: false
+      reel_file:
+        description: "Reel check: test THIS video (repo-relative, e.g. assets/video/pricing-plans_ad.mp4). Blank = newest posted."
+        type: string
+        default: ""
+
+# A superseded push should not keep burning a runner, and a stalled
+# apt mirror should not hold a PR hostage for the full job timeout.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python deps
+        timeout-minutes: 4
+        run: pip install -r requirements.txt pytest pytest-xdist
+
+      # NO apt in this job. The DejaVu fonts ARE on the runner image, but
+      # ffmpeg is NOT — installing it pulls a large dependency tree and is
+      # the slowest, least reliable step in the workflow; it timed out at
+      # four minutes on PR #9. Only test_video_builds needs it, and that
+      # test already skips itself when ffmpeg is absent, so the whole suite
+      # runs here without it and the video job below covers the gap.
+      - name: Confirm fonts (cards render blocky without them)
+        run: fc-list | grep -qi dejavu && echo "DejaVu present"
+
+      # The suite is subprocess-heavy, so it parallelises well.
+      - name: Run test suite
+        timeout-minutes: 8
+        run: pytest tests/ -n auto --dist loadfile -q
+
+  # ffmpeg is quarantined here so an apt stall fails one small job instead
+  # of the whole signal. --no-install-recommends keeps the dependency tree
+  # to what ffmpeg actually needs; a re-run of just this job is cheap.
+  video:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -21,12 +63,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install Python deps
+        timeout-minutes: 4
+        run: pip install -r requirements.txt pytest
+      - name: Install ffmpeg
+        timeout-minutes: 10
         run: |
-          pip install -r requirements.txt pytest
-          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
-      - name: Run test suite
-        run: pytest tests/ -v
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+      - name: Video render test
+        timeout-minutes: 8
+        run: pytest tests/ -q -k video
 
   validate-credentials:
     if: ${{ inputs.validate_credentials }}
@@ -49,5 +99,55 @@ jobs:
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
         run: python scripts/validate_ig.py --container
+
+      # The IMAGE path and the REEL path are different specs, different
+      # transcodes and different failure modes, and only the image path was
+      # ever checked here. On 2026-08-17 a reel failed to publish with
+      # `2207085` — a code outside Meta's documented 2207001-2207057 range,
+      # so nothing said whether the file was wrong or the transcode was
+      # transient, and the two need opposite responses.
+      #
+      # Separate step, and `if: always()`, so a reel result is never hidden
+      # by an image failure — that pairing is the whole point of running
+      # both. Publishes nothing: the container expires in 24h.
+      # Runs even with no access token yet: --check-app probes the app
+      # credentials alone, which is the only part of the LinkedIn chain that
+      # exists before the API application is approved.
+      - name: Validate LinkedIn credentials
+        if: always()
+        env:
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+        run: |
+          if [ -z "$LINKEDIN_CLIENT_ID" ]; then
+            echo "LinkedIn app credentials not set — nothing to check"
+          elif [ -z "$LINKEDIN_ACCESS_TOKEN" ]; then
+            python scripts/validate_linkedin.py --check-app
+          else
+            python scripts/validate_linkedin.py
+          fi
+
+      - name: Validate Instagram REEL path
+        if: always()
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
+          # Through the ENVIRONMENT, never interpolated into the script.
+          # `${{ inputs.reel_file }}` written straight into a run: block is
+          # the standard Actions script-injection hole — the input is
+          # attacker-controllable text that would be pasted into a shell
+          # this job runs with the publishing secrets in scope. Quoted
+          # "$REEL_FILE" is just an argument.
+          REEL_FILE: ${{ inputs.reel_file }}
+        run: |
+          if [ -n "$REEL_FILE" ]; then
+            python scripts/validate_ig.py --reel --file "$REEL_FILE"
+          else
+            python scripts/validate_ig.py --reel
+          fi

@@ -1,27 +1,232 @@
 name: Daily social post
 
+# Two jobs, deliberately. `prepare` builds and commits the post but cannot
+# publish it; `publish` targets the `social-publish` environment, which has
+# a required reviewer, so GitHub itself pauses the run until a human
+# approves. That pause is the gate — it is enforced by GitHub, not by our
+# code, so no env var or flag here can bypass it.
+
+# SCHEDULE LIVE (2026-07-29). Enabled once every hold cleared: 23 of 24
+# topics verified against source, X and Instagram both publishing via API
+# on a never-expiring System User token, and the rotation freshness-guarded
+# against repeats. LinkedIn stays manual (preview.py --linkedin) — that is
+# LinkedIn's API tier, not a hold on this schedule.
+#
+# The cron only PREPARES. Every run still parks at the social-publish
+# environment until a human approves — the schedule automates the proposal,
+# never the decision. A run nobody approves simply expires; the topic is
+# not consumed and comes round again.
+#
+# To pause: comment out the schedule block (the kill switch in the README —
+# disabling the workflow in the Actions tab — also works and is faster).
 on:
   schedule:
-    # 13:30 UTC = 9:30 AM ET — strong engagement window for B2B
-    - cron: "30 13 * * 1-6"   # Mon–Sat; give Sunday a rest
+    # 05:13 UTC. NOT the post time — the time we START, so the delay has
+    # somewhere to go.
+    #
+    # The old value was 13:37 UTC, picked as 9:37 AM ET and moved off :30
+    # per GitHub's own mitigation ("schedule your workflow to run at a
+    # different time of the hour"). Measured over 20 scheduled runs in
+    # 2026-10, that mitigation did NOT work: not one run has ever started
+    # on time, and the lag is growing.
+    #
+    #   median delay, by week, across all four crons in this repo
+    #     2026-08-17    29 min
+    #     2026-08-24    86 min
+    #     2026-08-31   208 min   <- step change, cause unknown
+    #     2026-09-28   299 min
+    #     2026-10-05   442 min
+    #
+    #   daily.yml alone, n=20:  min 171  median 259  max 456 minutes late
+    #
+    # Two of GitHub's documented behaviours are in play and neither is
+    # bounded: "The schedule event can be delayed during periods of high
+    # loads" and "If the load is sufficiently high enough, some queued jobs
+    # may be dropped." A dropped run is why missed-run.yml exists.
+    #
+    # The delay is in run CREATION — GitHub does not create the run until
+    # hours after the cron time — so nothing in this file can shorten it.
+    # Concurrency, runner labels, job layout all apply AFTER creation.
+    # Chasing it by nudging the minute is what the old comment was doing.
+    #
+    # So: start early enough that the delay lands inside the window instead
+    # of past it. The job only PREPARES; publish waits on human approval, so
+    # what this time really controls is when the review ping arrives.
+    # At 05:13 UTC, against observed delays:
+    #     min    171 min -> 08:04 UTC = 04:04 ET
+    #     median 259 min -> 09:32 UTC = 05:32 ET
+    #     max    456 min -> 12:49 UTC = 08:49 ET   <- still before 9 AM
+    # The worst run we have ever measured still gets the ping in before the
+    # workday. That is the whole design.
+    #
+    # NB this is a MITIGATION, not a fix. It buys headroom against a lag
+    # that is still growing, and it does nothing about a dropped run. The
+    # real fix is to stop using GitHub's scheduler and create the run over
+    # the API (workflow_dispatch) from something that honours a clock —
+    # EventBridge, a Worker, a launchd agent. If the median passes ~7h this
+    # buffer is spent and that work can no longer be deferred.
+    #
+    # DST: GitHub cron is always UTC, so 05:13 UTC is 01:13 EDT and 00:13
+    # EST — the effective ET time shifts an hour each November and March.
+    # At 13:37 that mattered (9:37 vs 8:37 AM, straddling the window we
+    # were aiming at). Here it is absorbed by hours of buffer. An
+    # API-driven trigger would make it exactly right rather than merely
+    # harmless.
+    - cron: "13 05 * * 1-6"   # Mon–Sat; give Sunday a rest
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Dry run (generate, don't post)"
-        type: boolean
-        default: false
+      format:
+        description: >-
+          Override the rotation's format for this run (preview a format
+          without waiting for it to come round). Leave blank for normal
+          rotation. The topic still advances, so use it sparingly.
+        required: false
+        type: choice
+        options: ["", "card", "screenshot", "ad"]
+        default: ""
+      skip:
+        description: >-
+          Skip a channel this run. Use to re-post a topic to the channel
+          that FAILED without duplicating on the one that succeeded — the
+          remediation path for a single-channel outage. Leave blank
+          normally.
+        required: false
+        type: choice
+        options: ["", "x", "ig"]
+        default: ""
+      topic:
+        description: >-
+          Post THIS topic id instead of the rotation's next (e.g. a
+          correction). Out-of-band: the rotation does not advance, so it
+          cannot skip the topic that was actually due. Leave blank normally.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  actions: read           # the gap check asks whether earlier runs happened
 
 concurrency:
   group: daily-post
   cancel-in-progress: false
 
 jobs:
-  post:
+  # Was a PREVIOUS scheduled day dropped? Deliberately its own job, not a
+  # step in prepare: it must report regardless of whether today's render
+  # works, and it has nothing to do with building a post.
+  #
+  # This exists because the same-day alarm (missed-run.yml) is ITSELF a
+  # scheduled workflow, so it shares the failure it detects. On 2026-08-27
+  # GitHub dropped every scheduled run for this repo — the 13:37 post and
+  # the 17:07 alarm both — so nothing reported the missing day and a human
+  # found it instead. A scheduled workflow cannot detect its own
+  # non-execution; only a workflow that DID fire can, by looking backwards.
+  #
+  # Never fails the run. A gap is history, and failing today's post over
+  # yesterday's outage would turn one missed day into two.
+  gap-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Was an earlier scheduled day dropped?
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          import missed_run, notify
+
+          try:
+              missed, message = missed_run.preceding_gap(
+                  os.environ["REPO"], os.environ["GH_TOKEN"])
+          except Exception as e:
+              # Best effort by design: a flaky API read must not fail the
+              # workflow that carries the day's post.
+              print(f"[gap-check] could not check ({type(e).__name__}: {e})")
+              sys.exit(0)
+
+          print(f"[gap-check] {message}")
+          if missed:
+              notify.alert(
+                  f":warning: *A scheduled social post day was dropped*\n"
+                  f"{message}\n"
+                  f"Nothing was lost — those topics were never consumed and "
+                  f"come round again. To post one now: "
+                  f"{os.environ['ACTIONS_URL']}")
+          PY
+
+  # LinkedIn's token dies every 60 days and refreshing it is a browser flow,
+  # so this is the one credential in the system with a deadline. Checked on
+  # every run because the failure it prevents is silent: the channel simply
+  # stops posting, and "no LinkedIn post today" looks like a quiet day.
+  #
+  # Never fails the run — a warning about next month must not cost today's
+  # post. Skips itself entirely when LinkedIn is not configured.
+  linkedin-token:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Is the LinkedIn token about to die?
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "engine")
+          if not os.environ.get("LINKEDIN_ACCESS_TOKEN"):
+              print("[linkedin-token] channel not configured — nothing to check")
+              sys.exit(0)
+          import post_linkedin, notify
+
+          try:
+              days, status, scopes = post_linkedin.token_state()
+          except Exception as e:
+              print(f"[linkedin-token] check failed ({e})")
+              sys.exit(0)
+          print(f"[linkedin-token] status={status} days_left={days} "
+                f"scopes={scopes or 'unknown'}")
+
+          # 14 days: two weekly cycles of slack to notice, re-authorize and
+          # re-validate. 7 would land the warning inside the week it dies.
+          if status in ("revoked", "expired") or (days is not None
+                                                  and days <= 14):
+              notify.alert(
+                  f":warning: *LinkedIn token needs re-authorizing*\n"
+                  f"status `{status}`, {days} day(s) left. Refresh is a "
+                  f"browser flow — see SECRETS.md. Until then LinkedIn is "
+                  f"skipped and X and Instagram are unaffected.")
+          PY
+
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The hash of the post this job sends for review. The publish job is a
+    # separate run, gated on a human, and may start hours later against a
+    # branch that has moved — so the only trustworthy statement of "what was
+    # reviewed" is the one carried forward from here.
+    outputs:
+      pending_sha256: ${{ steps.review.outputs.pending_sha256 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,24 +239,179 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
+      # Time-boxed and slimmed, matching test.yml — that job learned this
+      # on PR #9 and the lesson was never back-ported here. An apt mirror
+      # stall on 2026-08-07 hung this step past 13 minutes with no bound,
+      # so it would have eaten the whole 30-minute job budget before
+      # failing, losing the day's post window rather than the 4 minutes it
+      # should have cost. --no-install-recommends keeps the tree to what
+      # ffmpeg actually needs.
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
+      # Voice for the animated-ad format. ~1 GB, so it is cached and lives
+      # in its own requirements file — the test job must never pull it.
+      # torch from the CPU index: the default resolves the CUDA build, which
+      # is ~2.5 GB of wheels for a GPU no runner has.
+      - name: Cache voice model
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/torch
+          key: voice-model-${{ hashFiles('requirements-voice.txt') }}
+
+      - name: Install voice dependencies
+        timeout-minutes: 10
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements-voice.txt
+          # Pre-download the spaCy model misaki needs, so it does not happen
+          # mid-render where a failure would lose the day's post.
+          python -m spacy download en_core_web_sm || \
+            echo "::warning::spaCy model unavailable — ads will be silent"
 
       - name: Prepare assets + captions
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python engine/run.py --prepare
-
-      - name: Commit assets (so Instagram can fetch public URLs)
+          FORMAT: ${{ inputs.format }}
+          TOPIC: ${{ inputs.topic }}
         run: |
-          git config user.name "pursuitai-bot"
-          git config user.email "bot@pursuitai.net"
-          git add -A assets || true
-          git commit -m "assets $(date -u +%F)" || echo "nothing to commit"
-          git push
+          args=""
+          [ -n "$FORMAT" ] && args="$args --format $FORMAT"
+          [ -n "$TOPIC" ] && args="$args --topic $TOPIC"
+          python engine/run.py --prepare $args
 
-      - name: Publish to X + Instagram
-        if: ${{ !inputs.dry_run }}
+      # Rendered media goes to object storage, not into git (W8). Instagram
+      # fetches by public URL and the repo was only ever standing in as that
+      # host — at the cost of growing with every run. The AWS CLI is
+      # preinstalled on the runner, so this adds no dependency; R2 is
+      # S3-compatible via --endpoint-url.
+      - name: Upload media to object storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          # R2 wants 'auto'; S3 needs a real region. Configurable so either works.
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          if [ -z "$BUCKET" ]; then
+            echo "::error::MEDIA_BUCKET is not set. Rendered media is no"
+            echo "::error::longer committed to the repo, so Instagram has"
+            echo "::error::nowhere to fetch from. See SECRETS.md."
+            exit 1
+          fi
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          # Short cache deliberately. Card filenames are STABLE per topic
+          # (pipeline_ig.png) but their CONTENT changes whenever copy is
+          # corrected — as it just was. A year-long max-age would have any
+          # CDN or proxy serving the old, wrong card long after the fix.
+          # Volume is a handful of fetches a day, so a long cache buys
+          # nothing and risks exactly the staleness we cannot afford.
+          aws s3 sync assets/ "s3://$BUCKET/assets/" $args \
+            --no-progress --only-show-errors \
+            --exclude "preview/*" --cache-control "public, max-age=300"
+          echo "uploaded $(find assets -type f -not -path 'assets/preview/*' | wc -l) file(s)"
+
+      # pending.json still commits: the publish job is a separate run that
+      # may happen hours later, so the reviewed post has to persist.
+      # scripts/commit_and_push.sh, shared with the publish job. This step
+      # used a bare `git push` until 2026-09-29, when a newly-unblocked
+      # run's prepare collided with the publish of a run approved minutes
+      # earlier — and the day's post was lost at the very moment the queue
+      # was recovering from an outage.
+      - name: Commit pending post
+        env:
+          PUSH_FAILURE_HINT: >-
+            pending.json is what the publish job reads, so without it this
+            run has nothing to post. Re-dispatch once the branch is clean.
+        run: scripts/commit_and_push.sh "prepare $(date -u +%F)" content/pending.json
+
+      # After the push, so Slack can actually fetch the card image.
+      - name: Send for review
+        id: review
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
+          REVIEW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python engine/run.py --notify-pending
+          # Recorded AFTER the notification, so it is the hash of the post a
+          # human was actually shown — not of whatever prepare happened to
+          # leave on disk.
+          echo "pending_sha256=$(python engine/run.py --pending-hash)" \
+            >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Required reviewer lives here. The job will not start until approved.
+    environment: social-publish
+    steps:
+      # ref, not the run's SHA: the prepare job pushed pending.json and the
+      # assets after this run started, and we need that commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # X uploads media BYTES (unlike Instagram, which fetches a URL), so
+      # the publish job needs the files locally. They are no longer in the
+      # repo, so pull them back from the bucket rather than re-rendering —
+      # re-rendering could produce different pixels than what was approved.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch approved media from object storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          # R2 wants 'auto'; S3 needs a real region. Configurable so either works.
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          aws s3 sync "s3://$BUCKET/assets/" assets/ $args \
+            --no-progress --only-show-errors
+          ls -la assets/cards | head -3
+
+      # Reaching this step means a required reviewer already approved in the
+      # GitHub UI. This records WHAT was approved.
+      #
+      # --expect is what makes that record mean anything. This job checks
+      # out `ref`, the tip of the branch as it stands NOW, because the final
+      # step has to push and cannot do that from a detached HEAD. So if the
+      # branch moved while the run waited — another prepare, a merge — the
+      # pending.json here is not the one the reviewer was sent. Without
+      # --expect, --approve would hash that file and --publish would verify
+      # it against itself moments later: a check that cannot fail, on the
+      # wrong content. The hash comes from the prepare job instead.
+      - name: Record approval
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          EXPECT: ${{ needs.prepare.outputs.pending_sha256 }}
+        run: |
+          if [ -z "$EXPECT" ]; then
+            echo "::error::the prepare job published no pending_sha256, so"
+            echo "::error::there is nothing to check this post against."
+            echo "::error::Refusing to publish unverified content."
+            exit 1
+          fi
+          python engine/run.py --approve --expect "$EXPECT"
+
+      - name: Publish to X, Instagram + LinkedIn
         env:
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
@@ -59,12 +419,58 @@ jobs:
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          MEDIA_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/main
-        run: python engine/run.py --publish
-
-      - name: Commit state + post log
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          # LinkedIn. run.py's POSTERS gates the channel on
+          # LINKEDIN_ACCESS_TOKEN, and this step never passed it — so every
+          # run since the channel was built logged "skipped: not set",
+          # whatever the repository secret held. A credential the publish
+          # step cannot see is the same as no credential.
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          # Deliberately passed while UNSET, and it is now the ON/OFF
+          # switch for the whole channel, not just the author.
+          #
+          # Absent means SKIP LinkedIn. It used to mean "author as the
+          # member", which worked and was the problem: the company's daily
+          # post went out under a personal profile because the Page scope
+          # was missing, not because anyone chose that. A skipped channel
+          # costs a day and shows up in the run log; a misattributed post is
+          # already in the feed before anyone looks.
+          #
+          # Setting the secret — once the Community Management vetting
+          # appeal lands — moves posting to the Page AND re-enables the
+          # channel, with no workflow edit and no code change. An unset
+          # secret arrives as "", which is falsy.
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          SKIP: ${{ inputs.skip }}
         run: |
-          git pull --rebase || true
-          git add -A content logs || true
-          git commit -m "post log $(date -u +%F)" || echo "nothing to commit"
-          git push
+          args=""
+          [ "$SKIP" = "x" ] && args="--skip-x"
+          [ "$SKIP" = "ig" ] && args="--skip-ig"
+          [ "$SKIP" = "linkedin" ] && args="--skip-linkedin"
+          python engine/run.py --publish $args
+
+      # always(): publish exits non-zero on failure, and the failure entry
+      # in posted.jsonl is the evidence. Without this the fail-loud change
+      # would erase its own audit trail.
+      # The post log and rotation state are the ONLY record that a post
+      # happened. Losing them means the topic is re-served later as a
+      # visible duplicate — so this step must not fail quietly.
+      #
+      # It used to run `git pull --rebase || true`, which swallowed a real
+      # failure: the media sync leaves assets/ dirty, so rebase refuses
+      # ("cannot pull with rebase: You have unstaged changes"), and if
+      # develop had ALSO moved the subsequent push was rejected and the log
+      # was lost. It survived 2026-07-30 only because develop happened not
+      # to have moved that hour.
+      #
+      # Now: stage ONLY the tracked state, commit, then rebase just that
+      # commit onto whatever landed meanwhile, and retry the push. A push
+      # that still cannot land fails the step LOUDLY.
+      - name: Commit state + post log
+        if: always()
+        env:
+          PUSH_FAILURE_HINT: >-
+            The post log is the only record that a post happened; without
+            it the rotation re-serves this topic and duplicates it.
+        run: scripts/commit_and_push.sh "post log $(date -u +%F)" content logs
