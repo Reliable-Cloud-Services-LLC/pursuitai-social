@@ -2,7 +2,22 @@ name: Tests & credential validation
 
 on:
   push:
-    branches: [main]
+    # develop, not main: every scheduled and dispatched run executes from
+    # develop, so that is the branch whose merged state has to be green.
+    # Pinned to main, a merge landing on the shipping branch got no
+    # post-merge run at all. PRs were never affected — the pull_request
+    # trigger below is deliberately unfiltered — so this was not a blind
+    # spot for any single change. The gap is the merged RESULT: two PRs
+    # that each pass alone can break together, and that combination only
+    # exists after the merge.
+    #
+    # main is not listed. It only ever receives a promotion of develop, so
+    # its content is already green by the time it lands, and a second run
+    # would be pure duplication on an org that is over its Actions minutes.
+    branches: [develop]
+    # NOT content/** — daily.yml and analytics.yml push content/pending.json,
+    # content/state.json and logs/*.jsonl to this same branch two or three
+    # times a day. Broadening this would run the whole suite on every post.
     paths: ["engine/**", "content/calendar.json", "tests/**", "requirements.txt"]
   pull_request:
   workflow_dispatch:
