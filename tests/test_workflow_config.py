@@ -427,3 +427,93 @@ def test_the_schedule_cannot_draft():
     block = text[text.index("      draft:"):text.index("      skip:")]
     assert "default: true" not in block
     assert 'LINKEDIN_DRAFT: "1"' not in text
+
+
+def _test_yml_text():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, ".github", "workflows", "test.yml")) as f:
+        return f.read()
+
+
+def test_ci_gates_the_branch_that_ships():
+    """Tests must run on pushes to develop, which is where everything runs.
+
+    The push trigger was pinned to `main` while every scheduled and
+    dispatched run executes from `develop` — so a merge landing on the
+    shipping branch got no post-merge test run. PRs were always covered
+    (the pull_request trigger has no branch filter), so this was never a
+    blind spot for a single change; the gap is the merged RESULT. Two PRs
+    that each pass alone can break together, and that combination only
+    exists after the merge.
+    """
+    block = _test_yml_text()
+    block = block[block.index("  push:"):block.index("  pull_request:")]
+    # Parse the branches LIST, not the block. A substring check passed
+    # happily on the word "develop" inside the explanatory comment above
+    # it, so reverting the branch to main left this test green — a test
+    # satisfied by its own prose. Caught by mutating the line it exists
+    # to protect, which is the only way that class of hole shows up.
+    branches = re.search(r"branches:\s*\[([^\]]+)\]", block)
+    assert branches, "no branches list on the push trigger"
+    names = [b.strip().strip('"\'') for b in branches.group(1).split(",")]
+    assert "develop" in names, (
+        f"CI does not run on pushes to develop, the branch that ships: "
+        f"{names}")
+
+
+def test_every_pr_is_tested_regardless_of_base():
+    """The pull_request trigger must stay unfiltered.
+
+    Narrowing it to a branch list is the obvious-looking tidy-up, and it
+    would silently stop testing PRs aimed anywhere else — which is how the
+    push trigger ended up on the wrong branch in the first place.
+    """
+    text = _test_yml_text()
+    pr = text[text.index("  pull_request:"):text.index("  workflow_dispatch:")]
+    assert "branches:" not in pr, (
+        "pull_request was given a branch filter; PRs to other bases would "
+        "stop being tested")
+
+
+def test_the_daily_run_does_not_trigger_the_test_suite():
+    """The paths filter must exclude everything the bots commit.
+
+    daily.yml and analytics.yml push to the same branch CI now watches:
+    content/pending.json, logs/posted.jsonl, content/state.json,
+    logs/metrics.jsonl — two or three commits every single day. Broadening
+    the filter to `content/**` (an easy, reasonable-looking edit) would
+    make every post run the whole suite, on an org that is already over its
+    Actions minutes.
+
+    Derived from the real commit_and_push.sh invocations rather than a
+    hardcoded list, so a new bot-written path is covered automatically.
+    """
+    import fnmatch
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    written = set()
+    for wf in ("daily.yml", "analytics.yml"):
+        with open(os.path.join(root, ".github", "workflows", wf)) as f:
+            for call in re.findall(r"commit_and_push\.sh\s+\"[^\"]*\"\s+(.+)",
+                                   f.read()):
+                written.update(call.split())
+    assert written, "found no commit_and_push.sh calls to check"
+
+    text = _test_yml_text()
+    patterns = re.findall(r'"([^"]+)"',
+                          _FILTER.search(text).group(1))
+
+    def matches(path, pattern):
+        if pattern.endswith("/**"):
+            return path == pattern[:-3] or path.startswith(pattern[:-2])
+        return fnmatch.fnmatch(path, pattern)
+
+    offenders = {p: [q for q in patterns if matches(p, q)] for p in written}
+    offenders = {p: q for p, q in offenders.items() if q}
+    assert not offenders, (
+        f"the daily run would trigger the test suite on every post: "
+        f"{offenders}")
+
+
+_FILTER = re.compile(r"paths:\s*\[([^\]]+)\]")
