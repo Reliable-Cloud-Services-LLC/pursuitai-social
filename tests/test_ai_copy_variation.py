@@ -126,3 +126,130 @@ def test_linkedin_reaches_the_hard_assert_too():
     through even with the check above in place.
     """
     assert "linkedin" in _assert_publishable_channels()
+
+
+# ---------------------------------------------------------------------------
+# Response parsing: never assume content[0] is the text block.
+# ---------------------------------------------------------------------------
+#
+# Caught on the first live run after the key was set. Two of the three
+# captions fell back with:
+#
+#     [captions] Claude variant failed, using template: 'text'
+#
+# a KeyError from `r.json()["content"][0]["text"]`. The content array is a
+# LIST OF BLOCKS and the first one is not guaranteed to be text — a model
+# may emit a thinking block ahead of it. The third call happened to get
+# text first and varied correctly, which is why the run looked two-thirds
+# broken rather than cleanly broken.
+#
+# The blind [0] predates the model bump; bumping to haiku-5-5 is what
+# exposed it. Fixing the index rather than pinning back to the old model:
+# the array shape is the contract, and an indexing assumption that only
+# held by luck will break again on the next model.
+#
+# It failed SOFTLY, which is the part that matters — the except falls back
+# to the template, so the post still ships and the only trace is a line in
+# a CI log that expires. Exactly the shape of every other silence found
+# this week.
+
+
+class _Resp:
+    def __init__(self, payload): self._p = payload
+    def raise_for_status(self): pass
+    def json(self): return self._p
+
+
+def _variant_with(monkeypatch, payload):
+    import requests
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(requests, "post",
+                        lambda *a, **k: _Resp(payload))
+    return captions._claude_variant(
+        {"hook_x": "orig", "hook_ig": "orig"}, "x", {})
+
+
+def test_text_block_first_still_works(monkeypatch):
+    assert _variant_with(monkeypatch, {
+        "content": [{"type": "text", "text": "rewritten"}]}) == "rewritten"
+
+
+def test_a_leading_thinking_block_does_not_break_it(monkeypatch):
+    """The live failure. Two of three captions died on this."""
+    assert _variant_with(monkeypatch, {"content": [
+        {"type": "thinking", "thinking": "considering..."},
+        {"type": "text", "text": "rewritten"},
+    ]}) == "rewritten"
+
+
+def test_a_block_with_no_text_key_at_all_is_skipped(monkeypatch):
+    """Don't just check type — a malformed block must not raise either."""
+    assert _variant_with(monkeypatch, {"content": [
+        {"type": "tool_use", "id": "x"},
+        {"type": "text", "text": "rewritten"},
+    ]}) == "rewritten"
+
+
+def test_no_text_block_falls_back_to_the_template(monkeypatch):
+    """None means 'use the vetted copy', which is the right answer here."""
+    assert _variant_with(monkeypatch, {"content": [
+        {"type": "thinking", "thinking": "..."}]}) is None
+
+
+def test_an_empty_content_array_falls_back(monkeypatch):
+    assert _variant_with(monkeypatch, {"content": []}) is None
+
+
+def test_whitespace_only_text_falls_back(monkeypatch):
+    """An empty rewrite is worse than the template, not better."""
+    assert _variant_with(monkeypatch, {
+        "content": [{"type": "text", "text": "   "}]}) is None
+
+
+def test_surrounding_quotes_are_still_stripped(monkeypatch):
+    """Pre-existing behaviour — the model likes wrapping its answer."""
+    assert _variant_with(monkeypatch, {
+        "content": [{"type": "text", "text": '"rewritten"'}]}) == "rewritten"
+
+
+def test_the_post_record_says_whether_copy_was_varied():
+    """Answering 'is the feed actually varying?' must not need CI logs.
+
+    When the key was first set, two of three captions silently fell back
+    and the only evidence was one line in a job log that expires. Working
+    that out meant fetching the log through the API and grepping it. The
+    post record already carries what shipped and the calendar carries the
+    template, so the comparison belongs in the log where the format
+    histogram lives.
+
+    Per channel, because the live failure was PARTIAL — a single boolean
+    would have read 'varied' off LinkedIn alone and hidden the two that
+    broke.
+    """
+    import run as run_mod
+    tmpl = {"text_x": "aaa", "text_ig": "bbb", "text_linkedin": "ccc"}
+    shipped = {"text_x": "aaa", "text_ig": "bbb", "text_linkedin": "REWRITTEN"}
+    assert run_mod.copy_varied(shipped, tmpl) == {
+        "x": False, "ig": False, "linkedin": True}
+
+
+def test_copy_varied_reports_all_false_when_the_feature_is_off():
+    import run as run_mod
+    same = {"text_x": "a", "text_ig": "b", "text_linkedin": "c"}
+    assert set(run_mod.copy_varied(same, same).values()) == {False}
+
+
+def test_copy_varied_is_recorded_after_the_compliance_fallback():
+    """Ordering. Computing it before the fallback makes the record lie.
+
+    If an AI caption trips a content rule, prepare() resets it to the
+    vetted template — so a `copy_varied` taken earlier would report
+    "varied" for a post that shipped the template. That is the one case
+    where the measurement most needs to be right, and I got it backwards
+    on the first pass.
+    """
+    src = open(os.path.join(ROOT, "engine", "run.py")).read()
+    fallback = src.index("AI caption tripped a content rule")
+    record = src.index('pending["copy_varied"] = copy_varied')
+    assert record > fallback, (
+        "copy_varied is computed before the fallback can reset the copy")

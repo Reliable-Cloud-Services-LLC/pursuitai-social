@@ -60,6 +60,28 @@ out.
 
 ## Things that will surprise you
 
+### Claude's `content` is a list of BLOCKS — never index [0]
+
+`_claude_variant` read `r.json()["content"][0]["text"]`. The first block is
+not guaranteed to be the text one; a model may emit a thinking block ahead
+of it. On the first live run after the key was set, **two of three captions
+died** on `KeyError: 'text'` while the third happened to get text first and
+varied correctly — so the run looked two-thirds broken rather than cleanly
+broken, and the post still shipped because the except falls back to the
+template.
+
+The blind index predates the model bump to `claude-haiku-5-5`; the bump
+only exposed it. Fixed by scanning for the first `type == "text"` block
+rather than pinning back to the old model — the array shape is the
+contract, and an index that held by luck breaks again on the next model.
+
+`copy_varied` now rides on every post record, per channel, so "is the feed
+actually varying?" is answered from the log instead of a CI job log that
+expires. Per channel because that failure was PARTIAL: one flag would have
+read "varied" off LinkedIn and hidden the two that broke. It is computed
+AFTER the compliance fallback, or a post reset to vetted copy would still
+be recorded as varied.
+
 ### Copy variation is wired, safe, and switched off
 
 `captions._claude_variant` rewrites every caption through Claude so a topic

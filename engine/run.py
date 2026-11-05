@@ -74,6 +74,22 @@ def select_format(run_count, topic_count):
     cycle = run_count // topic_count
     return FORMATS[(index + cycle) % len(FORMATS)]
 
+def copy_varied(shipped, template):
+    """Per channel: did the AI rewrite actually replace the template?
+
+    Recorded because answering it otherwise meant grepping a CI log that
+    expires. When ANTHROPIC_API_KEY was first set, two of three captions
+    fell back silently and the run still looked healthy.
+
+    Per channel rather than one flag, because that failure was PARTIAL:
+    LinkedIn varied while X and Instagram did not, so a single boolean
+    would have reported success off the one that worked.
+    """
+    return {ch: shipped.get(f, "") != template.get(f, "")
+            for ch, f in (("x", "text_x"), ("ig", "text_ig"),
+                          ("linkedin", "text_linkedin"))}
+
+
 def format_record(shipped, requested):
     """What to log about the format: what shipped, and what was asked for.
 
@@ -421,6 +437,15 @@ def prepare(force_format=None, force_topic=None):
     # this gate — the one surface we publish as the company Page was the
     # one caption nothing claim-checked. Harmless only while the variation
     # was inert; live the moment ANTHROPIC_API_KEY is set.
+    # What the copy would have been with no AI at all, so the record can
+    # say whether the rewrite actually landed. fresh=False makes no API
+    # call — this is three local template builds.
+    _template = {
+        "text_x": captions.build_x(topic, brand, fmt=fmt, fresh=False),
+        "text_ig": captions.build_ig(topic, brand, fresh=False),
+        "text_linkedin": captions.build_linkedin(topic, brand, fmt=fmt,
+                                                 fresh=False),
+    }
     if any(compliance.check_claims(topic, pending[f])
            for f in ("text_x", "text_ig", "text_linkedin")):
         print("[prepare] AI caption tripped a content rule; "
@@ -430,6 +455,12 @@ def prepare(force_format=None, force_topic=None):
         pending["text_ig"] = captions.build_ig(topic, brand, fresh=False)
         pending["text_linkedin"] = captions.build_linkedin(
             topic, brand, fmt=fmt, fresh=False)
+    # AFTER the fallback, not before. A post whose AI copy tripped a rule
+    # has just been reset to the template, and recording it as "varied"
+    # would make the one measurement of this feature lie in precisely the
+    # case worth knowing about.
+    pending["copy_varied"] = copy_varied(pending, _template)
+
     try:
         compliance.assert_publishable(
             topic, {"x": pending["text_x"], "ig": pending["text_ig"],
