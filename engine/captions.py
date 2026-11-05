@@ -13,10 +13,26 @@ import links
 X_LIMIT = 280
 SAFETY_MARGIN = 5
 
+_variant_warned = False
+
+
 def _claude_variant(topic, platform, brand):
     """Optional: fresh copy via the Claude API. Falls back silently."""
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
+        # Say so. Without this the feed ran on template copy for 90 posts
+        # and nothing anywhere recorded that the variation was switched
+        # off — the same topic shipped byte-identical words six times and
+        # the only evidence was comparing the log against the calendar by
+        # hand. Once per process: three captions are built per run and one
+        # notice is a signal where three is noise.
+        global _variant_warned
+        if not _variant_warned:
+            _variant_warned = True
+            print("[captions] ANTHROPIC_API_KEY not set — every caption "
+                  "will be the hand-written template, so a topic reads "
+                  "identically each time it comes round. Set the secret "
+                  "to vary the copy.")
         return None
     try:
         import requests
@@ -29,7 +45,7 @@ def _claude_variant(topic, platform, brand):
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": "claude-haiku-5-5",
                 "max_tokens": 400,
                 "messages": [{"role": "user", "content":
                     f"Rewrite this {('tweet' if platform == 'x' else 'Instagram caption')} "
