@@ -60,6 +60,57 @@ out.
 
 ## Things that will surprise you
 
+### Copy variation is wired, safe, and switched off
+
+`captions._claude_variant` rewrites every caption through Claude so a topic
+does not ship identical words each time it comes round. In the first 90
+posts it ran **zero** times — all 90 shipped the raw template hook, and
+`subaward-intel` went out six times byte-identical.
+
+`daily.yml` references `secrets.ANTHROPIC_API_KEY`, but that secret is not
+set on the repository, so it arrives as an empty string and the fallback
+fires in silence. The code now says so once per run; setting the secret is
+the switch.
+
+It is safe to flip. A rewrite can invent a claim, so `prepare()` re-checks
+the **rendered** caption (not the template), falls back to the vetted copy
+on a violation rather than losing the post, and then hard-asserts before
+anything reaches review. `text_linkedin` was missing from that gate until
+2026-11-05 — the one surface we publish as the company Page was the one
+caption nothing claim-checked. Fixed, and the gate's field list is now
+derived by a test so a fourth channel cannot repeat it.
+
+### Rotation used to exile a topic on a single post
+
+`build_rotation` drops the bottom 25% by mean engagement, and the mean was
+taken over as little as ONE post. Five of 23 topics — teaming, mpjv,
+agency-affinity, fit-scoring, mobile-app — had each posted once, drawn a
+weak number, and been removed permanently.
+
+Permanently, because exile is self-sealing: a dropped topic cannot post,
+and the only way to earn a better mean is to post. The feed had quietly
+shrunk to **18 unique topics** against a 14-day cooldown, which is what
+made it repetitive.
+
+`MIN_POSTS_FOR_WEIGHTING = 3` gates the judgement on evidence, applied
+symmetrically — a thin topic is neither dropped nor doubled, because
+promoting on n=1 is the same error inverted and doubling is the half that
+actively causes repetition. Inventory went 18 → 23 unique, median repeat
+gap 21d → 27d.
+
+### A failed ad used to look like a chosen card
+
+`prepare()` falls back to the card when an ad build or screenshot capture
+fails — right, since losing the day's post is worse. But it rewrote `fmt`
+to "card" and told nobody, so the format histogram could not distinguish an
+editorial card from a spot that failed to render. Every ad could have been
+failing for a month and the mix would have read as a deliberate 48% cards.
+
+The log now carries `format_requested` on degraded posts only (absence is
+the signal). Current real mix: 48% card, 23% screenshot, **27% ad** — the
+`ad` is a genuine 24fps four-scene spot stretched to the voiceover, so
+roughly a quarter of the feed moves.
+
 ### LinkedIn truncates a post at an unescaped "(" and reports success
 
 `commentary` is **little text**, not plain text. Its grammar reserves

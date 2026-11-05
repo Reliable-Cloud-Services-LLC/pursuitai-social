@@ -209,3 +209,123 @@ def test_unknown_topics_in_scores_are_ignored():
     scores["retired-topic"] = 9.9
     cycle = [t["id"] for t in rotation.build_rotation(ts, scores)]
     assert "retired-topic" not in cycle
+
+
+# ---------------------------------------------------------------------------
+# Thin-data exile: a topic judged on one post must not be dropped forever.
+# ---------------------------------------------------------------------------
+#
+# Found 2026-11-05 while scoping why the feed repeats. build_rotation drops
+# the bottom 25% by mean engagement, and the mean was being taken over as
+# little as ONE post. Five of 23 topics — teaming, mpjv, agency-affinity,
+# fit-scoring, mobile-app — had each posted exactly once, drawn a weak
+# number, and been removed from rotation permanently.
+#
+# Permanently is the word that matters. Exile is self-sealing: a dropped
+# topic cannot post, and the only way to earn a better mean is to post. So
+# one bad slot on one day — wrong hour, weak format pairing, a quiet
+# Saturday — costs a topic the rest of its life, and the inventory shrinks
+# to 18 unique topics against a 14-day cooldown. That IS the repetition.
+#
+# The guard is a minimum sample count, applied symmetrically. A topic with
+# too few posts is neither dropped nor DOUBLED: promoting on n=1 is the
+# same error pointing the other way, and doubling is what over-exposes a
+# topic in the first place. Below the threshold the honest answer is "no
+# opinion", which is exactly one appearance per cycle.
+#
+# Threshold 3 is not arbitrary. The live post distribution is bimodal —
+# four topics at 1 post, one at 2, then nine/six/three at 4/5/6 — so 3
+# lands in the natural gap: every thin topic returns, every legitimate
+# doubling (all five have 4-6 posts) survives untouched.
+
+
+def _topics(n):
+    return [{"id": f"t{i}"} for i in range(n)]
+
+
+def test_a_topic_with_one_post_is_not_dropped():
+    """The exact live failure: n=1 and a terrible score."""
+    topics = _topics(12)
+    scores = {f"t{i}": 0.5 for i in range(12)}
+    scores["t7"] = 0.0001                      # worst by a mile
+    counts = {f"t{i}": 6 for i in range(12)}
+    counts["t7"] = 1                           # ...on a single post
+    cycle = rotation.build_rotation(topics, scores, counts)
+    assert "t7" in {t["id"] for t in cycle}, "exiled a topic on one post"
+
+
+def test_a_topic_with_one_post_is_not_doubled_either():
+    """Symmetric. Promoting on n=1 is the same mistake inverted.
+
+    And doubling is the half that actively causes repetition — it is how a
+    topic comes round every 15 days instead of every 21.
+    """
+    topics = _topics(12)
+    scores = {f"t{i}": 0.1 for i in range(12)}
+    scores["t3"] = 99.0                        # best by a mile
+    counts = {f"t{i}": 6 for i in range(12)}
+    counts["t3"] = 1                           # ...on a single post
+    cycle = [t["id"] for t in rotation.build_rotation(topics, scores, counts)]
+    assert cycle.count("t3") == 1, "doubled a topic on one post"
+
+
+def test_a_well_evidenced_weak_topic_is_still_dropped():
+    """Negative control. The guard must not disable the weighting.
+
+    Without this, 'never drop anything' would pass every test above while
+    throwing away the feature.
+    """
+    topics = _topics(12)
+    scores = {f"t{i}": 0.5 for i in range(12)}
+    scores["t7"] = 0.0001
+    counts = {f"t{i}": 6 for i in range(12)}   # t7 has plenty of evidence
+    cycle = rotation.build_rotation(topics, scores, counts)
+    assert "t7" not in {t["id"] for t in cycle}
+
+
+def test_a_well_evidenced_strong_topic_is_still_doubled():
+    """The other half of the negative control."""
+    topics = _topics(12)
+    scores = {f"t{i}": 0.1 for i in range(12)}
+    scores["t3"] = 99.0
+    counts = {f"t{i}": 6 for i in range(12)}
+    cycle = [t["id"] for t in rotation.build_rotation(topics, scores, counts)]
+    assert cycle.count("t3") == 2
+
+
+def test_counts_are_optional_and_omitting_them_changes_nothing():
+    """Back-compat: the old two-argument call must behave as it always did.
+
+    build_rotation is called from publishable_topics, and a signature that
+    broke on the old shape would take the whole feed down rather than
+    degrade.
+    """
+    topics = _topics(12)
+    scores = {f"t{i}": 0.5 for i in range(12)}
+    scores["t7"] = 0.0001
+    assert (rotation.build_rotation(topics, scores)
+            == rotation.build_rotation(topics, scores, None))
+
+
+def test_topic_post_counts_counts_posts_not_metric_samples():
+    """The denominator must be POSTS.
+
+    Metric rows accumulate over days — one post can carry eight samples,
+    which is how a single-post topic looked well-evidenced at a glance.
+    """
+    rows = [
+        posted("2026-07-01", "alpha", x="1"),
+        posted("2026-07-02", "alpha", x="2"),
+        posted("2026-07-03", "beta", x="3"),
+    ]
+    counts = rotation.topic_post_counts(rows)
+    assert counts["alpha"] == 2
+    assert counts["beta"] == 1
+
+
+def test_topic_post_counts_ignores_posts_that_never_shipped():
+    """A failed or skipped run is not evidence about a topic."""
+    rows = [posted("2026-07-01", "alpha", x="1"),
+            {"date": "2026-07-02", "topic": "alpha",
+             "channels": {"x": {"status": "failed", "id": None}}}]
+    assert rotation.topic_post_counts(rows)["alpha"] == 1

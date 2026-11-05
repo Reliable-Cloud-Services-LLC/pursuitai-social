@@ -74,6 +74,29 @@ def select_format(run_count, topic_count):
     cycle = run_count // topic_count
     return FORMATS[(index + cycle) % len(FORMATS)]
 
+def format_record(shipped, requested):
+    """What to log about the format: what shipped, and what was asked for.
+
+    prepare() falls back to the card when an ad build or a screenshot
+    capture fails — the right call, since losing the day's post is worse
+    than losing the animation. But it used to rewrite `fmt` to "card" and
+    say nothing, so the log recorded a card indistinguishable from one the
+    rotation actually chose.
+
+    That makes the animated/static mix unmeasurable in the only direction
+    that matters. Every ad could fail for a month and the histogram would
+    read as an editorial choice — 48% cards — rather than as a feed that
+    had quietly stopped moving.
+
+    `format_requested` is written ONLY on a degraded post. Stamping it on
+    every row would bury the degraded ones again, which is the bug.
+    """
+    record = {"format": shipped}
+    if requested and requested != shipped:
+        record["format_requested"] = requested
+    return record
+
+
 # Every section screenshots.py captures, in the order they are used.
 #
 # The previous code walked a fixed ("hero", "features", "pricing", "why")
@@ -187,9 +210,12 @@ def publishable_topics(cal):
     # metrics — the state for the first several weeks — this returns `out`
     # unchanged, so rotation behaves exactly as it did before.
     import analytics
-    scores = rotation.topic_scores(analytics.load_jsonl(LOG),
-                                   analytics.load_jsonl(METRICS))
-    return rotation.build_rotation(out, scores)
+    posted_rows = analytics.load_jsonl(LOG)
+    scores = rotation.topic_scores(posted_rows, analytics.load_jsonl(METRICS))
+    # Post counts, so the weighting only acts where there is evidence. A
+    # mean over one post was dropping topics from rotation permanently.
+    counts = rotation.topic_post_counts(posted_rows)
+    return rotation.build_rotation(out, scores, counts)
 
 
 # The cursor is a bare index into the publishable list, and that list GROWS
@@ -260,6 +286,9 @@ def prepare(force_format=None, force_topic=None):
     else:
         topic = _next_fresh_topic(topics, state)
     fmt = force_format or select_format(state["run_count"], len(topics))
+    # Captured BEFORE the ad/screenshot fallbacks can rewrite fmt — that
+    # rewrite is exactly what made a failed spot look like a chosen card.
+    fmt_requested = fmt
     today = datetime.date.today().isoformat()
     print(f"[prepare] {today} topic={topic['id']} format={fmt}")
 
@@ -357,7 +386,8 @@ def prepare(force_format=None, force_topic=None):
         media_ig = media.as_jpeg(media_ig)
 
     pending = {
-        "date": today, "topic": topic["id"], "format": fmt,
+        "date": today, "topic": topic["id"],
+        **format_record(fmt, fmt_requested),
         "text_x": captions.build_x(topic, brand, fmt=fmt),
         "text_x_reply": captions.build_x_reply(topic, brand, fmt),
         "text_ig": captions.build_ig(topic, brand),
@@ -387,16 +417,23 @@ def prepare(force_format=None, force_topic=None):
     # rendered text is checked, not the template it came from. On a
     # violation, fall back to the hand-written copy — which the selection
     # filter already proved clean — rather than losing the day's post.
-    if compliance.check_claims(topic, pending["text_x"]) or \
-            compliance.check_claims(topic, pending["text_ig"]):
+    # text_linkedin is rewritten by the same call and was missing from
+    # this gate — the one surface we publish as the company Page was the
+    # one caption nothing claim-checked. Harmless only while the variation
+    # was inert; live the moment ANTHROPIC_API_KEY is set.
+    if any(compliance.check_claims(topic, pending[f])
+           for f in ("text_x", "text_ig", "text_linkedin")):
         print("[prepare] AI caption tripped a content rule; "
               "falling back to the vetted template copy")
         pending["text_x"] = captions.build_x(topic, brand, fmt=fmt, fresh=False)
         pending["text_x_reply"] = captions.build_x_reply(topic, brand, fmt)
         pending["text_ig"] = captions.build_ig(topic, brand, fresh=False)
+        pending["text_linkedin"] = captions.build_linkedin(
+            topic, brand, fmt=fmt, fresh=False)
     try:
-        compliance.assert_publishable(topic, {"x": pending["text_x"],
-                                              "ig": pending["text_ig"]})
+        compliance.assert_publishable(
+            topic, {"x": pending["text_x"], "ig": pending["text_ig"],
+                    "linkedin": pending["text_linkedin"]})
     except compliance.ComplianceError as e:
         print(f"[prepare] BLOCKED by compliance: {e}")
         sys.exit(1)
