@@ -27,6 +27,7 @@ import approval
 import brand as brand_tokens
 import cards
 import captions
+import angles
 import compliance
 import media
 import pronounce
@@ -234,6 +235,38 @@ def publishable_topics(cal):
     return rotation.build_rotation(out, scores, counts)
 
 
+def usable_angles(topic, brand):
+    """A topic's angles, minus any that fail the content rules.
+
+    Compliance applies per ANGLE, not per topic. An angle carries its own
+    headline, body and stat — the three fields drawn onto the card — so an
+    unvetted one would ship a claim as pixels, which is the exact hole
+    check_rendered exists to close.
+
+    A dropped angle is announced. Skipping it silently would leave a topic
+    posting from two of its three angles forever with nothing saying which
+    or why, and this week has produced enough of that: a rotation exiling
+    topics on one post, a Claude variant inert for 90 posts, a failed ad
+    logged as a chosen card.
+    """
+    out = []
+    for i, angle in enumerate(angles.angles_for(topic)):
+        candidate = angles.apply_angle(topic, angle)
+        bad = compliance.check_rendered(candidate)
+        if not bad:
+            drafts = (captions.build_x(candidate, brand, fmt="card",
+                                       fresh=False),
+                      captions.build_ig(candidate, brand, fresh=False))
+            bad = [v for d in drafts
+                   for v in compliance.check_claims(candidate, d)]
+        if bad:
+            why = bad[0].message if hasattr(bad[0], "message") else bad[0]
+            print(f"[prepare] angle {i} of {topic['id']} dropped: {why}")
+            continue
+        out.append(angle)
+    return out
+
+
 # The cursor is a bare index into the publishable list, and that list GROWS
 # as topics get verified — 18 to 23 in one week of audit work. The index
 # stays put while the list shifts under it, so it can land on a topic that
@@ -301,6 +334,20 @@ def prepare(force_format=None, force_topic=None):
             sys.exit(1)
     else:
         topic = _next_fresh_topic(topics, state)
+
+    # Which point to make this time. Indexed by the topic's OWN post count
+    # so it cannot re-lock against the topic cursor or the format cycle —
+    # see select_format for what that looks like when it goes wrong.
+    import analytics
+    _posts = rotation.topic_post_counts(analytics.load_jsonl(LOG))
+    _usable = usable_angles(topic, brand)
+    _angle = angles.select(_usable, _posts.get(topic["id"], 0))
+    if _angle:
+        if len(_usable) > 1:
+            print(f"[prepare] angle "
+                  f"{_posts.get(topic['id'], 0) % len(_usable)} "
+                  f"of {len(_usable)} for {topic['id']}")
+        topic = angles.apply_angle(topic, _angle)
     fmt = force_format or select_format(state["run_count"], len(topics))
     # Captured BEFORE the ad/screenshot fallbacks can rewrite fmt — that
     # rewrite is exactly what made a failed spot look like a chosen card.
