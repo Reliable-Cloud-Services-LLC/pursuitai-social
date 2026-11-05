@@ -55,8 +55,15 @@ def _claude_variant(topic, platform, brand):
                     f"{limit}\n\nOriginal:\n{base}\n\nReply with only the rewritten text."}],
             }, timeout=60)
         r.raise_for_status()
-        txt = r.json()["content"][0]["text"].strip().strip('"')
-        return txt or None
+        # `content` is a list of BLOCKS, and the first is not guaranteed
+        # to be the text one — a model may emit a thinking block ahead of
+        # it. The old code indexed [0] blindly and raised KeyError('text'),
+        # which the except below swallowed into a silent template
+        # fallback: on the first live run two of three captions died this
+        # way while the third happened to get text first and varied fine.
+        txt = next((b.get("text") or "" for b in r.json().get("content") or []
+                    if b.get("type") == "text" and b.get("text")), "")
+        return txt.strip().strip('"') or None
     except Exception as e:
         print(f"[captions] Claude variant failed, using template: {e}")
         return None
