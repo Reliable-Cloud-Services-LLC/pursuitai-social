@@ -97,7 +97,23 @@
         "verified_on": "2026-07-28",
         "note": "50% for services and supplies; similarly-situated entities excluded. The clause also sets 85%/75% construction limits the '50% Rule' shorthand elides."
       },
-      "icon": "shield-check"
+      "icon": "shield-check",
+      "angles": [
+        {
+          "headline": "Passes on total dollars. Fails in year three.",
+          "stat": "Evaluated per option year",
+          "body": "A teaming split can satisfy the limitation across the whole contract and still breach it inside a single option year. Every year is evaluated on its own.",
+          "hook_x": "A prime/sub split can pass the limitation on total contract dollars and still fail inside one option year. PursuitAI evaluates the base period and every option year separately, so the breach shows up before you sign.",
+          "hook_ig": "Here is the trap in the limitation on subcontracting.\n\nYour split can be comfortably compliant across the whole contract value — and still breach in option year three, where the work mix shifts.\n\nEvery period gets evaluated on its own: base, and each option year, with a compliant / at-risk / over-limit verdict for each."
+        },
+        {
+          "headline": "Decide the split when you form the team.",
+          "stat": "Compliant / at-risk / over-limit",
+          "body": "The work share is negotiated at teaming, not at reporting. Model the split beforehand and get a verdict while the terms are still being agreed.",
+          "hook_x": "Work share gets negotiated when you form the team and audited years later. Model the split up front and you find out it is over-limit while the terms are still on the table, not when it is a compliance problem.",
+          "hook_ig": "Work share is agreed in a teaming conversation and checked years afterwards by somebody else.\n\nBy then it is not a negotiation, it is a finding.\n\nModel the prime/sub split before you sign and get a compliant / at-risk / over-limit verdict while the terms are still being discussed."
+        }
+      ]
     },
     {
       "id": "subaward-intel",
@@ -221,7 +237,23 @@
         "verified_on": "2026-07-28",
         "note": "PROGRAM_YEARS=9, DEVELOPMENTAL_YEARS=4, transitional years 5-9."
       },
-      "icon": "clock"
+      "icon": "clock",
+      "angles": [
+        {
+          "headline": "Year five changes what the program is for.",
+          "stat": "Developmental years 1-4, transitional 5-9",
+          "body": "The first four years are developmental; years five to nine are transitional, and the expectations shift. The copilot shows which stage you are in and what it means.",
+          "hook_x": "The 8(a) program is not one program. Years 1-4 are developmental; 5-9 are transitional, and what SBA expects of you changes. The copilot shows which stage you are in rather than leaving you to count.",
+          "hook_ig": "The 8(a) program is really two programs.\n\nYears one to four are developmental. Years five to nine are transitional, and what is expected of you changes with them.\n\nPursuitAI shows which stage you are in, how much term is left, and when your next SBA annual review falls — rather than leaving you to count it out on a calendar."
+        },
+        {
+          "headline": "Nine years, and then you compete like everyone else.",
+          "stat": "Term progress, with the clock visible",
+          "body": "The term ends whether or not you are ready. A visible progress clock and stage-aware alerts make the remaining time something you plan against.",
+          "hook_x": "The 8(a) term is nine years and then it is over, ready or not. A visible term clock and stage-aware alerts turn the time you have left into something you plan around instead of something you notice late.",
+          "hook_ig": "Nine years sounds like a long time until year seven.\n\nThe 8(a) term ends whether or not the business you built on it can compete without it — and the firms that make the transition started planning for it years earlier.\n\nA visible term clock and stage-aware alerts make the remaining runway something you plan against."
+        }
+      ]
     },
     {
       "id": "sole-source",
@@ -631,7 +663,23 @@
         "verified_on": "2026-07-28",
         "note": "coverage_ratio = probability-weighted pipeline / goal; win_rate from won/submitted; at-risk pursuits and win-loss cohorts at :257-258."
       },
-      "icon": "trending-up"
+      "icon": "trending-up",
+      "angles": [
+        {
+          "headline": "Is there enough pipeline to hit the number?",
+          "stat": "Coverage against your annual goal",
+          "body": "Coverage is the probability-weighted pipeline measured against your new-business goal — the one ratio that says whether the year is achievable from here.",
+          "hook_x": "Most pipeline reviews answer \"what are we working on.\" The question the owner is actually asking is whether there is enough of it to hit the number. Coverage is weighted pipeline against your goal, in one ratio.",
+          "hook_ig": "Every pipeline review answers \"what are we working on?\"\n\nThe question being asked is different: is there enough here to make the year?\n\nCoverage puts your probability-weighted pipeline against your new-business goal and gives you the one ratio that answers it — before there is no time left to act on it."
+        },
+        {
+          "headline": "You win in some places and not others.",
+          "stat": "Win rates by agency and set-aside",
+          "body": "Win and loss rates broken out by agency and set-aside, so the pattern in where you actually convert stops being a feeling.",
+          "hook_x": "Most firms have a strong sense of where they win and no data behind it. Win and loss rates by agency and set-aside turn that instinct into a pattern you can point at — and plan capture around.",
+          "hook_ig": "Ask any capture lead where the firm wins and you will get a confident answer.\n\nAsk for the numbers behind it and you usually get a pause.\n\nWin and loss rates broken out by agency and by set-aside turn that instinct into something you can see — and aim the next year of capture at."
+        }
+      ]
     },
     {
       "id": "post-award",
@@ -650,7 +698,23 @@
         "verified_on": "2026-07-28",
         "note": "CparsAssessment carries exactly six factor ratings: quality, schedule, cost_control, management, small_business, regulatory."
       },
-      "icon": "clipboard-check"
+      "icon": "clipboard-check",
+      "angles": [
+        {
+          "headline": "Your next win is written in your last CPARS.",
+          "stat": "Six CPARS factors, with a narrative drafter",
+          "body": "Quality, schedule, cost control, management, small business and regulatory — six factors that follow you into every future evaluation, with an AI drafter for the narrative.",
+          "hook_x": "A CPARS rating outlives the contract that produced it. Six factors — quality, schedule, cost control, management, small business, regulatory — follow you into every future evaluation. Draft the narrative properly.",
+          "hook_ig": "A CPARS rating outlives the contract that produced it.\n\nSix factors — quality, schedule, cost control, management, small business, regulatory — follow your firm into every evaluation that comes after, read by people who were not there.\n\nWhich makes the narrative worth writing properly, with help."
+        },
+        {
+          "headline": "Finish a contract. Gain a past performance.",
+          "stat": "Promote straight into the PP library",
+          "body": "Mods, CDRL deliverables and CPARS ratings tracked through delivery — then the finished contract promotes into your past performance library for the next bid.",
+          "hook_x": "The contract you are delivering is the past performance you will cite for the next five years. Track the mods, CDRLs and CPARS as you go, then promote the finished contract straight into your PP library.",
+          "hook_ig": "The contract you are delivering right now is the past performance you will be citing for the next five years.\n\nMost firms reconstruct it from memory and old email when a proposal is due.\n\nTrack the mods, CDRL deliverables and CPARS ratings as you go — then promote the finished contract straight into your past performance library."
+        }
+      ]
     },
     {
       "id": "pricing-plans",
@@ -669,7 +733,23 @@
         "verified_on": "2026-07-28",
         "note": "$249/mo agrees across billing UI, terms page, and landing. GovWin price comparison removed."
       },
-      "icon": "trending-up"
+      "icon": "trending-up",
+      "angles": [
+        {
+          "headline": "Fourteen days. No card.",
+          "stat": "Free trial, set up in under two minutes",
+          "body": "The whole capture stack for fourteen days without entering a card. Set up takes under two minutes, and if it is not for you, nothing happens.",
+          "hook_x": "Fourteen days of the whole capture stack, no credit card, set up in under two minutes. If it turns out not to be for you, nothing happens — which is how a trial should work.",
+          "hook_ig": "A free trial that needs your card is not really a trial. It is a subscription with a grace period and a reminder you will forget to set.\n\nFourteen days of the whole capture stack. No card. Set up in under two minutes.\n\nIf it is not for you, nothing happens."
+        },
+        {
+          "headline": "One subscription, not six.",
+          "stat": "From $249/mo",
+          "body": "Fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting and the 50% rule check are one platform from $249 a month, not six tools to reconcile.",
+          "hook_x": "Fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, 50% rule checking. One platform from $249/mo rather than six tools, six logins and six renewal dates.",
+          "hook_ig": "The usual way a small GovCon shop ends up with a capture stack is one tool at a time — a scoring tool here, a pricing spreadsheet there, something for proposals.\n\nSix logins. Six renewals. Nothing talking to anything else.\n\nFit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting and 50% rule checking, from $249 a month, in one place."
+        }
+      ]
     },
     {
       "id": "mobile-app",
