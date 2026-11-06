@@ -849,6 +849,111 @@
           "hook_ig": "Capture happens at industry days, in airports and in car parks outside client sites.\n\nIt does not happen at your desk, which is where most capture software lives.\n\nReview the board, move a pursuit's stage, share past performance or generate an outline from an iPhone, iPad or Android — behind a biometric lock."
         }
       ]
+    },
+    {
+      "id": "knowledge-vault",
+      "feature": "Knowledge Vault",
+      "headline": "Ask your own proposals a question.",
+      "body": "Ask in plain English and get an answer built from your own proposals, past performance and agreements — every claim carrying a numbered citation back to the document it came from.",
+      "hook_x": "\"What did we say about surge staffing in the DHS bid?\" Ask the Knowledge Vault and get an answer assembled from your own proposals and past performance, every claim cited back to the document it came from.",
+      "hook_ig": "The answer is in a proposal you wrote two years ago.\n\nYou know it exists. You do not know which file, and the person who wrote it has left.\n\nAsk the Knowledge Vault in plain English and get an answer built from your own documents — proposals, past performance, agreements — with every claim numbered and cited back to the file it came from.",
+      "stat": "Cited answers from your own files",
+      "page": "/",
+      "media": "card",
+      "icon": "search",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/knowledge/retrieval.py:22-30 (search_chunks is org_id-scoped top-k over the firm's own chunks); apps/backend/app/services/knowledge/answer.py:13-17 ('Use ONLY the excerpts. Never invent facts... Cite every claim with [n]'), :25 (compose_citations maps each [n] back to source_label/source_id); apps/backend/app/services/knowledge/embeddings.py:20-21,37-43 (BAAI/bge-small-en-v1.5 via fastembed/ONNX, no PyTorch — embedding runs in-process); apps/backend/app/api/knowledge.py:92,131-132 (no chunks → short-circuit; charge_ai_call_once runs only after a validated answer)",
+        "verified_on": "2026-11-05",
+        "note": "Deliberately does NOT claim 'nothing leaves your environment'. Only the EMBEDDING runs on-box (embeddings.py: fastembed/ONNX in-process); the retrieved excerpts are sent to Claude to compose the answer (answer.py build_user_prompt). The accurate and still-strong claims are: the corpus is embedded in-process rather than shipped to an embedding service; answers are grounded in the firm's own org-scoped chunks with [n] citations; and an ungrounded question returns an honest empty answer and is NOT charged (api/knowledge.py:92 short-circuits before charge_ai_call_once at :131-132)."
+      },
+      "angles": [
+        {
+          "headline": "Your corpus is embedded in-process.",
+          "stat": "bge-small via ONNX, on the box",
+          "body": "Indexing runs in-process — the model is local and your document set is not shipped to an embedding service to be vectorised.",
+          "hook_x": "Indexing your proposal library should not mean shipping it to a third party to be vectorised. The Knowledge Vault embeds in-process with a local model; only the handful of excerpts that answer a question go anywhere.",
+          "hook_ig": "Building a searchable index of your proposals usually means handing the whole library to somebody else's embedding service.\n\nThe Knowledge Vault runs the model in-process instead — your corpus is vectorised on the box.\n\nWhen you ask a question, only the few excerpts that answer it travel with it."
+        },
+        {
+          "headline": "If your documents don't answer it, it says so.",
+          "stat": "No answer, no charge",
+          "body": "A question your files cannot answer returns an honest empty answer rather than a plausible invention — and it does not spend a credit.",
+          "hook_x": "The dangerous answer is the confident one assembled from nothing. If your documents do not contain it, the Knowledge Vault says so plainly — and an unanswered question costs no credit.",
+          "hook_ig": "The failure mode of document AI is not \"I don't know.\"\n\nIt is a fluent, confident paragraph assembled from nothing, which you then put in a proposal.\n\nIf your own documents do not contain the answer, the Knowledge Vault says so and stops. And a question it cannot answer does not spend a credit."
+        }
+      ]
+    },
+    {
+      "id": "pursuit-copilot",
+      "feature": "Pursuit Copilot",
+      "headline": "One audited run, fit to handoff.",
+      "body": "A single tracked run moves a pursuit through fit, eligibility, requirements, compliance matrix, outline, draft and pricing in a fixed order — with the bid decision and colour-team review as gates a person has to clear.",
+      "hook_x": "A pursuit has an order to it, and most of the cost is in losing track of where you are. One audited run drives fit, eligibility, requirements, compliance matrix, outline, draft and pricing — with human gates at the decisions.",
+      "hook_ig": "Most pursuits are not lost on quality. They are lost on sequence — the compliance matrix built after the outline, the pricing started the night before.\n\nOne audited run moves the pursuit through fit, eligibility, requirements, matrix, outline, draft and pricing in a fixed order.\n\nAnd the decisions that should be human — bid or no-bid, colour-team review — are gates somebody has to clear.",
+      "stat": "Fixed sequence, human gates",
+      "page": "/",
+      "media": "card",
+      "icon": "layout-list",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/pursuit_agent/registry.py:119-125 (build_sequence assembles the ordered step sequence for a run); apps/backend/app/services/pursuit_agent/orchestrator.py:206 (is_gate set from the tool), :288-296 ('the hard human GATES (bid/no-bid, color-team review), which are decisions that spend nothing'), :367 ('gate is resolved via resolve_step, never re-run'), :419-425 (resolve_step takes an explicit caller-supplied outcome)",
+        "verified_on": "2026-11-05",
+        "note": "The sequence is deterministic (registry.build_sequence), not model-chosen — the DAG is the guardrail and Claude only advises. A gate step is resolved through resolve_step with an outcome the CALLER supplies, so no gate is crossed by the orchestrator itself. Copy says 'gates a person has to clear' rather than 'never auto-submits': the former is what the code shows directly."
+      },
+      "angles": [
+        {
+          "headline": "The sequence decides. The model advises.",
+          "stat": "Deterministic order, not model-chosen",
+          "body": "The order of a run is fixed in code, not chosen by a model. Claude recommends the next move and explains why; it does not get to reorder the pursuit.",
+          "hook_x": "An agent that picks its own next step is a research demo. The run order here is fixed in code — Claude recommends and explains, the sequence decides. That is the difference between a copilot and a liability.",
+          "hook_ig": "There are two ways to build an agent for something that matters.\n\nLet the model decide what to do next, and find out afterwards what it chose. Or fix the sequence in code and let the model advise inside it.\n\nThe run order here is deterministic. Claude recommends the next move and explains the reasoning; it does not get to reorder a pursuit."
+        },
+        {
+          "headline": "The decisions stay yours.",
+          "stat": "Bid/no-bid and colour team are gates",
+          "body": "Bid or no-bid, and colour-team review, are gate steps. The run stops there and waits for a person to resolve them with an explicit outcome.",
+          "hook_x": "Two calls on a pursuit should never be automatic: whether to bid, and whether the draft is good enough. Both are gate steps — the run stops and waits for a person to resolve them.",
+          "hook_ig": "Automate the typing, not the judgement.\n\nTwo decisions on any pursuit should stay with a human: whether to bid at all, and whether the draft is ready to go out.\n\nBoth are gate steps. The run reaches them and stops, and somebody resolves them with an explicit answer before anything moves on."
+        }
+      ]
+    },
+    {
+      "id": "compliance-exposure",
+      "feature": "Compliance Exposure",
+      "headline": "CMMC and CUI, flagged before you bid.",
+      "body": "Every opportunity is read for the security burden it carries before you commit to a bid. CMMC level, CUI handling, NIST SP 800-171 and the DFARS 252.204-70xx clauses, flagged up front.",
+      "hook_x": "Two solicitations in the same NAICS can be entirely different businesses once you read the security requirements. Every opportunity is flagged for CMMC level, CUI handling, NIST SP 800-171 and the DFARS 252.204-70xx clause family.",
+      "hook_ig": "Two solicitations, same NAICS, same ceiling.\n\nOne of them requires CMMC Level 2 and CUI handling, and that is a capital expenditure before you write a word.\n\nEvery opportunity is read for CMMC level, CUI, NIST SP 800-171 and the DFARS 252.204-70xx clause family — so the cost of compliance is visible while it is still a bid decision.",
+      "stat": "CMMC, CUI, NIST 800-171, DFARS 7012",
+      "page": "/",
+      "media": "card",
+      "icon": "clipboard-check",
+      "verification": {
+        "status": "VERIFIED",
+        "source_type": "code",
+        "source_ref": "apps/backend/app/services/compliance_exposure.py:110-122 (detect_compliance_exposure over the opportunity text, pure — no model call), :40 (_DFARS_CLAUSE matches 252.204-7008/7012/7019/7020/7021), :42 (_FAR_SAFEGUARD 52.204-21), :44-50 (_CMMC_MENTION / _CMMC_L2 / _CMMC_L1), :51 (_NIST_800_171), :52 (_CUI), :27-29 (SEVERITIES none/low/medium/high)",
+        "verified_on": "2026-11-05",
+        "note": "Deterministic by construction — compliance_exposure.py:9 'v1 is deterministic-only', no Claude call, so the same solicitation always flags the same way and the result costs nothing. Tuned against false positives: :15 records that it anchors on explicit CMMC/CUI phrases and the DFARS clause NUMBERS, never a loose 'cyber' keyword. Decision support, NOT a certification or a legal opinion — the copy says 'flagged' and 'visible', never 'compliant'. Copy is also shaped for the VOICEOVER: narration.fallback() reads only the first sentence of hook_x and body, so the acronyms sit in the second sentence. The card shows them; the narrator never reaches them. Chosen over adding pronunciation rules because the lexicon's standard is ear-verification against synthesized samples (see the GovCon rule's why), and the voice stack is not installed locally — a guessed respelling for DFARS or NIST would defeat that gate. Clause numbers read aloud are poor audio regardless."
+      },
+      "angles": [
+        {
+          "headline": "The same solicitation always flags the same way.",
+          "stat": "Deterministic, no model call",
+          "body": "The read is a deterministic pass over the text, not a model's impression — so it is reproducible, free, and does not drift between runs.",
+          "hook_x": "A compliance read that gives a different answer on Tuesday is not a compliance read. This one is a deterministic pass over the solicitation text — same input, same flags, no model call, no credit.",
+          "hook_ig": "An AI that reads your solicitation for CMMC exposure will give you a slightly different answer each time you ask.\n\nThat is fine for brainstorming and useless for a bid decision.\n\nThis read is deterministic: a fixed pass over the text, anchored on the clause numbers. Same solicitation, same flags, every time — and it costs nothing to run."
+        },
+        {
+          "headline": "It looks for clause numbers, not the word \"cyber\".",
+          "stat": "252.204-7012 / 7019 / 7020 / 7021",
+          "body": "Flagging anything that mentions security would be noise. The read anchors on explicit CMMC and CUI phrasing and the DFARS clause numbers themselves.",
+          "hook_x": "A flag on every solicitation containing the word \"cyber\" is noise you learn to ignore. This one anchors on explicit CMMC and CUI phrasing and the DFARS clause numbers — 252.204-7012, 7019, 7020, 7021.",
+          "hook_ig": "The quickest way to make a compliance flag useless is to raise it too often.\n\nFlag every solicitation that says \"cybersecurity\" and within a week nobody reads the flag.\n\nThis read anchors on explicit CMMC and CUI phrasing and on the DFARS clause numbers themselves — 252.204-7012, 7019, 7020, 7021 — so when it flags, it means something."
+        }
+      ]
     }
   ]
 }
