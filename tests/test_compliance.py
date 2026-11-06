@@ -250,3 +250,53 @@ def test_no_publishable_topic_renders_a_violating_card(cal):
         violations = compliance.check_rendered(t)
         assert not violations, (
             f"{t['id']} card renders: {[str(v) for v in violations]}")
+
+
+# ---------------------------------------------------------------------------
+# "SBA-approved mentor-protégé joint venture" is the user's thing, not ours.
+# ---------------------------------------------------------------------------
+#
+# USER_OWNED already permits "SBA-approved joint venture" and "SBA-approved
+# mentor-protégé agreement" — but not the two combined, which is the actual
+# term of art and unavoidable vocabulary for an 8(a) platform. The lookahead
+# only inspects the token right after the hyphen, so "SBA-approved
+# mentor-protégé joint venture" read as an endorsement of US and tripped.
+#
+# Found when the angle filter dropped a freshly-written mpjv angle and said
+# so, which is the filter working. Completing the list rather than contorting
+# the copy: the phrase names the same category of user-owned thing the rule
+# already allows, so this closes a gap rather than widening the risk.
+
+def test_an_sba_approved_mpjv_is_the_users_thing():
+    topic = {"id": "mpjv"}
+    assert not compliance.check_claims(topic, (
+        "An SBA-approved mentor-protege joint venture can pursue the "
+        "set-asides the protege qualifies for."))
+
+
+def test_the_accented_spelling_is_allowed_too():
+    """GovCon writes it both ways and the copy uses accents."""
+    topic = {"id": "mpjv"}
+    assert not compliance.check_claims(topic, (
+        "An SBA-approved mentor-protégé joint venture can bid it."))
+
+
+def test_the_jv_abbreviation_is_allowed():
+    topic = {"id": "mpjv"}
+    assert not compliance.check_claims(topic, (
+        "Record your SBA-approved mentor-protege JV once."))
+
+
+def test_claiming_the_agency_approved_US_still_trips():
+    """The negative control that matters.
+
+    The rule exists to stop us implying a federal agency endorses the
+    PRODUCT. Widening the allowed-noun list must not open that up.
+    """
+    topic = {"id": "mpjv"}
+    for claim in ("PursuitAI is SBA-approved.",
+                  "PursuitAI is an SBA-approved platform.",
+                  "Our software is SBA-certified.",
+                  "PursuitAI is approved by the SBA.",
+                  "Built in partnership with the SBA."):
+        assert compliance.check_claims(topic, claim), f"let through: {claim}"

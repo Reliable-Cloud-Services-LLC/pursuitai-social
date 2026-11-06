@@ -50,7 +50,15 @@ AGENCIES = (r"SBA|GSA|DHS|DoD|DOD|NASA|VA|HHS|DOE|DOT|EPA|HUD|USACE|"
 # language; "PursuitAI is SBA-approved" is the claim we must never make.
 # The rule cannot tell those apart from the hyphen alone, so the noun that
 # follows decides.
-USER_OWNED = (r"MPA|mentor[- ]prot[ée]g[ée] agreement|joint venture|JV|"
+#
+# "mentor-protege joint venture" is spelled out because the lookahead only
+# inspects what comes immediately after the hyphen: "joint venture" and
+# "mentor-protege agreement" were both already allowed, but the combined
+# term — which is the actual term of art, and unavoidable vocabulary here —
+# matched neither and read as an endorsement of US. Completing the list
+# rather than loosening the rule: it names the same category of user-owned
+# thing, so "PursuitAI is SBA-approved" still trips, as its test insists.
+USER_OWNED = (r"MPA|mentor[- ]prot[ée]g[ée](?: joint venture| JV| agreement)|joint venture|JV|"
               r"agreement|certification|cert|status|subcontracting plan|"
               r"plan|contract|award|schedule|application|8\(a\) status")
 
