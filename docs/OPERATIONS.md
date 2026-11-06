@@ -60,6 +60,48 @@ out.
 
 ## Things that will surprise you
 
+### Angles: several points of view on one feature
+
+A topic carries one headline, one stat and one hook per channel, so each
+time it comes round it renders the identical card and makes the identical
+argument. The Claude rewrite varies the WORDS; an angle varies the POINT —
+pain, proof, audience, objection.
+
+```json
+{ "id": "price-to-win",
+  "headline": "...", "stat": "...", "hook_x": "...",
+  "angles": [
+    { "headline": "You lost on price. Nobody told you the number.",
+      "body": "...", "stat": "...", "hook_x": "...", "hook_ig": "..." }
+  ] }
+```
+
+The base fields are **angle zero**, not a special case — that copy is
+already written, already verified and already clean through the gate, so a
+topic adopts angles by ADDING rather than being rewritten, and a topic with
+no `angles` key behaves exactly as it always did.
+
+`cards.py`, `adspot.py`, `narration.py` and `captions.py` all read
+`topic["headline"]`, `topic["stat"]` and so on, so `angles.apply_angle`
+merges into a COPY of the topic dict and the card image and voiceover vary
+along with the text — none of those modules changed.
+
+**Selection is indexed by the topic's own post count**, deliberately.
+`select_format`'s docstring is the cautionary tale: indexing one rotation
+by a counter that also drives another silently re-locks whenever the
+periods share a factor, which is how every topic once got pinned to a
+single format. A per-topic count advances only when that topic ships, so it
+shares no period with the topic cursor or the format cycle.
+
+Compliance applies **per angle**, because an angle carries the three fields
+drawn onto the card. A failing angle is dropped and SAID SO
+(`[prepare] angle 2 of price-to-win dropped: ...`); an angle that vanished
+quietly would leave a topic posting from two of its three forever.
+
+Adoption is per topic. 3 of 23 carry angles today (recompete-radar,
+price-to-win, sole-source) for 29 distinct creatives; all 23 at three
+angles would be 69.
+
 ### Claude's `content` is a list of BLOCKS — never index [0]
 
 `_claude_variant` read `r.json()["content"][0]["text"]`. The first block is

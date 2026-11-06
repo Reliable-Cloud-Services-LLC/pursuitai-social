@@ -62,7 +62,23 @@
         "verified_on": "2026-07-29",
         "note": "The previous MISMATCH note was WRONG. It read the API signature -- months_ahead: Query(18, ge=3, le=36) -- and concluded the range was 3-36. Both UIs offer exactly 6/12/18/24/36, so the user-facing range really is 6-36 and the copy's figures were always correct. The real inaccuracy was subtler: months_ahead is a lookahead CAP, not a band (m_away <= months_ahead), so 'expiring in 6-36 months' implies a floor that does not exist -- 'Next 6 months' includes a contract ending next month. Reworded to 'the next 6 to 36 months', matching the UI's own 'Next N months' labels and the KB's 'hard cap' wording. 'Zero AI credits' holds: the endpoint docstring is 'No AI calls, no tier gate -- pure data analysis over public USASpending records.'"
       },
-      "icon": "radar"
+      "icon": "radar",
+      "angles": [
+        {
+          "headline": "Someone is already working your recompete.",
+          "stat": "Incumbent and award value, per contract",
+          "body": "Every contract you hold sits on another firm's expiring-contract list. Recompete Radar gives you that same view across your NAICS — incumbent, award value, months remaining.",
+          "hook_x": "Every contract you hold is on somebody's expiring-contract list. Recompete Radar gives you that same view across your NAICS — incumbent, award value, months remaining — so you defend what you have.",
+          "hook_ig": "Your recompete is already on someone's radar.\n\nEvery contract you hold shows up on another firm's expiring-contract list — incumbent named, award value attached, clock running.\n\nRecompete Radar gives you that same view across your NAICS, 6 to 36 months out. Defend what you have, and go after what you don't."
+        },
+        {
+          "headline": "No AI credits. Just the data.",
+          "stat": "A straight read of USASpending",
+          "body": "Recompete Radar is a direct read of USASpending — no AI call, no credit spend. Filter by agency, spot the incumbent, start capture while there is still time.",
+          "hook_x": "Recompete Radar spends no AI credits. It's a straight read of USASpending: contracts expiring in 6 to 36 months across your NAICS, incumbent and award value attached. Filter by agency and start capture.",
+          "hook_ig": "Not everything useful has to be AI.\n\nRecompete Radar is a direct read of USASpending — contracts expiring in the next 6 to 36 months across your NAICS, with the incumbent and award value attached.\n\nNo AI call. No credit spend. Filter by agency and start capture while there's still time to shape the deal."
+        }
+      ]
     },
     {
       "id": "fifty-percent-rule",
@@ -119,7 +135,23 @@
         "verified_on": "2026-07-29",
         "note": "'eLibrary schedule rates' claimed a fourth data feed that does not exist. eLibrary appears only as _elibrary_search_url(), a link the user clicks; schedule rates come via GSA CALC -- the KB says so outright ('instead of looking them up on eLibrary'). Three feeds, not four. USAspending, CALC, BLS OEWS and the 30-occupation figure all hold. The first pass's source_ref cited the 30-occupation constant and never checked the feed list around it."
       },
-      "icon": "trending-up"
+      "icon": "trending-up",
+      "angles": [
+        {
+          "headline": "You lost on price. Nobody told you the number.",
+          "stat": "Worked back from real obligations",
+          "body": "Debriefs rarely give you the winning number. Price-to-Win works backwards from USAspending obligations on comparable awards, so the next bid is anchored to what was actually paid.",
+          "hook_x": "Losing on price teaches you nothing if nobody tells you the number. Price-to-Win works backwards from USAspending obligations on comparable awards — so your next bid is anchored to what was actually paid.",
+          "hook_ig": "\"Your price was not competitive.\"\n\nThat's the whole debrief, and it teaches you nothing — because nobody tells you the number you lost to.\n\nPrice-to-Win works backwards from USAspending obligations on comparable awards, so the next bid is anchored to what the government actually paid rather than to a market average."
+        },
+        {
+          "headline": "A rate you can't defend is a rate that loses.",
+          "stat": "30 GovCon occupations, BLS-mapped",
+          "body": "Every labor category you price gets checked against GSA CALC ceilings and BLS wage data across 30 mapped GovCon occupations — before the cost volume goes out.",
+          "hook_x": "A labor rate you can't defend is a rate that loses. Price-to-Win checks your categories against GSA CALC ceilings and BLS wage data across 30 mapped GovCon occupations before the cost volume goes out.",
+          "hook_ig": "Cost realism is where good technical volumes go to die.\n\nPrice-to-Win checks every labor category you price against GSA CALC ceilings and BLS wage data across 30 mapped GovCon occupations.\n\nYou find the rate you can't defend before the contracting officer does."
+        }
+      ]
     },
     {
       "id": "proposal-drafting",
@@ -177,7 +209,23 @@
         "verified_on": "2026-07-29",
         "note": "FAR 19.805-1(a)(2), verbatim: 'will exceed $8.5 million for acquisitions assigned manufacturing NAICS codes and $5.5 million for all other acquisitions.' The product carried $4.5M/$7.0M; fixed in pursuit-ai a58d866c (#1972), shipped in v2.114.0, prod / reports 2.114.0. The threshold check is pure and deterministic and IS wired into the drafter, so 'built-in FAR 19.805-1 threshold check' is accurate. Our own hook_ig carried the stale figures until this change."
       },
-      "icon": "file-text"
+      "icon": "file-text",
+      "angles": [
+        {
+          "headline": "Check the ceiling before you pitch.",
+          "stat": "FAR 19.805-1 threshold check",
+          "body": "A directed 8(a) award is only on the table under the FAR 19.805-1 threshold. PursuitAI checks that first, so you know where you stand before you spend the meeting.",
+          "hook_x": "Before you pitch a CO on a directed 8(a) award, find out whether it's even available. PursuitAI runs the FAR 19.805-1 threshold check first — so you know where you stand before you spend the meeting.",
+          "hook_ig": "Not every requirement can be directed to you.\n\nThe FAR 19.805-1 threshold decides whether a sole-source 8(a) award is on the table at all — and finding out after you've pitched the CO is an expensive way to learn it.\n\nPursuitAI runs that check first, then drafts the package if the answer is yes."
+        },
+        {
+          "headline": "Write it the way a CO has to justify it.",
+          "stat": "Regulatory basis, source, benefit",
+          "body": "A contracting officer needs three things on the record: the regulatory basis, why you are a responsible source, and the benefit to the agency. PursuitAI drafts all three into one package.",
+          "hook_x": "A CO can't take a directed 8(a) award on enthusiasm. They need the regulatory basis, a responsible-source case, and the agency benefit on the record. PursuitAI drafts all three into one package.",
+          "hook_ig": "A contracting officer isn't persuaded — they're justified.\n\nA directed 8(a) award has to survive someone else's review, which means three things on the record: the regulatory basis, why you're a responsible source, and the benefit to the agency.\n\nPursuitAI drafts all three into one package you can hand over."
+        }
+      ]
     },
     {
       "id": "teaming",
