@@ -385,7 +385,23 @@
         "verified_on": "2026-07-28",
         "note": "SCORE table has exactly 7 signals."
       },
-      "icon": "trophy"
+      "icon": "trophy",
+      "angles": [
+        {
+          "headline": "You lost to a firm you'd never heard of.",
+          "stat": "Nightly USAspending sync",
+          "body": "Awards in your NAICS land nightly from USAspending, scored across 7 relevance signals — so the firms winning your work stop being a surprise.",
+          "hook_x": "Losing is survivable. Losing to a company you had never heard of, in your own NAICS, is a research problem. Awards land nightly from USAspending, scored across 7 relevance signals.",
+          "hook_ig": "Losing a bid is survivable.\n\nLosing to a firm you had never heard of — in your own NAICS, to an agency you call a customer — is a different problem, and it is a research one.\n\nAwards land nightly from USAspending, scored across 7 relevance signals, so the people winning your work stop being strangers."
+        },
+        {
+          "headline": "Monday morning, already briefed.",
+          "stat": "Claude-drafted weekly digest",
+          "body": "A digest every Monday on what was awarded in your space last week, drafted from the nightly sync — so the week starts with the landscape rather than a database.",
+          "hook_x": "Nobody opens a contract-awards database on a Monday. A digest shows up instead: what was awarded in your NAICS last week, drafted from the nightly sync, so the week starts with the landscape.",
+          "hook_ig": "Nobody begins their week by opening a contract-awards database.\n\nSo the week's awards come to you instead — a digest every Monday on what was awarded in your space, drafted from the nightly USAspending sync.\n\nThe week starts with the landscape rather than an intention to go and look at it."
+        }
+      ]
     },
     {
       "id": "pipeline",
@@ -404,7 +420,23 @@
         "verified_on": "2026-07-28",
         "note": "Stage names now match the PipelineStage enum. The previous copy named 'Qualified' and 'Bidding', neither of which exists, and omitted four real stages including the Go/No-Go gate. The no-bid lock is app/services/no_bid.py."
       },
-      "icon": "layout-list"
+      "icon": "layout-list",
+      "angles": [
+        {
+          "headline": "Make the bid decision a stage, not a hallway chat.",
+          "stat": "An explicit Go/No-Go gate",
+          "body": "Go/No-Go is its own stage on the board, so the decision gets made deliberately and recorded — and a No-Bid locks the pursuit's tools until someone reopens it.",
+          "hook_x": "Most teams make the bid decision in a hallway and discover it later from who is still working. Go/No-Go is its own stage on the board, recorded — and a No-Bid locks that pursuit's tools until an owner reopens it.",
+          "hook_ig": "Ask a team when they decided to bid and you usually get a shrug.\n\nIt was not a decision. It was a drift — nobody stopped, so everybody kept going.\n\nGo/No-Go is its own stage on the board. The call gets made, recorded, and a No-Bid actually locks that pursuit's tools until an owner reopens it."
+        },
+        {
+          "headline": "A pipeline number you'd show the bank.",
+          "stat": "Probability-weighted, not a sum",
+          "body": "Pipeline value is weighted by win probability rather than totalling everything anyone ever opened, so the number on the board is one you can plan against.",
+          "hook_x": "A pipeline that totals every opportunity anyone ever opened is a wish list. Weight each pursuit by win probability and you get a number you can staff against, forecast against, and say out loud.",
+          "hook_ig": "Most pipeline numbers are the sum of everything anyone ever clicked on.\n\nThat number cannot be planned against, which is why nobody trusts it.\n\nWeight each pursuit by win probability and you get something else: a figure you can staff against, forecast against and defend in a board meeting."
+        }
+      ]
     },
     {
       "id": "solicitation-analysis",
@@ -494,7 +526,23 @@
         "verified_on": "2026-07-28",
         "note": "_CEILING_SOURCE_LABEL validates against solicitation, pipeline_value and sam_estimate. The previous copy claimed GSA CALC ceilings; gsa_calc is used in api/price_to_win.py and api/gsa_calc.py but nowhere in the BOE path. The rate x hours x escalation x wrap x ODC math is api/proposals/pricing_boe.py:190."
       },
-      "icon": "trending-up"
+      "icon": "trending-up",
+      "angles": [
+        {
+          "headline": "A beautiful cost volume, over the ceiling.",
+          "stat": "Checked against the solicitation's ceiling",
+          "body": "Every number you price gets checked against the ceiling the solicitation itself states — so you find out before submission, not in the debrief.",
+          "hook_x": "You can build a defensible cost volume and still be over the ceiling. PursuitAI checks your BOE against the ceiling the solicitation itself states, so you learn it while you can still do something about it.",
+          "hook_ig": "There is a specific kind of loss that stings: the cost volume was defensible, the math was right, and the number was over the ceiling.\n\nNobody tells you until the debrief.\n\nPursuitAI checks your BOE against the ceiling the solicitation itself states — while you can still change the answer."
+        },
+        {
+          "headline": "Your rate card, matched to their LCATs.",
+          "stat": "Rate x hours x escalation x wrap x ODC",
+          "body": "Upload a rate card and the required labor categories come off the RFQ automatically, then the full build-up runs: rate, hours, escalation, wrap and ODC.",
+          "hook_x": "Mapping your rate card onto someone else's labor categories is a morning you do not get back. Upload the card, let the LCATs come off the RFQ, and the rate x hours x escalation x wrap x ODC build-up runs itself.",
+          "hook_ig": "Pricing is not the hard part. Reconciling your rate card against somebody else's labor-category scheme is.\n\nUpload the card. The required LCATs come off the RFQ. The build-up runs — rate, hours, escalation, wrap, ODC — and exports to Word.\n\nThat is a morning back."
+        }
+      ]
     },
     {
       "id": "resume-deepdive",
@@ -513,7 +561,23 @@
         "verified_on": "2026-07-29",
         "note": "'Export a combined volume to Word' was wrong: the export renders ONE candidate, and because the deep-dive is overwritten per type two candidates cannot coexist to be combined. Now describes a single candidate write-up to drop into a Key Personnel volume. The matrix, the meets/partial/gap statuses and the never-invent prompt constraint were always real -- which is what the first pass's source_ref checked, while the export clause went unexamined."
       },
-      "icon": "clipboard-check"
+      "icon": "clipboard-check",
+      "angles": [
+        {
+          "headline": "Find the gap at kickoff, not at review.",
+          "stat": "Meets / partial / gap, per requirement",
+          "body": "Every key-personnel requirement in the solicitation is marked meets, partial or gap — so a thin qualification surfaces while you can still swap the candidate.",
+          "hook_x": "Discovering your PM does not meet a key-personnel requirement during red team is a very expensive week. The deep-dive marks every requirement meets, partial or gap — on day one, when you can still swap.",
+          "hook_ig": "The worst time to learn your proposed PM misses a key-personnel requirement is red team.\n\nThe second worst is the debrief.\n\nThe deep-dive marks every requirement in the solicitation as meets, partial or gap — on day one, while swapping a candidate is still an option rather than a crisis."
+        },
+        {
+          "headline": "Every claim traced to a line on the resume.",
+          "stat": "Requirement to evidence, nothing invented",
+          "body": "The write-up pairs each solicitation requirement with the resume line that proves it, so nothing in the Key Personnel volume is an assertion you cannot source.",
+          "hook_x": "A key-personnel write-up is only as good as what you can point to. Each requirement is paired with the resume line that evidences it — so nothing in the volume is a claim you cannot source.",
+          "hook_ig": "Key Personnel volumes fail on unsupported assertions.\n\nNot lies — just claims nobody can trace back to anything when an evaluator asks.\n\nThe deep-dive pairs every solicitation requirement with the resume line that evidences it. If there is no line, it says gap rather than inventing one."
+        }
+      ]
     },
     {
       "id": "secure-docs",
@@ -532,7 +596,23 @@
         "verified_on": "2026-07-29",
         "note": "Now claims the APPLICATION layer, which is the strong and checkable claim, and makes none about the operator layer. The previous wording -- 'platform staff see metadata, never contents' -- reads as a capability guarantee, and it is not one: file_storage.py:64 is ONE shared KMS CMK, so an operator with AWS access to it plus S3 plus the DB can decrypt out-of-band. pursuit-ai had already removed that exact sentence from its own landing copy in #1975 (50e137c6); I preserved it in PR #28 while rewriting the adjacent 'your own key' clause, and an independent audit caught it. NB apps/web/src/features/files/components/FilesTab.js:21 still carries the old sentence in-product -- a pursuit-ai defect, reported separately."
       },
-      "icon": "shield-check"
+      "icon": "shield-check",
+      "angles": [
+        {
+          "headline": "The admin screen has no download button.",
+          "stat": "The endpoint does not exist",
+          "body": "On the admin file surface, download and preview endpoints are not disabled or permission-checked. They were never built. Absence, not a 403.",
+          "hook_x": "Most platforms secure admin access to your files with a permission check. On our admin file surface the download and preview endpoints do not exist at all — absence rather than a 403. Nothing to misconfigure.",
+          "hook_ig": "There is a difference between \"staff are not allowed to open your files\" and \"there is no way to open them from that screen.\"\n\nThe first is a permission check, and permission checks get misconfigured.\n\nOn our admin file surface the download and preview endpoints were never built. Absence, not a 403."
+        },
+        {
+          "headline": "Every file, its own key.",
+          "stat": "Per-file keys, bound to your org",
+          "body": "NDAs, teaming agreements, proposal drafts — each encrypted before storage with its own key, the ciphertext bound to your organization, and every access written to an audit log.",
+          "hook_x": "NDAs, teaming agreements, draft proposals. Each file is encrypted before storage with its own key, the ciphertext bound to your organization, and every access lands in an audit log you can read.",
+          "hook_ig": "The documents that matter in GovCon are the ones you would least like loose: NDAs, teaming agreements, unsubmitted proposals.\n\nEach one is encrypted before storage with its own key. The ciphertext is bound to your organization. Every access is written to an audit log you can read."
+        }
+      ]
     },
     {
       "id": "exec-analytics",
