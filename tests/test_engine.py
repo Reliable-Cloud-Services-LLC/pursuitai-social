@@ -119,6 +119,7 @@ def _run(args, cwd, env=None):
     e = dict(os.environ)
     e.pop("X_API_KEY", None)
     e.pop("IG_USER_ID", None)
+    e.pop("PILOT_MODE", None)
     if env:
         e.update(env)
     return subprocess.run([sys.executable, "engine/run.py"] + args,

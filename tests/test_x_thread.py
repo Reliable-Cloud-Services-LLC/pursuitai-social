@@ -111,6 +111,7 @@ def test_prepare_writes_body_and_reply(tmp_path):
             p.unlink()
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("PILOT_MODE", None)
     subprocess.run([sys.executable, "engine/run.py", "--prepare"],
                    cwd=str(dst), env=env, capture_output=True, text=True)
     pending = json.load(open(dst / "content" / "pending.json"))

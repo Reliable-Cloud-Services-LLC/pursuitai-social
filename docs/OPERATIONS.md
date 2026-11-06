@@ -8,7 +8,7 @@ us, and what is still open.
 Keep it current. A stale operations doc is worse than none, because it is
 believed.
 
-_Last reviewed: 2026-08-27._
+_Last reviewed: 2026-11-06._
 
 ---
 
@@ -18,7 +18,7 @@ _Last reviewed: 2026-08-27._
 |---|---|
 | **X** | Automated. Cron live, every post human-approved. |
 | **Instagram** | Automated. System User token (never expires). Cards, screenshots and Reels all proven live. |
-| **LinkedIn** | Manual by necessity — no API access for a first-party publishing bot. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
+| **LinkedIn** | Manual by necessity until a Page `LINKEDIN_ORG_ID` is set — see [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). Pilot mode, below, is the exception and it ships **off**. |
 | **Facebook** | Not wired. |
 | **Rotation** | 26 of 27 topics publishable. `card → screenshot → card → ad`. |
 | **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
@@ -57,6 +57,39 @@ out.
   cron.)
 
 ---
+
+### LinkedIn pilot mode (off unless you turn it on)
+
+A 21-day message test aimed at GovCon buyers: 8(a)/SDB owners, BD and capture leads, proposal managers. Five angles in [`content/pilot.json`](../content/pilot.json), LinkedIn only. X and Instagram are not published while it is on, and the product topic cursor does not advance, so the normal feed resumes where it left off.
+
+**Settings.** Nothing here turns it on by itself. `content/pilot.json` has `"enabled": false`. To run the test, set one of:
+
+| Switch | Value | Where |
+|---|---|---|
+| Repository variable `PILOT_MODE` | `1` | GitHub → Settings → Secrets and variables → Actions → Variables. `daily.yml` and `analytics.yml` read this first. |
+| Repository secret `PILOT_MODE` | `1` | Same page, under Secrets. Used only when the variable is empty. |
+| `content/pilot.json` `"enabled"` | `true` | A commit. Use this if you would rather the flag live in the repo than in Actions. |
+
+`PILOT_MODE=0` forces it off even when the file says enabled. Only the digit `1` turns it on. `true` does not. Unset leaves the file in charge, and the file is off.
+
+Do not put a LinkedIn token in the repo. The token stays the existing `LINKEDIN_ACCESS_TOKEN` secret.
+
+**Who the post is from.** `LINKEDIN_ORG_ID` set → the Pursuit AI Page, same as a normal LinkedIn publish. `LINKEDIN_ORG_ID` unset and the access token set → the member who owns that token. Pilot mode is the deliberate opt-in; it sets `LINKEDIN_ALLOW_MEMBER_POST=1` for that run and says so in the log. No token, or the API rejects the call → status `handoff`, not `skipped`. Slack gets the caption (the same webhook as everything else) and `posted.jsonl` keeps it. The angle still advances, so tomorrow is the next message rather than the same one forever.
+
+**Links and the log.** Every pilot URL is `https://pursuitai.net/` with:
+
+```
+utm_source=linkedin
+utm_medium=organic
+utm_campaign=pilot21
+utm_content=<angle id>
+```
+
+The angle ids, in order, are `fifty-percent`, `sam-search`, `teaming`, `proposal-load`, `recompete`. The same four parameters are written on the `posted.jsonl` row as `utm`, beside `angle_id`. The weekly report groups on that id, which is `utm_content`. There is no per-angle landing page in the calendar, so the base URL stays the marketing site.
+
+**Winner.** `analytics.yml` (Mondays 15:41 UTC), after it reads metrics, sends a per-angle summary through `notify`: impressions, engagement, clicks where the platform returned them. The account's own X reply is taken out of `reply_count` before the ranking — those replies are the CTA the bot posts under itself, and they are why a post nobody answered still shows `reply_count` 1. A pilot `handoff` counts as the channel having been addressed for the staleness alarm. A handoff that is not a pilot post does not.
+
+Edit the angle copy in `content/pilot.json`. Leave an id alone once a post using it has shipped.
 
 ## Things that will surprise you
 

@@ -41,18 +41,23 @@ def _apply(base, extra):
     return urlunparse(parts._replace(query=urlencode(query)))
 
 
-def build_url(base, platform, topic_id, fmt):
+def build_url(base, platform, topic_id, fmt, *, content=None, campaign=None):
     """Tag a per-post link.
 
     `base` is the public landing page, not the app: the app URL opens the
     sign-in screen, which shows a first-time visitor none of the marketing
     they just clicked through for.
+
+    `content` overrides utm_content (the format, by default). The LinkedIn
+    pilot passes the angle id there so a click names the message, not the
+    card shape. `campaign` overrides utm_campaign the same way. Both default
+    to the historical values, so existing callers are unchanged.
     """
     return _apply(base, {
         "utm_source": platform,
         "utm_medium": MEDIUM,
-        "utm_campaign": topic_id,
-        "utm_content": fmt,
+        "utm_campaign": topic_id if campaign is None else campaign,
+        "utm_content": fmt if content is None else content,
     })
 
 

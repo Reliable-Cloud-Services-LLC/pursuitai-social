@@ -76,6 +76,10 @@ def topic_scores(posted_rows, metric_rows):
 
     per_topic = {}
     for entry in posted_rows:
+        # Pilot rows are a LinkedIn message test. They are not evidence
+        # about the product topic they were prepared beside.
+        if entry.get("pilot"):
+            continue
         topic = entry.get("topic")
         if not topic:
             continue
@@ -99,6 +103,8 @@ def topic_post_counts(posted_rows):
     """
     counts = {}
     for entry in posted_rows or []:
+        if entry.get("pilot"):
+            continue
         topic = entry.get("topic")
         if not topic:
             continue

@@ -75,7 +75,8 @@ def run(args, cwd, channels=()):
                 # LinkedIn's switches too: a developer with a real token in
                 # their shell would otherwise get different results from CI.
                 "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID",
-                "LINKEDIN_ALLOW_MEMBER_POST", "LINKEDIN_DRAFT"):
+                "LINKEDIN_ALLOW_MEMBER_POST", "LINKEDIN_DRAFT",
+                "PILOT_MODE"):
         env.pop(var, None)
     for ch in channels:
         env.update(CREDS[ch])
@@ -468,7 +469,8 @@ def _run_with(args, cwd, channels=(), extra=None):
                 "X_ACCESS_SECRET", "IG_USER_ID", "IG_ACCESS_TOKEN",
                 "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL",
                 "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID",
-                "LINKEDIN_ALLOW_MEMBER_POST", "LINKEDIN_DRAFT"):
+                "LINKEDIN_ALLOW_MEMBER_POST", "LINKEDIN_DRAFT",
+                "PILOT_MODE"):
         env.pop(var, None)
     for ch in channels:
         env.update(CREDS[ch])

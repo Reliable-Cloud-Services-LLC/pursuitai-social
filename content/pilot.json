@@ -1,0 +1,47 @@
+{
+  "enabled": false,
+  "campaign": "pilot21",
+  "notes": "21-day LinkedIn message test for GovCon buyers (8(a)/SDB owners, BD/capture leads, proposal managers). Every link is utm_source=linkedin, utm_medium=organic, utm_campaign=pilot21, utm_content=<angle id>. Edit the copy freely. Keep an id once a post has shipped — it is the log key and the utm_content value. Off unless PILOT_MODE=1 or enabled is true. PILOT_MODE=0 forces off.",
+  "angles": [
+    {
+      "id": "fifty-percent",
+      "feature": "50% Rule",
+      "headline": "The 50% rule fails quietly.",
+      "body": "A set-aside prime can clear total dollars and still miss FAR 52.219-14 in a single period.",
+      "stat": "Checked per period",
+      "post": "The limitation on subcontracting is where set-aside primes get surprised.\n\nFAR 52.219-14 does not grade the whole contract as one pile of dollars. For services and supplies the prime has to perform at least half the work, and similarly situated subcontractors count on your side of that line — which is easy to get wrong while the team is still moving.\n\nA plan that looks fine on total dollars can still be over the line in one option year. Model the split before you sign, period by period, and see how much headroom is left.\n\nPursuitAI runs that check on the team you are about to propose."
+    },
+    {
+      "id": "sam-search",
+      "feature": "SAM.gov",
+      "headline": "Stop qualifying the wrong notices.",
+      "body": "Score a SAM.gov row against your firm before anyone opens the PDF.",
+      "stat": "Fit before the download",
+      "post": "The expensive part of SAM.gov is not the download. It is the hour spent deciding a notice was never yours.\n\nSmall BD teams open rows that miss the NAICS, the set-aside, or the work the firm can actually perform. By the time the PDF is read, the day is gone and the real opportunities are still in the list.\n\nScore the match against your firm first — NAICS, set-aside, agency experience, technical alignment, competitive position — and only open the ones that survive.\n\nPursuitAI scores the opportunities in your NAICS space so the first look is a fit call, not a reading assignment."
+    },
+    {
+      "id": "teaming",
+      "feature": "Teaming",
+      "headline": "Find the 8(a) partner in the data.",
+      "body": "Mentor-protege joint ventures and teaming start with who already subcontracts in your NAICS.",
+      "stat": "Primes ranked by subawards",
+      "post": "An 8(a) or SDB team that is still cold-emailing primes is guessing.\n\nThe primes who already flow work to small businesses in your NAICS are in the subaward data. So are the mentor-protege joint ventures that fit a set-aside the firm cannot hold alone. Finding them is a search, not a networking event.\n\nRank the primes by dollars they have actually subcontracted, then write the teaming note from that history rather than from a generic capabilities blurb.\n\nPursuitAI ranks those primes from real subaward dollars and drafts the note from the same record."
+    },
+    {
+      "id": "proposal-load",
+      "feature": "Proposals",
+      "headline": "Proposal week breaks small teams.",
+      "body": "Section drafts grounded in your past performance, against the solicitation you have.",
+      "stat": "Drafts from your contracts",
+      "post": "A small shop does not have a proposal department. It has the same people who are delivering the current work.\n\nProposal week is when that shows. Technical approach, management, past performance, cost narrative — each one waiting on someone who is already booked.\n\nDraft section by section against the solicitation in front of you, grounded in contracts the firm has already performed, so the first pass is a draft you edit rather than a blank page.\n\nPursuitAI drafts from the solicitation and from your own past performance, and it does not invent contracts you did not perform."
+    },
+    {
+      "id": "recompete",
+      "feature": "Early capture",
+      "headline": "Start before the RFP drops.",
+      "body": "Recompetes and forecasts in your NAICS, while there is still time to shape the deal.",
+      "stat": "6–36 month lookahead",
+      "post": "By the time a recompete is a solicitation, the incumbent's team has usually been in the building for a year.\n\nContracts expiring in your NAICS over the next 6 to 36 months are already on USAspending. Forecasts name agency work that has not been solicited yet. Both are early capture, and both are public.\n\nSee the incumbent, the value, and the window, then start the relationship before the RFP drops.\n\nPursuitAI's recompete radar reads that window off USAspending so capture starts while there is still time to shape the deal."
+    }
+  ]
+}
