@@ -382,9 +382,9 @@
       "id": "mpjv",
       "feature": "Mentor-Protégé JV Support",
       "headline": "Your JV can bid more than you think.",
-      "body": "Record your SBA-approved MPA once and PursuitAI unlocks every set-aside your JV can win — even with a large mentor (13 CFR 125.9) — with workshare compliance built in.",
+      "body": "Record your SBA-approved MPA once and PursuitAI surfaces every set-aside the protégé qualifies for under 13 CFR 125.9(d) — even with a large mentor — with the protégé's 40% workshare floor checked too.",
       "hook_x": "Have a Mentor-Protégé JV? It can bid ANY set-aside the protégé qualifies for — even with a large-business mentor. PursuitAI models your JV's inherited eligibility and surfaces those bids automatically.",
-      "hook_ig": "Most Mentor-Protégé JVs under-bid their own eligibility.\n\nUnder 13 CFR 125.9, your JV can pursue any set-aside the protégé qualifies for — even with a large mentor. PursuitAI records your JV once, then badges every JV-eligible opportunity, credits the mentor's agency experience in scoring, and verifies protégé workshare (≥40%) for compliance.",
+      "hook_ig": "Most Mentor-Protégé JVs under-bid their own eligibility.\n\nUnder 13 CFR 125.9(d), your JV can seek any type of small business contract the protégé qualifies for — even with a large mentor. PursuitAI records your JV once, then badges every JV-eligible opportunity, credits the mentor's agency experience in scoring, and verifies the protégé performs at least 40% of the work the JV does.",
       "stat": "JV-aware scoring + ≥40% workshare check",
       "page": "/",
       "media": "card",
@@ -392,8 +392,8 @@
         "status": "VERIFIED",
         "source_type": "external",
         "source_url": "https://www.sba.gov/federal-contracting/contracting-assistance-programs/sba-mentor-protege-program",
-        "verified_on": "2026-07-28",
-        "note": "SBA: the JV may pursue any set-aside the protege qualifies for. The >=40% workshare floor is 13 CFR 125.8(c), not 125.9 as the copy implies (see limitations_constants.py:38)."
+        "verified_on": "2026-11-06",
+        "note": "SBA: the JV may pursue any set-aside the protege qualifies for. Verified against eCFR 2026-11-06: 125.9 is 'What are the rules governing SBA's small business mentor-protege program?' and (d)(1) carries the eligibility provision -- 'Such a joint venture may seek any type of small business contract ... for which the protege firm qualifies'. The >=40% workshare floor is 13 CFR 125.8(c), a DIFFERENT section: (c)(1) 'the small business partner to the joint venture must perform at least 40% of the work performed by the joint venture', and (c)(3) '40% of the total done by the partners'. Both citations are correct; the earlier copy placed 125.9 next to the workshare clause, so a reader could attach it to the 40% rule. Fixed 2026-11-06: each citation now sits on its own claim, and the copy says 40% of the work the JV performs rather than 40% of the contract."
       },
       "icon": "users",
       "angles": [
@@ -407,8 +407,8 @@
         {
           "headline": "Forty percent is the floor, and it is yours.",
           "stat": "13 CFR 125.8(c) workshare check",
-          "body": "The protege must perform at least 40% of the joint venture's work under 13 CFR 125.8(c). The workshare check is built into the JV record rather than remembered at audit.",
-          "hook_x": "In a mentor-protege JV the protege has to perform at least 40% of the work — 13 CFR 125.8(c). That floor is easy to agree to and easy to drift past, so the workshare check lives in the JV record.",
+          "body": "The protégé must perform at least 40% of the work performed by the joint venture — not of the contract — under 13 CFR 125.8(c). The check is built into the JV record rather than remembered at audit.",
+          "hook_x": "In a mentor-protégé JV the protégé must perform at least 40% of the work the JV itself does — 13 CFR 125.8(c). That floor is easy to agree to and easy to drift past, so the check lives in the JV record.",
           "hook_ig": "A mentor-protege joint venture carries a floor: the protege performs at least 40% of the JV's work. 13 CFR 125.8(c).\n\nIt is an easy number to agree to at formation and an easy one to drift past once delivery starts and the mentor has the bench.\n\nThe workshare check lives in the JV record, not in somebody's memory."
         }
       ]
