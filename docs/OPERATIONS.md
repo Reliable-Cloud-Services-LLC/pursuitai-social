@@ -20,7 +20,7 @@ _Last reviewed: 2026-08-27._
 | **Instagram** | Automated. System User token (never expires). Cards, screenshots and Reels all proven live. |
 | **LinkedIn** | Manual by necessity — no API access for a first-party publishing bot. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
 | **Facebook** | Not wired. |
-| **Rotation** | 23 of 24 topics publishable. `card → screenshot → card → ad`. |
+| **Rotation** | 26 of 27 topics publishable. `card → screenshot → card → ad`. |
 | **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
 
 The one blocked topic is `capability-statement` — **UNVERIFIABLE**, not
