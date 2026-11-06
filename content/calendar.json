@@ -392,8 +392,8 @@
         "status": "VERIFIED",
         "source_type": "external",
         "source_url": "https://www.sba.gov/federal-contracting/contracting-assistance-programs/sba-mentor-protege-program",
-        "verified_on": "2026-11-06",
-        "note": "SBA: the JV may pursue any set-aside the protege qualifies for. Verified against eCFR 2026-11-06: 125.9 is 'What are the rules governing SBA's small business mentor-protege program?' and (d)(1) carries the eligibility provision -- 'Such a joint venture may seek any type of small business contract ... for which the protege firm qualifies'. The >=40% workshare floor is 13 CFR 125.8(c), a DIFFERENT section: (c)(1) 'the small business partner to the joint venture must perform at least 40% of the work performed by the joint venture', and (c)(3) '40% of the total done by the partners'. Both citations are correct; the earlier copy placed 125.9 next to the workshare clause, so a reader could attach it to the 40% rule. Fixed 2026-11-06: each citation now sits on its own claim, and the copy says 40% of the work the JV performs rather than 40% of the contract."
+        "verified_on": "2026-11-05",
+        "note": "SBA: the JV may pursue any set-aside the protege qualifies for. Verified against eCFR 2026-11-05: 125.9 is 'What are the rules governing SBA's small business mentor-protege program?' and (d)(1) carries the eligibility provision -- 'Such a joint venture may seek any type of small business contract ... for which the protege firm qualifies'. The >=40% workshare floor is 13 CFR 125.8(c), a DIFFERENT section: (c)(1) 'the small business partner to the joint venture must perform at least 40% of the work performed by the joint venture', and (c)(3) '40% of the total done by the partners'. Both citations are correct; the earlier copy placed 125.9 next to the workshare clause, so a reader could attach it to the 40% rule. Fixed 2026-11-05: each citation now sits on its own claim, and the copy says 40% of the work the JV performs rather than 40% of the contract."
       },
       "icon": "users",
       "angles": [
