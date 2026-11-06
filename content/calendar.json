@@ -116,7 +116,23 @@
         "verified_on": "2026-07-28",
         "note": "Aggregates real SubAward.amount by prime with small-business and 8a/sdvosb/wosb/hubzone flags, so 'ranked by real sub-award dollars, filterable by set-aside' holds. Teaming email grounded in past performance via services/teaming_email.py."
       },
-      "icon": "users"
+      "icon": "users",
+      "angles": [
+        {
+          "headline": "Primes talk about small-business goals. Look at the record.",
+          "stat": "Ranked by dollars actually subcontracted",
+          "body": "Every prime says they team with small businesses. Sub-Award Intelligence ranks them by the sub-award dollars they actually paid out in your NAICS, filterable by set-aside.",
+          "hook_x": "Every prime says they team with small businesses. Sub-Award Intelligence ranks them by the dollars they actually subcontracted in your NAICS — filterable by set-aside. Their record, not their capability slide.",
+          "hook_ig": "Every prime says they support small business.\n\nThe sub-award data says which ones actually write the cheques.\n\nSub-Award Intelligence ranks primes by real subcontract dollars in your NAICS, filterable by 8(a), SDVOSB, WOSB and HUBZone — so you spend your outreach on the ones with a record, not the ones with a slide."
+        },
+        {
+          "headline": "A teaming email that cites their own numbers.",
+          "stat": "Drafted from their sub-award history",
+          "body": "The outreach writes itself from evidence: their sub-award history on one side, your named past performance on the other, in one drafted email.",
+          "hook_x": "\"We'd love to team\" gets deleted. An email citing what they subcontracted last year and the past performance you bring gets read. PursuitAI drafts it from both records.",
+          "hook_ig": "There are two kinds of teaming email.\n\nOne says \"we'd love to explore opportunities together.\" It gets deleted.\n\nThe other cites what that prime actually subcontracted last year and the named past performance you bring to it. PursuitAI drafts the second kind, from both records."
+        }
+      ]
     },
     {
       "id": "price-to-win",
@@ -170,7 +186,23 @@
         "verified_on": "2026-07-28",
         "note": "Section-by-section drafting keyed by SECTION KEY, capped at 12 sections. Compliance matrix, outline, and capture plan are sibling endpoints in the same package."
       },
-      "icon": "file-text"
+      "icon": "file-text",
+      "angles": [
+        {
+          "headline": "It drafts from your contracts, not its imagination.",
+          "stat": "Grounded in named past performance",
+          "body": "Every draft is written against your named past performance contracts, so the experience it claims is experience you can point to in a debrief.",
+          "hook_x": "The risk with AI proposal drafting isn't bad prose, it's invented experience. PursuitAI drafts against your NAMED past performance contracts, so every claim is one you can stand behind in a debrief.",
+          "hook_ig": "The danger with AI-written proposals was never the prose.\n\nIt's the sentence that describes work you have never done — and that nobody catches until a contracting officer asks about it.\n\nPursuitAI drafts against your named past performance contracts, so the experience in the draft is experience you can point to."
+        },
+        {
+          "headline": "Rewrite one section, not the whole proposal.",
+          "stat": "Section by section, up to 12",
+          "body": "Drafting runs section by section, so a weak management plan is one regeneration — not a reason to start the document over.",
+          "hook_x": "Proposal tools that regenerate the whole document make every edit expensive. PursuitAI drafts section by section, so a weak management plan is one regeneration and the technical volume you liked stays untouched.",
+          "hook_ig": "The worst thing a drafting tool can do is make you start over.\n\nYou liked the technical approach. The management plan is thin. Regenerating everything to fix one section means re-reviewing all of it.\n\nPursuitAI drafts section by section, so you fix the section — and the rest stays exactly where you left it."
+        }
+      ]
     },
     {
       "id": "8a-copilot",
@@ -264,7 +296,23 @@
         "verified_on": "2026-07-28",
         "note": "listed_as_subcontractor is an explicit opt-in, default False — 'no firm is exposed without consent'. state/city columns support discovery by state."
       },
-      "icon": "search"
+      "icon": "search",
+      "angles": [
+        {
+          "headline": "Listed only if you say so.",
+          "stat": "Opt-in, off by default",
+          "body": "The Subcontractor Directory is an explicit opt-in and off by default. No firm appears to primes without turning it on.",
+          "hook_x": "Being discoverable should be a decision, not a default. The Subcontractor Directory is opt-in and off until you switch it on — then primes assembling a team can find you by NAICS, set-aside and state.",
+          "hook_ig": "Plenty of platforms list your company and let you object afterwards.\n\nThe Subcontractor Directory is off by default. Nothing about your firm reaches a prime until you switch it on.\n\nWhen you do: discoverable by NAICS, set-aside certification and state, with capabilities and past performance one click away."
+        },
+        {
+          "headline": "What a prime sees when they're building a team.",
+          "stat": "NAICS, set-aside, state, past performance",
+          "body": "A prime filling a gap searches by NAICS, set-aside certification and state. Opt in and your capabilities and past performance are one click from that search.",
+          "hook_x": "A prime filling a teaming gap searches by NAICS, set-aside and state — and shortlists whoever comes back. Opt into the Subcontractor Directory and your capabilities and past performance are one click from that search.",
+          "hook_ig": "Picture the prime on the other side.\n\nThey have a gap on a bid, a deadline, and a search box: NAICS, set-aside certification, state. Whoever comes back gets shortlisted.\n\nOpt into the Subcontractor Directory and your firm is in that result, with capabilities and past performance one click away."
+        }
+      ]
     },
     {
       "id": "mpjv",
@@ -302,7 +350,23 @@
         "verified_on": "2026-07-29",
         "note": "Two defects, both fixed. (1) 'Weekly' was wrong -- the trigger carries no day_of_week, so the ingests run NIGHTLY. The job ids still read '<agency>_weekly_ingest' and a nearby comment still says '07:00-07:30 Monday'; those legacy names are what the first pass read as evidence. Correcting it improves the pitch. (2) The copy named HHS and DOT beside 'auto-import', but only 10 of the 21 importers are on the nightly fetch and neither is among them -- both are upload-only. Replaced with agencies that ARE auto-fetched. The 21/22 counts were always right."
       },
-      "icon": "radar"
+      "icon": "radar",
+      "angles": [
+        {
+          "headline": "Nobody watches 22 sources by hand.",
+          "stat": "SAM.gov + 21 agency forecasts",
+          "body": "SAM.gov, DHS APFS, DOE, NASA, EPA, HUD, State, USACE and more — each publishing on its own schedule, merged into one scored feed.",
+          "hook_x": "SAM.gov, DHS APFS, DOE, NASA, EPA, HUD, State, USACE — each publishing on its own schedule, in its own format. PursuitAI merges 22 sources into one scored feed so you are reading opportunities, not portals.",
+          "hook_ig": "Twenty-two sources. Each with its own portal, its own format, its own publishing schedule.\n\nNobody is checking all of them by hand, which is why good opportunities sit unread for weeks.\n\nPursuitAI merges SAM.gov and 21 agency forecast systems into one feed, scored against your firm."
+        },
+        {
+          "headline": "The forecast moved last night.",
+          "stat": "Nightly ingest across every source",
+          "body": "Agency forecasts change quietly — a new line item, a shifted quarter, a different NAICS. Nightly ingest means you see the change rather than the stale PDF.",
+          "hook_x": "Agency forecasts change quietly: a new line item, a shifted quarter, a different NAICS. PursuitAI re-ingests every source nightly, so what you are reading is this morning's picture and not last quarter's PDF.",
+          "hook_ig": "A forecast is not a document. It's a moving target.\n\nLine items appear. Quarters shift. NAICS codes change. The version you downloaded in January stopped being true in February.\n\nPursuitAI re-ingests every source nightly, so the feed you open is this morning's picture."
+        }
+      ]
     },
     {
       "id": "awards-tracker",
@@ -359,7 +423,23 @@
         "verified_on": "2026-07-29",
         "note": "'Q&A pairs ... in one pass' bundled a separate endpoint into the compliance extraction. Everything else in the sentence does come back in the single forced tool_use call; Q&A is its own pass and its own charge. Named as a separate step rather than deleted -- it is still a feature. The first pass's source_ref cited the accepted file types and never the schema's field list."
       },
-      "icon": "file-text"
+      "icon": "file-text",
+      "angles": [
+        {
+          "headline": "Know how you'll be scored before you write.",
+          "stat": "Evaluation criteria, extracted",
+          "body": "The same pass that builds your compliance matrix pulls out the evaluation criteria — so the outline you write is shaped by how the government has said it will score you.",
+          "hook_x": "Most proposals get written and then checked against the evaluation criteria. Reverse it. One pass over the packet returns the criteria alongside the compliance matrix, so the outline is shaped by the scoring.",
+          "hook_ig": "Writing first and checking the evaluation criteria afterwards is how good teams lose winnable work.\n\nOne pass over the RFP packet returns the compliance matrix AND the evaluation criteria together — so the outline you build is shaped by how the government already told you it will score.\n\nUpload PDF, XLSX and DOCX in one go."
+        },
+        {
+          "headline": "Key personnel and deliverables, before you commit.",
+          "stat": "Requirements, personnel, deliverables, risks",
+          "body": "One pass pulls the key personnel the solicitation demands and the deliverables you'd be signing up for — the commitments that decide whether this is a bid at all.",
+          "hook_x": "The key-personnel clause and the deliverables schedule decide whether a pursuit is winnable, and both are buried deep in the packet. One pass surfaces them with the requirements and the risks.",
+          "hook_ig": "Two things decide whether a solicitation is actually bidable, and both are buried: the key personnel it demands, and the deliverables you would be committing to.\n\nFind them on page 140 the week before submission and you have already spent the money.\n\nOne pass over the packet surfaces both, alongside the requirements and the risks."
+        }
+      ]
     },
     {
       "id": "capability-statement",
