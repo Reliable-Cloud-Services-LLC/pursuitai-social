@@ -43,7 +43,23 @@
         "verified_on": "2026-07-29",
         "note": "Copy named the 5th dimension 'vehicle holder status'. DIRECT_FIT_WEIGHTS uses agency_experience at 0.15; vehicle_eligibility belongs to FORECAST_FIT_WEIGHTS, a separate rubric. Tracing also surfaced a SECOND defect the original note missed: 'scores every opportunity' overstates the automatic pass, which is capped per org per ingest event and gated on the company's NAICS codes — the remainder are scored on demand. Both corrected here. pursuit-ai fixed the same two claims on its own surfaces in #1990/#1991 (on develop; NOT yet in prod, which still reports 2.114.0). 'Every score comes with the evidence behind it' softened to 'the reasoning behind it': reasoning is required in the response schema, but the fit_grounding block is explicitly best-effort. AMBER (2026-07-29 audit): 'grounded in' promised every score. Both grounding blocks are best-effort (ai_scorer.py:568 'except Exception: grounding = {\"text\": \"\"}'), so a score is still produced without them. Softened to 'reads ... into the call'."
       },
-      "icon": "gauge"
+      "icon": "gauge",
+      "angles": [
+        {
+          "headline": "It reads your losses, not just the solicitation.",
+          "stat": "Your win/loss history, in the call",
+          "body": "Scoring takes in your own win/loss record and sub-agency incumbency, so the judgement is about this firm's chances rather than a generic goodness rating.",
+          "hook_x": "A fit score that ignores your record is just a readability check on the solicitation. Scoring reads your win/loss history and sub-agency incumbency, so the number is about your chances, not the opportunity's.",
+          "hook_ig": "Most \"fit\" scores tell you about the opportunity.\n\nThe useful question is about you: given what this firm has actually won and lost, and where it already holds work, is this winnable?\n\nScoring reads your win/loss history and sub-agency incumbency into the call — which is why two firms get different numbers on the same solicitation."
+        },
+        {
+          "headline": "Five dimensions, all of them named.",
+          "stat": "NAICS, set-aside, agency, technical, competitive",
+          "body": "NAICS match, set-aside eligibility, agency experience, technical alignment and competitive position — each scored and shown, so you can disagree with a specific part.",
+          "hook_x": "A single fit number you cannot argue with is not much use. The score breaks into five named dimensions — NAICS match, set-aside eligibility, agency experience, technical alignment, competitive position — so you can disagree with one.",
+          "hook_ig": "A fit score of 72 tells you nothing you can act on.\n\nKnowing it is 72 because the technical alignment is strong and the competitive position is weak tells you whether to bid, and what to fix if you do.\n\nFive named dimensions: NAICS match, set-aside eligibility, agency experience, technical alignment, competitive position."
+        }
+      ]
     },
     {
       "id": "recompete-radar",
@@ -309,7 +325,23 @@
         "verified_on": "2026-07-29",
         "note": "Three defects fixed. (1) '14 GWACs' matched no counting rule — VEHICLE_LABELS has 29 keys over 10 families. The count is gone; the copy names the vehicles instead, which is what a reader wanted from the number anyway. (2) 'GWACs' was the wrong noun: the copy listed GSA MAS inside '14 GWACs' and MAS is a Schedule, not a GWAC (OASIS+ is a multi-agency BPA per the code's own comment). Now 'contract vehicle holders' / 'major federal IT vehicles', which covers all three kinds. (3) 'FPDS history' named the wrong source — the prediction aggregates contract_awards + sub_awards, both USAspending; FpdsAction appears only in a set-aside cert post-filter. Also UPGRADED a claim that was too weak: excluded firms are dropped entirely, not flagged, and the copy now says so. 'Every partner' qualified to 'every partner with a UEI' — the check keys on UEI, so a partner without one is not screened."
       },
-      "icon": "users"
+      "icon": "users",
+      "angles": [
+        {
+          "headline": "Screen the partner before you sign.",
+          "stat": "Live SAM.gov exclusion screening",
+          "body": "Every partner you consider is screened against SAM.gov exclusions — so an excluded firm is something you learn during diligence, not during an audit.",
+          "hook_x": "Discovering a teaming partner is excluded is survivable during diligence and expensive afterwards. Every partner is screened against SAM.gov exclusions before you get as far as an agreement.",
+          "hook_ig": "There is a version of the teaming conversation that ends badly, and it starts with nobody checking.\n\nAn excluded partner found during diligence is a short conversation. Found later, it is a contract problem.\n\nEvery partner you consider is screened against SAM.gov exclusions as you go."
+        },
+        {
+          "headline": "Guess who else is bidding. Then check.",
+          "stat": "Predicted from real award history",
+          "body": "Likely competitors are predicted from contract and sub-award history rather than intuition — the firms with a record of winning this kind of work for this customer.",
+          "hook_x": "Every capture meeting has a moment of guessing who else will bid. PursuitAI predicts it from real contract and sub-award history — the firms with a record of winning this work for this customer.",
+          "hook_ig": "Every capture meeting reaches the same moment: so who else is going for this?\n\nThe answers are usually names somebody remembers from a conference.\n\nLikely competitors get predicted from actual contract and sub-award history instead — the firms with a record of winning this kind of work, for this customer, recently."
+        }
+      ]
     },
     {
       "id": "get-found",
@@ -363,7 +395,23 @@
         "verified_on": "2026-07-28",
         "note": "SBA: the JV may pursue any set-aside the protege qualifies for. The >=40% workshare floor is 13 CFR 125.8(c), not 125.9 as the copy implies (see limitations_constants.py:38)."
       },
-      "icon": "users"
+      "icon": "users",
+      "angles": [
+        {
+          "headline": "Your mentor's size is not your ceiling.",
+          "stat": "Set-asides the protege qualifies for",
+          "body": "An SBA-approved mentor-protege joint venture can pursue the set-asides the protege qualifies for, even when the mentor is a large business.",
+          "hook_x": "A mentor-protege JV can pursue the set-asides the PROTEGE qualifies for — the mentor being a large business does not close that door. Record the approved MPA once and the scoring accounts for it.",
+          "hook_ig": "The common misreading of mentor-protege is that teaming with a large business costs you your set-aside eligibility.\n\nAn SBA-approved JV pursues the set-asides the protege qualifies for. The mentor's size does not close that door.\n\nRecord the approved MPA once, and fit scoring accounts for the JV rather than the protege alone."
+        },
+        {
+          "headline": "Forty percent is the floor, and it is yours.",
+          "stat": "13 CFR 125.8(c) workshare check",
+          "body": "The protege must perform at least 40% of the joint venture's work under 13 CFR 125.8(c). The workshare check is built into the JV record rather than remembered at audit.",
+          "hook_x": "In a mentor-protege JV the protege has to perform at least 40% of the work — 13 CFR 125.8(c). That floor is easy to agree to and easy to drift past, so the workshare check lives in the JV record.",
+          "hook_ig": "A mentor-protege joint venture carries a floor: the protege performs at least 40% of the JV's work. 13 CFR 125.8(c).\n\nIt is an easy number to agree to at formation and an easy one to drift past once delivery starts and the mentor has the bench.\n\nThe workshare check lives in the JV record, not in somebody's memory."
+        }
+      ]
     },
     {
       "id": "forecasts",
@@ -539,7 +587,23 @@
         "verified_on": "2026-07-28",
         "note": "Clamped 0-100, pure arithmetic, no model call."
       },
-      "icon": "gauge"
+      "icon": "gauge",
+      "angles": [
+        {
+          "headline": "A score you can audit, not a model's opinion.",
+          "stat": "Pure arithmetic, 0-100, no model call",
+          "body": "Agency Affinity is deterministic: traction, in-NAICS demand, set-aside fit and goal gap, combined by arithmetic you can inspect. The same inputs always give the same number.",
+          "hook_x": "Not everything should be AI. Agency Affinity is deterministic arithmetic over your traction, in-NAICS demand, set-aside fit and the agency's goal gap — same inputs, same number, every input shown.",
+          "hook_ig": "An AI score you cannot interrogate is just a number with confidence.\n\nAgency Affinity is deliberately not that. It is arithmetic — your traction, in-NAICS demand, set-aside fit, and the agency's small-business goal gap — combined the same way every time.\n\nSame inputs, same score, and the evidence behind each one on screen."
+        },
+        {
+          "headline": "Some agencies are behind on their goals.",
+          "stat": "Goal gap, factored into every score",
+          "body": "An agency trailing its small-business targets has a reason to find you. That gap is one of the inputs behind every affinity score.",
+          "hook_x": "An agency behind on its small-business goals has a reason to take your call that has nothing to do with your capability statement. That gap is one of the inputs behind every Agency Affinity score.",
+          "hook_ig": "Capture advice usually starts with your capabilities.\n\nIt rarely starts with the buyer's incentives — and an agency trailing its small-business goals has a reason to find firms like yours that has nothing to do with your slide deck.\n\nThat goal gap is one of the inputs behind every Agency Affinity score."
+        }
+      ]
     },
     {
       "id": "pricing-boe",
@@ -768,7 +832,23 @@
         "verified_on": "2026-07-28",
         "note": "mobile_share_extension is a first-class correspondence source; analyzer_required drives the downstream extractor automatically. AMBER (2026-07-29 audit): 'fires automatically' glossed a step. Routing does auto-fire with no separate Analyze tap, but the share flow needs the user to pick the opportunity and confirm the doc type first, and the chain is best-effort. Reworded to name the pick."
       },
-      "icon": "smartphone"
+      "icon": "smartphone",
+      "angles": [
+        {
+          "headline": "RFPs arrive in email, not in your CRM.",
+          "stat": "Share sheet to analysis, iOS and Android",
+          "body": "A solicitation lands in Mail or Slack on your phone. Share it to PursuitAI, pick the pursuit, and the right analyzer runs on it there and then.",
+          "hook_x": "Solicitations arrive in Mail and Slack, usually on a phone, usually away from your desk. Share it to PursuitAI, pick the pursuit, and the right analyzer runs on it — no forwarding it to yourself to deal with later.",
+          "hook_ig": "Nobody receives an RFP in their capture tool.\n\nIt arrives in Mail, or Slack, usually on a phone, usually when you are somewhere else — and gets forwarded to yourself to deal with later. Later is often the problem.\n\nShare it straight to PursuitAI, pick the pursuit, and the right analyzer runs on it there and then."
+        },
+        {
+          "headline": "Pipeline work that survives the airport.",
+          "stat": "iPhone, iPad and Android, biometric unlock",
+          "body": "Review the board, move a stage, share past performance, generate an outline — from a phone, behind a biometric lock.",
+          "hook_x": "Industry day, airport, client site: the places capture actually happens are rarely the places your desk is. Review the board, move a stage and generate an outline from the phone, behind a biometric lock.",
+          "hook_ig": "Capture happens at industry days, in airports and in car parks outside client sites.\n\nIt does not happen at your desk, which is where most capture software lives.\n\nReview the board, move a pursuit's stage, share past performance or generate an outline from an iPhone, iPad or Android — behind a biometric lock."
+        }
+      ]
     }
   ]
 }
