@@ -113,6 +113,28 @@ _COMPETITIVE = [
     re.compile(r"\bthe\s+only\s+(?:built-in|platform|tool|product|one)\b", re.I),
     re.compile(r"\beveryone\s+else'?s?\s+(?:tools?|platforms?|products?)\b", re.I),
     re.compile(r"\bfirst\s+and\s+only\b|\bindustry[- ]first\b", re.I),
+
+    # A comparative PRICE claim is the same thing wearing a different hat:
+    # "a fraction of the incumbents' price" asserts what every competitor
+    # charges, and nobody has audited that. It is also why the $20K/$30K
+    # GovWin figures were removed — taking out the digits while leaving the
+    # comparison makes the claim vaguer, not truer.
+    #
+    # Deliberately NOT keyed on "incumbent". In GovCon that means the firm
+    # holding the contract, which this product says constantly and
+    # legitimately ("spot the incumbent", "anchored to real incumbent
+    # pricing"). A rule catching that word would flag core vocabulary
+    # across half the calendar — worse than the claim it was written for.
+    #
+    # Pattern matching cannot catch every paraphrase of "they cost more",
+    # and this does not try to. It catches the constructions that recur;
+    # the review gate remains the real guard.
+    re.compile(r"\bfraction\s+of\s+(?:the\s+|what\s+)?[\w' ]{0,24}"
+               r"(?:price|cost|charges?|fees?)\b", re.I),
+    re.compile(r"\b(?:cheaper|less\s+expensive|lower[- ]cost|lower[- ]priced)"
+               r"\s+than\b", re.I),
+    re.compile(r"\b(?:half|a\s+(?:third|quarter|fifth|tenth))\s+(?:the\s+)?"
+               r"(?:price|cost)\b", re.I),
 ]
 
 # Digits that make a factual assertion. Regulatory citations and the
