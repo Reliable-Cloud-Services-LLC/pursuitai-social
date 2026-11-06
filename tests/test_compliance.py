@@ -300,3 +300,88 @@ def test_claiming_the_agency_approved_US_still_trips():
                   "PursuitAI is approved by the SBA.",
                   "Built in partnership with the SBA."):
         assert compliance.check_claims(topic, claim), f"let through: {claim}"
+
+
+# ---------------------------------------------------------------------------
+# Comparative price claims are competitive claims.
+# ---------------------------------------------------------------------------
+#
+# "a fraction of the incumbents' price" asserts what every competitor
+# charges. Nobody has audited that, and the figures cannot be sourced --
+# which is exactly why the $20K/$30K GovWin numbers were removed and are
+# now guarded by test_competitor_pricing_figures_are_gone. Taking out the
+# digits while leaving the comparison makes the claim vaguer, not truer.
+#
+# Same rationale as the superlatives already in _COMPETITIVE, so it reuses
+# that rule and its message rather than inventing a category.
+#
+# WHAT THIS DELIBERATELY DOES NOT MATCH: the word "incumbent". In GovCon
+# it means the firm holding the contract, and this product says it
+# constantly and legitimately -- "spot the incumbent", "anchored to real
+# incumbent pricing", "predict the incumbent". A rule keyed on that word
+# would flag core vocabulary across half the calendar, which is a worse
+# outcome than the claim it was written to catch.
+
+def _competitive(text, topic_id="pricing-plans"):
+    """Only the competitive_claim rule, not every rule.
+
+    Asserting "no violations at all" coupled these to unrelated rules: a
+    bare stub topic has no VERIFIED block, so "$249" tripped
+    unsourced_numeric and the test failed before the rule under test even
+    existed. Keying on the rule name tests the thing being tested.
+    """
+    return [v for v in compliance.check_claims({"id": topic_id}, text)
+            if v.rule == "competitive_claim"]
+
+
+def test_a_fraction_of_their_price_is_a_competitive_claim():
+    assert _competitive("One platform, a fraction of the incumbents' price.")
+
+
+def test_cheaper_than_is_a_competitive_claim():
+    for claim in ("Cheaper than the enterprise platforms.",
+                  "Less expensive than what you are paying now.",
+                  "Half the price of a seat on a legacy tool."):
+        assert _competitive(claim), f"let through: {claim}"
+
+
+def test_our_own_price_is_not_a_competitive_claim():
+    """Negative control. Stating what WE charge must stay legal."""
+    for ok in ("The whole capture stack, from $249/mo.",
+               "From $249/mo with a 14-day free trial, no credit card.",
+               "One platform from $249 a month, not six tools to reconcile."):
+        assert not _competitive(ok), f"blocked: {ok}"
+
+
+def test_the_word_incumbent_is_still_usable():
+    """The control that matters most.
+
+    "Incumbent" is the firm holding the contract, and the product is built
+    around finding them. A price rule that caught this word would be worse
+    than the claim it replaced.
+    """
+    for ok in ("Spot the incumbent and start capture early.",
+               "Price against what the government actually paid the incumbent.",
+               "Anchored to real incumbent pricing.",
+               "Recompete Radar shows the incumbent and the award value."):
+        assert not _competitive(ok, "recompete-radar"), f"blocked: {ok}"
+
+
+def test_no_live_calendar_copy_trips_the_new_rule(cal):
+    """Run it over everything we actually publish.
+
+    A new pattern that quietly invalidates existing vetted copy would
+    surface as topics dropping out of rotation, which is the failure mode
+    this week has been spent removing.
+    """
+    offenders = []
+    for t in cal["topics"]:
+        fields = [t.get(f, "") for f in
+                  ("headline", "body", "stat", "hook_x", "hook_ig")]
+        for a in t.get("angles") or []:
+            fields += list(a.values())
+        for text in fields:
+            if any(v.rule == "competitive_claim"
+                   for v in compliance.check_claims(t, text or "")):
+                offenders.append((t["id"], (text or "")[:60]))
+    assert not offenders, f"live copy trips the rule: {offenders}"

@@ -784,9 +784,9 @@
       "id": "pricing-plans",
       "feature": "Pricing",
       "headline": "The whole capture stack, from $249/mo.",
-      "body": "AI fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, and a 50% rule check — one platform, a fraction of the incumbents' price. Free 14-day trial.",
+      "body": "AI fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting and a 50% rule check — one platform, from $249 a month. Free 14-day trial, no credit card.",
       "hook_x": "PursuitAI: the full capture stack from $249/mo — fit scoring, recompete radar, sub-award intel, price-to-win, proposal drafting, and a built-in 50% rule check. Free 14-day trial, no credit card.",
-      "hook_ig": "The incumbent capture platforms price small businesses out.\n\nPursuitAI is the whole capture pipeline — AI fit scoring across SAM.gov + 21 agency forecasts, recompete radar, sub-award intelligence, teaming match, price-to-win, proposal drafting, and set-aside compliance — from $249/mo.\n\nStart with a free 14-day trial. No credit card. Set up in under 2 minutes.",
+      "hook_ig": "Capture that lives in a spreadsheet works right up until it doesn't.\n\nPursuitAI is the whole pipeline instead — AI fit scoring across SAM.gov and 21 agency forecasts, recompete radar, sub-award intelligence, teaming match, price-to-win, proposal drafting and set-aside compliance — from $249/mo.\n\nStart with a free 14-day trial. No credit card. Set up in under two minutes.",
       "stat": "From $249/mo · 14-day free trial",
       "page": "/",
       "media": "card",
@@ -794,8 +794,8 @@
         "status": "VERIFIED",
         "source_type": "code",
         "source_ref": "apps/web/src/features/billing/components/BillingTab.js:275",
-        "verified_on": "2026-07-28",
-        "note": "$249/mo agrees across billing UI, terms page, and landing. GovWin price comparison removed."
+        "verified_on": "2026-11-05",
+        "note": "$249/mo agrees across billing UI, terms page, and landing. GovWin price comparison removed. 2026-11-05: the two remaining COMPARATIVE claims went too -- the body's 'a fraction of the incumbents' price' and the IG hook's 'The incumbent capture platforms price small businesses out'. Both assert what competitors charge, which is unsourceable for the same reason the GovWin figures were: those vendors do not publish list pricing. Removing the digits while keeping the comparison made the claim vaguer, not truer. The copy now states only our own price, and compliance._COMPETITIVE carries patterns for the comparative-price constructions so the class cannot return quietly."
       },
       "icon": "trending-up",
       "angles": [
