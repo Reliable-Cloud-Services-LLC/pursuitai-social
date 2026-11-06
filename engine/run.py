@@ -30,6 +30,7 @@ import captions
 import angles
 import compliance
 import media
+import pilot
 import pronounce
 import rotation
 
@@ -285,6 +286,11 @@ def _recently_posted_ids(days=REPEAT_COOLDOWN_DAYS):
     recent = set()
     for entry in analytics.load_jsonl(LOG):
         channels = entry.get("channels") or {}
+        # A pilot post is a message-test angle, not a turn of this topic.
+        # Counting it would put the stuck cursor topic into the cooldown
+        # and walk the selector onto a different topic every day of the test.
+        if entry.get("pilot"):
+            continue
         posted = any((c or {}).get("status") == "posted"
                      for c in channels.values()) or entry.get("x")
         if posted and (entry.get("date") or "") >= cutoff:
@@ -348,7 +354,25 @@ def prepare(force_format=None, force_topic=None):
                   f"{_posts.get(topic['id'], 0) % len(_usable)} "
                   f"of {len(_usable)} for {topic['id']}")
         topic = angles.apply_angle(topic, _angle)
-    fmt = force_format or select_format(state["run_count"], len(topics))
+    # The message test is LinkedIn copy on a card. Pinning the format keeps
+    # a 21-day run from rendering an ad every morning that nothing will post.
+    # An explicit --format still wins: the operator asked for it.
+    pilot_angle = None
+    if pilot.active():
+        catalog = pilot.angles()
+        if not catalog:
+            print("[prepare] REFUSED: pilot mode is on but content/pilot.json "
+                  "has no angles")
+            sys.exit(1)
+        issued = pilot.shipped_count(analytics.load_jsonl(LOG))
+        pilot_angle = pilot.pick(catalog, issued)
+        print(f"[prepare] pilot mode: angle={pilot_angle['id']} "
+              f"({issued % len(catalog) + 1} of {len(catalog)}) — "
+              f"X and Instagram will not publish")
+    if pilot_angle and not force_format:
+        fmt = "card"
+    else:
+        fmt = force_format or select_format(state["run_count"], len(topics))
     # Captured BEFORE the ad/screenshot fallbacks can rewrite fmt — that
     # rewrite is exactly what made a failed spot look like a chosen card.
     fmt_requested = fmt
@@ -502,6 +526,27 @@ def prepare(force_format=None, force_topic=None):
         pending["text_ig"] = captions.build_ig(topic, brand, fresh=False)
         pending["text_linkedin"] = captions.build_linkedin(
             topic, brand, fmt=fmt, fresh=False)
+    if pilot_angle:
+        # After the AI fallback, so a tripped rule cannot put the product
+        # caption back over the message under test.
+        try:
+            pilot.apply_pending(pending, pilot_angle, topic, brand, ROOT)
+        except Exception as e:
+            print(f"[prepare] BLOCKED: pilot angle {pilot_angle['id']} "
+                  f"could not be rendered ({type(e).__name__}: {e})")
+            sys.exit(1)
+        card_problems = []
+        for field in ("headline", "body", "stat"):
+            for violation in compliance.check_claims(
+                    topic, pilot_angle.get(field) or ""):
+                card_problems.append(f"{field}: {violation}")
+        if card_problems:
+            print("[prepare] BLOCKED by compliance: "
+                  + "; ".join(card_problems))
+            sys.exit(1)
+        # The angle is the copy on purpose. Recording it as an AI variation
+        # would make copy_varied lie about a message we chose.
+        _template["text_linkedin"] = pending["text_linkedin"]
     # AFTER the fallback, not before. A post whose AI copy tripped a rule
     # has just been reset to the template, and recording it as "varied"
     # would make the one measurement of this feature lie in precisely the
@@ -589,18 +634,44 @@ POSTERS = {
 # with no entry here is governed by its credential alone, as before.
 NOT_READY = {"linkedin": _linkedin_not_ready}
 
+def _pilot_handoff(pending, reason):
+    """LinkedIn could not be published. Hand the founder the copy.
+
+    Not a skip. A skip is a quiet log line; this prints the caption, asks
+    Slack to show it, and records status `handoff` so the angle still
+    advances and the weekly report can see that the message was issued.
+    """
+    import notify
+    sent = False
+    try:
+        sent = bool(notify.pilot_handoff(pending, reason))
+    except Exception as e:
+        print(f"[publish] handoff notify failed: {type(e).__name__}: {e}")
+    print(f"[publish] linkedin HANDOFF: {reason}")
+    print(pending.get("text_linkedin") or "")
+    if not sent:
+        print("[publish] handoff not sent to Slack "
+              "(NOTIFY_WEBHOOK_URL unset). The caption is in this log "
+              "and in posted.jsonl.")
+    return {"status": "handoff", "id": None, "error": reason,
+            "notified": bool(sent)}
+
+
 def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
             force=False):
-    """Post the prepared content. Four outcomes per channel:
+    """Post the prepared content. Outcomes per channel:
 
       posted    reached the platform, carries an id
       failed    the call raised, carries the error
       skipped   enabled but credentials absent
       disabled  turned off explicitly with --skip-x / --skip-ig /
-                --skip-linkedin
+                --skip-linkedin, or by pilot mode for X and Instagram
+      handoff   pilot only: LinkedIn could not be published, so the caption
+                was handed to the founder instead of skipped
 
     Exits non-zero if anything failed OR if nothing posted at all — a run
-    that publishes nothing must never report success.
+    that publishes nothing must never report success. A pilot handoff is a
+    delivery, not a failure: the founder has the copy.
     """
     pending = load_json(PENDING, None)
     if not pending:
@@ -631,6 +702,24 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
 
+    # The prepared post is the authority. PILOT_MODE on the publish job is
+    # the same switch, so a job that forgot the env still will not send a
+    # pilot caption to X, and a job that set it still holds X and Instagram.
+    in_pilot = bool(pending.get("pilot")) or pilot.active()
+    if in_pilot:
+        if not (skip_x and skip_ig):
+            print("[publish] pilot mode: skipping X and Instagram")
+        skip_x = True
+        skip_ig = True
+        if (os.environ.get("LINKEDIN_ACCESS_TOKEN")
+                and not os.environ.get("LINKEDIN_ORG_ID")
+                and not skip_linkedin):
+            # Pilot mode is the deliberate opt-in that LINKEDIN_ALLOW_MEMBER_POST
+            # exists for. The Page is still preferred when ORG_ID is set.
+            os.environ["LINKEDIN_ALLOW_MEMBER_POST"] = "1"
+            print("[publish] pilot mode: LINKEDIN_ORG_ID unset — posting as "
+                  "the member who owns LINKEDIN_ACCESS_TOKEN")
+
     # Every channel in POSTERS must appear here. Keyed rather than
     # .get()-ed on purpose: a channel added to POSTERS without a skip flag
     # would be unskippable, so the KeyError is the reminder — which is
@@ -646,18 +735,29 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
         reason = not_ready() if not_ready else None
         if disabled[ch]:
             results[ch] = {"status": "disabled", "id": None, "error": None}
-            print(f"[publish] {ch} disabled by flag")
+            why = ("pilot mode" if in_pilot and ch in ("x", "ig") else "flag")
+            print(f"[publish] {ch} disabled by {why}")
         elif not os.environ.get(env_var):
-            results[ch] = {"status": "skipped", "id": None,
-                           "error": f"{env_var} not set"}
-            print(f"[publish] {ch} SKIPPED: {env_var} not set")
+            if ch == "linkedin" and in_pilot:
+                results[ch] = _pilot_handoff(
+                    pending, f"{env_var} not set — paste this post")
+            else:
+                results[ch] = {"status": "skipped", "id": None,
+                               "error": f"{env_var} not set"}
+                print(f"[publish] {ch} SKIPPED: {env_var} not set")
         elif reason:
             # Credentials present, but posting would not go where it should.
             # SKIPPED, not failed: nothing is broken, the channel just is not
             # ours to publish to yet, and a failure here would redden a run
             # whose other channels went out fine.
-            results[ch] = {"status": "skipped", "id": None, "error": reason}
-            print(f"[publish] {ch} SKIPPED: {reason}")
+            # Pilot mode does not take that exit for LinkedIn. No Page id
+            # means post as the member, or hand the copy over — never a
+            # silent skip of the only channel the test is using.
+            if ch == "linkedin" and in_pilot:
+                results[ch] = _pilot_handoff(pending, reason)
+            else:
+                results[ch] = {"status": "skipped", "id": None, "error": reason}
+                print(f"[publish] {ch} SKIPPED: {reason}")
         else:
             try:
                 # A poster returns a bare id, or a dict when it has more to
@@ -676,20 +776,28 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
                                "id": extra.pop("id", None) or outcome,
                                "error": None, **extra}
             except Exception as e:
-                results[ch] = {"status": "failed", "id": None,
-                               "error": f"{type(e).__name__}: {e}"}
-                print(f"[publish] {ch} FAILED: {type(e).__name__}: {e}")
+                err = f"{type(e).__name__}: {e}"
+                if ch == "linkedin" and in_pilot:
+                    results[ch] = _pilot_handoff(pending, err)
+                else:
+                    results[ch] = {"status": "failed", "id": None, "error": err}
+                    print(f"[publish] {ch} FAILED: {err}")
 
     def by(status):
         return [c for c in POSTERS if results[c]["status"] == status]
     posted, failed, skipped = by("posted"), by("failed"), by("skipped")
     drafted = by("drafted")
+    handoffs = by("handoff")
 
     # A topic is only consumed once it has actually reached an audience —
     # and never by an out-of-band post, which is a correction or a one-off
-    # rather than the rotation's turn.
+    # rather than the rotation's turn. A pilot post is not a turn of the
+    # product rotation either: X and Instagram resume on the topic that was
+    # next when the test started.
     if posted and pending.get("out_of_band"):
         print("[publish] out-of-band post - rotation NOT advanced")
+    elif posted and in_pilot:
+        print("[publish] pilot mode - product rotation NOT advanced")
     elif posted:
         state["topic_index"] = ((state["topic_index"] + 1)
                                 % max(1, len(publishable_topics(cal))))
@@ -713,7 +821,12 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
                  x=results["x"]["id"], ig=results["ig"]["id"],
                  outcome=("posted" if posted and not failed else
                           "partial" if posted else
-                          "drafted" if drafted and not failed else "failed"))
+                          "drafted" if drafted and not failed else
+                          "handoff" if handoffs and not failed else "failed"))
+    # Tests sometimes replace POSTERS with a subset. Production always has
+    # the channel; the top-level id is what analytics reads back.
+    if "linkedin" in results:
+        entry["linkedin"] = results["linkedin"]["id"]
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a") as f:
         f.write(json.dumps(entry) + "\n")
@@ -722,16 +835,19 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     # Spend the approval with it, so it can never authorise a later post.
     approval.clear_approval(APPROVED)
 
-    if failed or not (posted or drafted):
+    if failed or not (posted or drafted or handoffs):
         import notify
         notify.failure(pending["topic"], pending["format"], results)
         print(f"[publish] FAILED - posted={posted} drafted={drafted} "
-              f"failed={failed} skipped={skipped}")
+              f"handoff={handoffs} failed={failed} skipped={skipped}")
         sys.exit(1)
     # Never "posted" when nothing was. The status field being honest does
     # not help if the one line an operator reads says otherwise.
     if posted:
         print(f"[publish] done - posted to {', '.join(posted)}")
+    if handoffs:
+        print(f"[publish] HANDOFF - {', '.join(handoffs)} was not published. "
+              f"The caption is in the log for the founder to paste.")
     if drafted:
         print(f"[publish] DRAFT ONLY - {', '.join(drafted)} created a draft, "
               f"nothing is public. Review it on the Page, then unset "

@@ -41,6 +41,12 @@ jobs:
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          # LinkedIn read-back for the pilot, and the winner report that
+          # follows collection. Both no-op when there is nothing to say.
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          PILOT_MODE: ${{ vars.PILOT_MODE || secrets.PILOT_MODE }}
         run: python engine/analytics.py
 
       # scripts/commit_and_push.sh, shared with daily.yml's two writers.

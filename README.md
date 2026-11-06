@@ -55,7 +55,8 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `screenshots.py` | Captures pursuitai.net live via Playwright and crops platform-sized frames, so content stays current as the product changes. |
 | `post_x.py` | Posts to X. Media rides the v1.1 upload endpoint, the post itself is API v2. |
 | `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
-| `notify.py` | Slack notifications: review requests, failure alerts, and the weekly heartbeat. Silent no-op when unconfigured, and never raises. |
+| `notify.py` | Slack notifications: review requests, failure alerts, the weekly heartbeat, and the LinkedIn pilot winner report. Silent no-op when unconfigured, and never raises. |
+| `pilot.py` | LinkedIn 21-day message test. Off unless `PILOT_MODE=1` or `content/pilot.json` has `"enabled": true`. |
 | `media.py` | Builds the public media URL, and rejects a base Instagram's fetcher couldn't reach. One place the media host is resolved. |
 | `analytics.py` | Reads post performance back from each platform into `logs/metrics.jsonl`. Runs weekly, never on the publish path. |
 | `rotation.py` | Weights the topic order by measured engagement. Degrades to plain round-robin when metrics are thin. |
@@ -65,6 +66,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | File | What it does |
 |---|---|
 | `calendar.json` | **The single source of truth.** Brand config plus 24 feature topics, each with a headline, body, per-platform hooks, and a stat. Add a topic here and nothing else changes. |
+| `pilot.json` | The five LinkedIn pilot angles. Edit the copy here. Ids are `utm_content`. `"enabled"` ships `false`. |
 | `state.json` | The rotation cursor: which topic is next, how many runs have published. Only advances on a confirmed post. |
 | `pending.json` | The prepared-but-unpublished post, awaiting review. Committed, because the publish job is a separate run. |
 | `approved.json` | Proof of approval: a hash of `pending.json` plus a timestamp. Deleted once spent. |
@@ -124,6 +126,8 @@ scheme that misbehaves on thin data is worse than none.
 .venv/bin/python scripts/preview.py               # visual review sheet for every post
 .venv/bin/python engine/links.py                  # print the Instagram bio link
 .venv/bin/python engine/notify.py --heartbeat     # weekly liveness report
+.venv/bin/python engine/pilot.py                  # print whether the pilot is on, and the angles
+.venv/bin/python engine/pilot.py --report         # weekly per-angle winner, via Slack if configured
 pytest tests/ -q                                  # the full suite
 ```
 
@@ -139,6 +143,31 @@ advance, so it cannot skip whatever was actually due. It bypasses the
 cursor, never compliance.
 
 ---
+
+## LinkedIn pilot mode
+
+Off by default. A 21-day message test: five angles, LinkedIn only, then a weekly winner so the best one can be boosted.
+
+**Turn it on with either of these. Both have to be the digit `1`, not the word `true`.**
+
+1. Repository variable `PILOT_MODE` = `1`, or a repository secret of the same name. `daily.yml` and `analytics.yml` read `vars.PILOT_MODE` and fall back to `secrets.PILOT_MODE`. An unset variable is empty, which leaves the file in charge.
+2. `"enabled": true` in [`content/pilot.json`](content/pilot.json).
+
+`PILOT_MODE=0` forces the pilot off even if the file says enabled. Do not commit access tokens. Turning this on does not change any credential.
+
+While it is on:
+
+- X and Instagram are not published. Their poster code is unchanged; the run marks those channels disabled.
+- LinkedIn rotates the angles in `content/pilot.json`. The product topic cursor does not move, so the normal feed resumes on the topic that was next when the test started.
+- Every link is `https://pursuitai.net/` with `utm_source=linkedin`, `utm_medium=organic`, `utm_campaign=pilot21`, and `utm_content` set to the angle id. The same four values are stored on the `posted.jsonl` row as `utm`, next to `angle_id`.
+- Starting ids, in rotation order: `fifty-percent`, `sam-search`, `teaming`, `proposal-load`, `recompete`. Edit the copy in the JSON. Keep an id once a post has shipped — it is the log key and the `utm_content` value.
+- If `LINKEDIN_ORG_ID` is set, the post goes to the Page. If it is not, and `LINKEDIN_ACCESS_TOKEN` is set, the post goes out as that member's profile (the same opt-in `LINKEDIN_ALLOW_MEMBER_POST=1` already is; pilot mode sets it for the run). If there is no token, or the API call fails, the caption is sent through the Slack webhook and logged as `handoff`. LinkedIn is not skipped.
+- Monday's analytics run sends the winner report on the same webhook as the heartbeat (`NOTIFY_WEBHOOK_URL`). It sums impressions, engagement, and clicks per angle where the platform returned them. X's own CTA reply is removed from engagement before anyone is ranked. No angled posts yet means no message.
+
+```bash
+.venv/bin/python engine/pilot.py            # ON or OFF, and the five ids
+.venv/bin/python engine/pilot.py --report   # send the winner report now
+```
 
 ## Posting by hand
 
@@ -276,7 +305,7 @@ environment, the Instagram bio link, and the daily review routine.
 |---|---|
 | X | API, automated — body plus a threaded CTA reply |
 | Instagram | API when credentials exist; **manual paste** meanwhile — see [Posting by hand](#posting-by-hand) |
-| **LinkedIn** | **Manual paste — see [Posting by hand](#posting-by-hand).** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). |
+| **LinkedIn** | **Manual paste — see [Posting by hand](#posting-by-hand).** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). **Pilot mode** (below) posts the message test as the Page when `LINKEDIN_ORG_ID` is set, as the token's member when it is not, or hands you the copy. It does not skip the channel. |
 | Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 
 **Kill switch:** disable the workflow in the Actions tab.

@@ -74,7 +74,105 @@ def fetch_ig_metrics(post_id):
     return out or None
 
 
-FETCHERS = {"x": fetch_x_metrics, "ig": fetch_ig_metrics}
+def _li_count(payload):
+    elements = (payload or {}).get("elements") or []
+    if elements and "count" in elements[0]:
+        return elements[0]["count"]
+    return None
+
+
+def _li_org_stats(urn, org, headers):
+    """Page share stats. clickCount lives here and not on the member API."""
+    import requests
+    from urllib.parse import quote
+    org_urn = quote(f"urn:li:organization:{org}", safe="")
+    share = quote(urn, safe="")
+    url = ("https://api.linkedin.com/rest/organizationalEntityShareStatistics"
+           f"?q=organizationalEntity&organizationalEntity={org_urn}"
+           f"&shares=List({share})")
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+    except Exception as e:
+        print(f"[analytics] linkedin org stats unavailable: {e}")
+        return None
+    if r.status_code != 200:
+        return None
+    elements = (r.json() or {}).get("elements") or []
+    if not elements:
+        return None
+    stats = elements[0].get("totalShareStatistics") or {}
+    mapping = (
+        ("impressionCount", "impression_count"),
+        ("likeCount", "like_count"),
+        ("commentCount", "comments_count"),
+        ("shareCount", "shares"),
+        ("clickCount", "click_count"),
+    )
+    out = {}
+    for src, dest in mapping:
+        if src in stats and stats[src] is not None:
+            out[dest] = stats[src]
+    return out or None
+
+
+def fetch_linkedin_metrics(post_id):
+    """Best-effort LinkedIn counts. A missing scope returns None, not a raise.
+
+    Member posts use memberCreatorPostAnalytics (impressions, reactions,
+    comments, reshares). When LINKEDIN_ORG_ID is set, organizational share
+    stats are merged on top — that response is where clickCount is documented.
+    """
+    import requests
+    from urllib.parse import quote
+    import post_linkedin
+    token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
+    if not token or not post_id:
+        return None
+    headers = post_linkedin._headers(token, json_body=False)
+    urn = (post_id if str(post_id).startswith("urn:")
+           else f"urn:li:share:{post_id}")
+    kind = "ugc" if "ugcPost" in urn else "share"
+    entity = f"({kind}:{quote(urn, safe='')})"
+    metrics = {}
+    for query_type, key in (
+            ("IMPRESSION", "impression_count"),
+            ("REACTION", "like_count"),
+            ("COMMENT", "comments_count"),
+            ("RESHARE", "shares")):
+        url = ("https://api.linkedin.com/rest/memberCreatorPostAnalytics"
+               f"?q=entity&entity={entity}&queryType={query_type}"
+               f"&aggregation=TOTAL")
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+        except Exception as e:
+            print(f"[analytics] linkedin {query_type} unavailable for "
+                  f"{post_id}: {e}")
+            continue
+        if r.status_code != 200:
+            continue
+        count = _li_count(r.json())
+        if count is not None:
+            metrics[key] = count
+    org = os.environ.get("LINKEDIN_ORG_ID")
+    if org:
+        org_metrics = _li_org_stats(urn, org, headers)
+        if org_metrics:
+            metrics.update(org_metrics)
+    return metrics or None
+
+
+FETCHERS = {"x": fetch_x_metrics, "ig": fetch_ig_metrics,
+            "linkedin": fetch_linkedin_metrics}
+
+
+def _post_id(entry, channel):
+    """The id analytics should read back, from the top level or the channel."""
+    if entry.get(channel):
+        return entry.get(channel)
+    payload = (entry.get("channels") or {}).get(channel)
+    if isinstance(payload, dict) and payload.get("id"):
+        return payload["id"]
+    return None
 
 
 def load_jsonl(path):
@@ -111,8 +209,8 @@ def due_for_collection(posted_rows, metric_rows, now=None):
         if age_days * 24 < MIN_AGE_HOURS:
             continue
         for channel in FETCHERS:
-            post_id = entry.get(channel)
-            if not post_id or (post_id, today) in already_today:
+            post_id = _post_id(entry, channel)
+            if not post_id or (str(post_id), today) in already_today:
                 continue
             due.append((channel, str(post_id), entry.get("topic")))
     return due
@@ -128,6 +226,15 @@ def collect(log_path, metrics_path, now=None):
         print("[analytics] nothing due")
         return 0, 0
 
+    # So a metric row can carry the same angle id and UTM dict the post log
+    # already has. The winner report joins on angle id either way.
+    meta = {}
+    for entry in posted:
+        for channel in FETCHERS:
+            post_id = _post_id(entry, channel)
+            if post_id:
+                meta[(channel, str(post_id))] = entry
+
     collected = failed = 0
     os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
     with open(metrics_path, "a") as f:
@@ -142,13 +249,19 @@ def collect(log_path, metrics_path, now=None):
             if not metrics:
                 failed += 1
                 continue
-            f.write(json.dumps({
+            row = {
                 "collected_at": now.isoformat(),
                 "channel": channel,
                 "post_id": post_id,
                 "topic": topic,
                 "metrics": metrics,
-            }) + "\n")
+            }
+            entry = meta.get((channel, post_id)) or {}
+            if entry.get("angle_id"):
+                row["angle_id"] = entry["angle_id"]
+            if entry.get("utm"):
+                row["utm"] = entry["utm"]
+            f.write(json.dumps(row) + "\n")
             collected += 1
     print(f"[analytics] collected {collected}, failed {failed}, "
           f"due {len(due)}")
@@ -157,5 +270,13 @@ def collect(log_path, metrics_path, now=None):
 
 if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    collect(os.path.join(root, "logs", "posted.jsonl"),
-            os.path.join(root, "logs", "metrics.jsonl"))
+    log = os.path.join(root, "logs", "posted.jsonl")
+    metrics = os.path.join(root, "logs", "metrics.jsonl")
+    collect(log, metrics)
+    # After the read, so the report sees this week's samples. Quiet when
+    # no angle has ever shipped — pilot mode off must not grow a new alert.
+    try:
+        import pilot
+        pilot.deliver_report(log, metrics)
+    except Exception as e:
+        print(f"[pilot] winner report failed: {type(e).__name__}: {e}")

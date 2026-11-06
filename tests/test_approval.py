@@ -69,7 +69,7 @@ def sandbox(tmp_path):
 def run(args, cwd, creds=True, env=None):
     e = dict(os.environ)
     for var in ("ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL", "GITHUB_ACTIONS",
-                "MEDIA_BASE_URL"):
+                "MEDIA_BASE_URL", "PILOT_MODE"):
         e.pop(var, None)
     if creds:
         e.update(X_API_KEY="k", IG_USER_ID="u")

@@ -90,10 +90,14 @@ def pending_review(pending, media_url=None, review_url=None,
     required reviewer approves instead.
     """
     topic, fmt = pending.get("topic"), pending.get("format")
-    blocks = [
-        _section(f"*PursuitAI social — ready for review*\n"
-                 f"topic `{topic}` · format `{fmt}`"),
-    ]
+    header = (f"*PursuitAI social — ready for review*\n"
+              f"topic `{topic}` · format `{fmt}`")
+    if pending.get("angle_id"):
+        utm = pending.get("utm") or {}
+        header += (f"\npilot angle `{pending['angle_id']}`"
+                   f" · utm_campaign `{utm.get('utm_campaign', 'pilot21')}`"
+                   f" · utm_content `{pending['angle_id']}`")
+    blocks = [_section(header)]
     if media_url:
         # The format, not a hardcoded "card". The label said card over a
         # screenshot on 2026-08-26, which is precisely when a label costs
@@ -122,8 +126,18 @@ def pending_review(pending, media_url=None, review_url=None,
     # only route to the video.
     text_li = pending.get("text_linkedin")
     if text_li:
-        blocks.append(_section("*LinkedIn — post this by hand*\n```"
-                               + text_li + "```"))
+        # Pilot copy is what the publish step will post. Telling the
+        # reviewer to paste it as well is how the same message goes out twice.
+        # The handoff message, sent only when publish cannot post, is the
+        # paste instruction.
+        if pending.get("pilot"):
+            li_label = ("*LinkedIn pilot — approve this copy*\n"
+                        "The publish step posts it. If LinkedIn cannot, "
+                        "you will get a second message with the same text "
+                        "to paste.")
+        else:
+            li_label = "*LinkedIn — post this by hand*"
+        blocks.append(_section(li_label + "\n```" + text_li + "```"))
         if linkedin_url:
             blocks.append(_section(
                 f"<{linkedin_url}|⬇ Download the LinkedIn asset> · "
@@ -149,6 +163,49 @@ def alert(text):
     is where to look.
     """
     return _send(text)
+
+
+def pilot_handoff(pending, reason):
+    """The founder pastes this LinkedIn post. Never raises.
+
+    Sent when pilot mode cannot publish — no token, no Page, or the API
+    rejected the call. The caption already carries the pilot UTM link.
+    """
+    try:
+        utm = pending.get("utm") or {}
+        lines = [
+            "*PursuitAI LinkedIn pilot — post this by hand*",
+            f"angle `{pending.get('angle_id')}` · topic `{pending.get('topic')}`",
+            (f"utm_source={utm.get('utm_source', 'linkedin')} "
+             f"utm_medium={utm.get('utm_medium', 'organic')} "
+             f"utm_campaign={utm.get('utm_campaign', 'pilot21')} "
+             f"utm_content={utm.get('utm_content', pending.get('angle_id'))}"),
+            str(reason or ""),
+            "",
+            pending.get("text_linkedin") or "",
+        ]
+        rel = pending.get("media_linkedin")
+        if os.environ.get("MEDIA_BASE_URL") and rel:
+            try:
+                import media
+                url = media.public_url(rel, cache_bust=True)
+                if url:
+                    lines.extend(["", f"Asset: {url}"])
+            except Exception as e:
+                print(f"[notify] asset url skipped: {type(e).__name__}: {e}")
+        return _send("\n".join(lines))
+    except Exception as e:
+        print(f"[notify] handoff failed: {type(e).__name__}: {e}")
+        return False
+
+
+def pilot_report(text):
+    """Weekly angle winner. Same webhook as the heartbeat. Never raises."""
+    try:
+        return _send(text)
+    except Exception as e:
+        print(f"[notify] pilot report failed: {type(e).__name__}: {e}")
+        return False
 
 
 def failure(topic, fmt, results):

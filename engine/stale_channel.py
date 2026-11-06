@@ -73,10 +73,21 @@ def is_confirmed(entry):
     same code, because the two must never disagree about whether the
     channel is alive. A run that logged nothing but failures or skips is
     not a sign of life; it is the failure, written down.
+
+    A pilot handoff counts too. While the message test is running, X and
+    Instagram are off on purpose, and LinkedIn may be a caption handed to
+    the founder rather than an API post. Treating that as a dark channel
+    would alarm every day of a test that is doing what it was asked to do.
+    A handoff that is not marked pilot does not count — that status is not
+    a general synonym for posted.
     """
     channels = entry.get("channels") or {}
-    return any((c or {}).get("status") == "posted"
-               for c in channels.values() if isinstance(c, dict))
+    if any((c or {}).get("status") == "posted"
+           for c in channels.values() if isinstance(c, dict)):
+        return True
+    linkedin = channels.get("linkedin")
+    return bool(entry.get("pilot") and isinstance(linkedin, dict)
+                and linkedin.get("status") == "handoff")
 
 
 def confirmed_dates(log_path):
