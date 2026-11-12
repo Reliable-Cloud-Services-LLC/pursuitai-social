@@ -231,6 +231,16 @@ def render_card(topic, brand, size=(1080, 1350), out_path=None, reveal=None):
         img.save(out_path, quality=92)
     return img
 
+def render_award_card(topic, brand_info, out_path):
+    """1:1 award card. Same gradient, type, and chips as every other card.
+
+    LinkedIn's native feed ratio is square. The copy in `topic` is the
+    award's own facts; this function does not choose them.
+    """
+    return render_card(topic, brand_info, size=brand.size("square"),
+                       out_path=out_path)
+
+
 def render_all(calendar_path=None, out_dir=None):
     calendar_path = calendar_path or os.path.join(ROOT, "content", "calendar.json")
     out_dir = out_dir or os.path.join(ROOT, "assets", "cards")

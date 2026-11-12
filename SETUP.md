@@ -106,6 +106,7 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `IG_ACCESS_TOKEN` | yes | long-lived Graph API token |
 | `ANTHROPIC_API_KEY` | optional | fresh Claude-written caption variants |
 | `NOTIFY_WEBHOOK_URL` | strongly recommended | Slack incoming webhook. Alerts on any run that doesn't fully publish, plus a weekly heartbeat. **Without it every failure is silent** — which is exactly how nine runs published nothing while reporting success. |
+| `PUBLIC_AWARDS_FEED_TOKEN` | for award posts | Bearer token for the public award feed. Without it `awards.yml` queues nothing. Optional `PUBLIC_AWARDS_FEED_BASE_URL` overrides `https://api.pursuitai.net`. |
 
 To create the Slack webhook: Slack → your workspace → Apps → **Incoming Webhooks** → Add to Slack → pick the channel → copy the URL. The engine posts a plain `{"text": "..."}` payload; unset the variable and every notification becomes a silent no-op.
 

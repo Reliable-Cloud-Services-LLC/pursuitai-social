@@ -19,6 +19,7 @@ _Last reviewed: 2026-11-12._
 | **X** | Automated. Cron live, every post human-approved. |
 | **Instagram** | Automated. System User token (never expires). Cards, screenshots and Reels all proven live. |
 | **LinkedIn** | Page API posting is live to the Pursuit AI Page, after the same `social-publish` approval as X and Instagram. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. `scripts/preview.py --linkedin` is the manual fallback. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
+| **Award posts** | Weekdays 12:47 UTC, `awards.yml`. LinkedIn only, up to 3 brand-new awards, same `social-publish` gate, its own `content/awards_pending.json`. |
 | **Facebook** | Not wired. |
 | **Rotation** | 26 of 27 topics publishable. `card → screenshot → card → ad`. |
 | **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
@@ -35,6 +36,63 @@ out.
    bypass it.
 3. A run nobody approves simply expires. The topic is **not** consumed and
    comes round again.
+
+### Award posts
+
+A second workflow, `awards.yml`, weekdays at 12:47 UTC. It does not touch
+the daily queue.
+
+It reads `GET /api/v1/public-awards/feed` on `https://api.pursuitai.net`
+(override with `PUBLIC_AWARDS_FEED_BASE_URL`) using
+`PUBLIC_AWARDS_FEED_TOKEN`. The platform only mounts that route when
+`PUBLIC_AWARD_PAGES_ENABLED` is on, so a 404 or an empty list is a quiet
+day: nothing is queued and the cursor stays. A 401 (bad token), a 422
+(bad `since`), or a 5xx fails the run.
+
+The request uses `order=recent` and `limit=100`. `next_since` is only
+populated for that order — `value_desc` always returns null. The page
+arrives oldest first. The three posts are then the largest on that page,
+where largest is the greater of `obligation` and `ceiling` (the same key
+the server uses for `value_desc`).
+
+What gets queued, in order:
+
+1. `is_new_award` is true. Anything else is skipped, including a row where
+   the flag is missing. The platform already limits the feed to IT NAICS,
+   at least $1M, and no modifications, options, or task orders.
+   `extent_competed` is not a filter: a sole-source award is still queued.
+2. Not already in `logs/award_posted.jsonl` (keyed by
+   `generated_unique_award_id`).
+3. At most three, largest value first. The caption still leads with the
+   obligated amount when the record has one, and it labels a ceiling as
+   a ceiling.
+
+Copy is written from that row: `recipient_name`, `awarding_agency`, the
+obligated amount, the ceiling, `naics_code`, PIID, the feed's summary,
+and `set_aside` / `extent_competed` when those are present. It is not
+taken from OrangeSlices or any other outlet. The link is the feed's
+`url` (`https://pursuitai.net/awards/<slug>`). Claude may rewrite the
+template; a rewrite that adds a number or drops the recipient is thrown
+out and the template is what gets queued. The card is the same square
+renderer as the daily cards.
+
+Nothing posts by itself. Prepare writes `content/awards_pending.json` and
+Slack asks for review. Publish waits on the `social-publish` environment.
+One approval covers that day's batch, because that file is what the gate
+hashes. Rejecting the run posts none of them.
+
+The feed cursor (`logs/award_cursor.json`, the `since` / `next_since`
+pair) moves only once every eligible row on the page has been posted or
+recorded in `logs/award_skipped.jsonl`. A skipped row failed the caption
+rules; delete that line to try it again. Unapproved runs do not move the
+cursor, so the same awards come back.
+
+`workflow_dispatch` with **dry run** prints the three posts and writes
+nothing.
+
+Until `PUBLIC_AWARDS_FEED_TOKEN` is set, the scheduled run logs that and
+queues nothing. Add it before expecting posts. See
+[SECRETS.md](../SECRETS.md).
 
 ### Alarms
 
@@ -656,12 +714,6 @@ why before assuming there was nothing to say.
 
 ## Open threads
 
-- **Award posts** — LinkedIn posts about recent federal awards
-  (OrangeSlices-style). Mock approved: lead with **obligated**, not
-  ceiling; **skip sole-source**. Needs a PAT so the engine can read
-  `/contract-awards/feed`, plus two filters: `modification_count`
-  (so "wins" never describes an option-year mod) and enrichment coverage
-  (so the competition line is not silently absent).
 - **Customer win detection** — spec handed to the main-app session:
   detect when a *customer* wins via `contract_awards.recipient_uei →
   company_profiles.uei`, with explicit opt-in before naming anyone.
