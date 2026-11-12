@@ -1,11 +1,62 @@
-# LinkedIn access — findings, decision, and the application to submit
+# LinkedIn access
 
-**Researched 2026-07-28** against LinkedIn's official documentation. Every
-figure below is quoted from a linked source; nothing here is from memory.
+## Current status
+
+Page API posting is **live**. The engine posts to the Pursuit AI LinkedIn
+Page through the Community Management Posts API. The Page owner has
+Community Management access. The daily post is not pasted by hand.
+
+`logs/posted.jsonl` is the record. The last `skipped` row that says
+`LINKEDIN_ORG_ID not set — Page access still pending` is `price-to-win` on
+2026-11-03. The next LinkedIn row that day, `proposal-drafting`, is
+`posted`. A later row that day is `drafted`. From 2026-11-04 every LinkedIn
+row is `posted`. Those are publish dates. **This file does not record the
+date LinkedIn granted access.**
+
+Proven live on **2026-11-06**, after [PR #114](https://github.com/Reliable-Cloud-Services-LLC/pursuitai-social/pull/114).
+The pilot-mode Daily social post run (`PILOT_MODE=1`) published the
+`fifty-percent` angle once the `social-publish` approval gate cleared.
+The log row is `pilot: true`, campaign `pilot21`, `utm_content=fifty-percent`,
+LinkedIn status `posted`:
+
+<https://www.linkedin.com/feed/update/urn:li:share:7524472017090166784/>
+
+The run log read `[linkedin] posted ...share:7524472017090166784`. Later
+rows in the same file, through 2026-11-12, are also LinkedIn `posted`.
+
+Three things did not change with that post:
+
+- **The human approval gate is unchanged.** Publish still waits on the
+  `social-publish` environment. GitHub will not start the job until a
+  required reviewer approves. There is no auto-approve.
+- **The 60-day token re-auth still applies.** Access tokens are still
+  issued with a 60-day lifespan, and refresh is a browser flow. The
+  `linkedin-token` job warns before expiry (14 days out) and does not fail
+  the day's run. See [Every 60 days, thereafter](#every-60-days-thereafter)
+  and [SECRETS.md](../SECRETS.md).
+- **Manual preview stays the fallback.** When the API path cannot post, or
+  when you want to paste a one-off, use the commands under
+  [The daily routine](#the-daily-routine). Nothing there is marked posted
+  until `scripts/preview.py --posted`.
+
+Sections below that say posts are pasted by hand, that we are not calling
+the API yet, or that Attempt 2 is submitted and in review are **historical**.
+They stay as the record of how access was requested and why an app can
+still be burned. They are not the operating procedure. A blockquote under
+each of those headings says so, and says which finding still binds the
+live channel.
 
 ---
 
+**Historical record. Researched 2026-07-28** against LinkedIn's official
+documentation. Every figure below is quoted from a linked source; nothing
+here is from memory.
+
 ## The decision: manual-assisted now, API in parallel
+
+> **Historical.** This was the operating decision while Community Management
+> Page access was pending. It is not the current procedure. See
+> [Current status](#current-status).
 
 LinkedIn posts are **pasted by hand** from the preview sheet. The engine
 generates the card and the copy; a person pastes it.
@@ -14,6 +65,12 @@ That is not a stopgap born of laziness — it follows from a structural
 finding about LinkedIn's review process.
 
 ## The daily routine
+
+> **Historical as the daily path. Still the manual fallback.** The daily
+> post goes out through the Page API, after the `social-publish` gate.
+> These commands are how you preview a card and paste it by hand when the
+> API path cannot post, or when you want a one-off. Nothing is marked
+> posted until `--posted`.
 
 ```bash
 .venv/bin/python scripts/preview.py --linkedin
@@ -42,6 +99,11 @@ calendar in order, then the least recently posted once everything has been
 round once.
 
 ## Why we are not calling the API yet
+
+> **Historical.** The engine does call the Posts API, and Page posting is
+> live. The token-lifespan finding later in this section still applies: a
+> human re-authorizes about every 60 days, and the expiry warning still
+> runs. See [Current status](#current-status).
 
 ### The mechanics are easy
 
@@ -227,6 +289,12 @@ python scripts/validate_linkedin.py --member --upload --file <ad>.mp4
 
 ## The channel was wired everywhere EXCEPT the publish step
 
+> **Historical incident, fixed.** The publish step now receives the LinkedIn
+> credentials. The closing paragraph's "deliberately UNSET" member default
+> was superseded on 2026-10-08: the channel is Page-only unless
+> `LINKEDIN_ALLOW_MEMBER_POST=1`. The live author is the Page. See
+> [Current status](#current-status).
+
 Found 2026-10-02 while setting the repository secrets. The publish step was
 named `Publish to X + Instagram` and passed no LinkedIn credentials at all.
 `run.py`'s `POSTERS` gates the channel on `LINKEDIN_ACCESS_TOKEN`, so with
@@ -302,6 +370,11 @@ Two things made it survive two months unnoticed:
 
 ### How authorship is configured
 
+> **Historical.** Written while `LINKEDIN_ORG_ID` was unset and the Page
+> route was "when the appeal lands." The Page route is the live path.
+> Member posting remains an explicit `LINKEDIN_ALLOW_MEMBER_POST=1` opt-in,
+> not the default.
+
 `LINKEDIN_ORG_ID` is the switch, and its absence is the current state:
 
 | `LINKEDIN_ORG_ID` | author | route |
@@ -322,10 +395,20 @@ someone meant the Page is announced rather than discovered from the feed.
 
 ## The self-serve route: member posting (verified 2026-10-02)
 
+> **Historical.** Member posting was checked after Attempt 1 was rejected.
+> It is proven, and it is not the daily author. The Page is. See
+> [Current status](#current-status).
+
 After the rejection, a second route was checked against the docs. It is real,
 it needs no review at all, and it has one hard limitation.
 
 ### Posting to the PAGE self-serve is impossible
+
+> **Historical.** This is the finding that `w_organization_social` is not an
+> Open Permission, so a self-serve product cannot post as the Page. That
+> permission list is unchanged. Community Management access is now in place,
+> and the engine posts as the Page. This file does not record when LinkedIn
+> granted it.
 
 [Getting Access](https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access)
 carries the complete list of permissions obtainable without approval:
@@ -420,6 +503,10 @@ to no post appears nowhere. The command prints a VERDICT either way.
 ---
 
 ## The Development tier application
+
+> **Historical.** This is the form that was filled in and submitted (see
+> Attempt 2). It is not an open action. This file does not record when
+> LinkedIn granted access.
 
 Submit at **My Apps → your app → Products → Community Management API**.
 
@@ -553,6 +640,10 @@ then rather than pre-claiming now.
 
 ### Set expectations
 
+> **Historical.** "What we do today" in the paragraph below was manual
+> paste. The daily post is the Page API. Manual preview remains the
+> fallback.
+
 The application asks how you will integrate within twelve months. Answer
 honestly: this is a **single-Page first-party publisher**, and we do not
 intend to build the multi-tenant UI that Standard tier review assumes. If
@@ -588,6 +679,8 @@ answer is no.
 ---
 
 ## Attempt 1 — REJECTED (portal 2026-08-30; email 2026-09-01)
+
+> **Historical.** The rejection record. It is not the current access state.
 
 > "At this time we are unable to grant you Development Tier access to our
 > Community Management API for the following reason:
@@ -821,6 +914,13 @@ blocked API access.
 
 ## Member posting DISABLED 2026-10-08 — the channel is Page-only now
 
+> **Historical framing.** The Page-only default is still how the code
+> behaves: `LINKEDIN_ORG_ID` unset skips the channel, and
+> `LINKEDIN_ALLOW_MEMBER_POST=1` is the only member opt-in. Sentences below
+> that say attempt 2 is in review, or that Page access is pending, are not
+> the current state. Page API posting is live. The manual preview commands
+> at the end of this section remain the fallback.
+
 While attempt 2 is in review, the daily post no longer goes out under a
 personal profile. It used to, and that was never a decision: the fallback
 simply fired whenever the Page scope was missing, so a company's daily
@@ -857,6 +957,11 @@ the copy and card to paste by hand. A human pasting a post has already
 chosen the author.
 
 ## Attempt 2 — SUBMITTED 2026-10-07 (route A)
+
+> **Historical.** Submitted 2026-10-07 and kept as the application record.
+> "In review", "pending", and "nothing further is actionable" below describe
+> that day, not today. This file does not record a LinkedIn approval date.
+> Page posting was later proven live — see [Current status](#current-status).
 
 The first application where every Development-tier criterion corroborates
 every other. Attempt 1 failed with four fields that pointed at four
@@ -921,6 +1026,12 @@ counts. No Advertising API, no Events, nothing — see the Advertising API
 dead end recorded above.
 
 ## The whole sequence, in order
+
+> **Historical as an enablement checklist.** The application has been
+> submitted and Page posting is live, so "wait until approval" is not the
+> current step. Minting a token (steps 5–7) and the 60-day repeat are still
+> the re-auth procedure. See
+> [Every 60 days, thereafter](#every-60-days-thereafter).
 
 Nothing below can be done out of order — each step's output is the next
 step's input, and the two that gate everything are LinkedIn's, not ours.
@@ -997,6 +1108,11 @@ From then on the `linkedin-token` job warns at 14 days, every run, so the
 
 ## Getting the three secrets
 
+> **Current re-auth procedure.** Community Management access is in place and
+> Page posting is live, so the "before approval there is no scope to tick"
+> sentence below is historical. The steps themselves are how the 60-day
+> token is minted again. The expiry warning still depends on them.
+
 Verified against learn.microsoft.com on 2026-08-27.
 
 **Order matters.** Two of the three cannot exist until the Community
@@ -1062,8 +1178,9 @@ set of partners"*.
 
 ## When to revisit
 
-- **Development tier lands** → wire `post_linkedin.py` behind a flag,
-  keeping the manual path as the fallback.
+- **Development tier** — in use. The engine posts to the Page through
+  `post_linkedin.py` after the `social-publish` gate. Manual preview stays
+  the fallback (`scripts/preview.py --linkedin`).
 - **We ever manage Pages for other organisations** → Standard tier review
   becomes passable, because the product would then actually have the
   application users the screencast asks about.
