@@ -505,7 +505,10 @@ def test_publish_records_ids_and_advances_only_when_the_page_is_done(
     assert awards.publish(root, poster=poster) == 1  # not approved
     assert calls == []
 
-    assert awards.publish(root, poster=poster, force=True) == 0
+    # --force is refused when GITHUB_ACTIONS is set, which it is on the
+    # test job. The path CI actually runs is an approval record.
+    assert awards.approve(root=root) == 0
+    assert awards.publish(root, poster=poster) == 0
     assert calls and calls[0][0].endswith("award_only.png")
     assert "ONLY" in awards.posted_ids(root)
     assert awards.load_cursor(root) == "next-cursor"
@@ -548,7 +551,8 @@ def test_publish_does_not_repeat_an_id_already_in_the_log(
     def poster(*args, **kwargs):
         raise AssertionError("already-logged award was sent again")
 
-    assert awards.publish(root, poster=poster, force=True) == 0
+    assert awards.approve(root=root) == 0
+    assert awards.publish(root, poster=poster) == 0
 
 
 def test_an_already_seen_page_advances_the_cursor(tmp_path, monkeypatch,
