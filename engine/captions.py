@@ -260,7 +260,8 @@ def _allowed_amounts(award):
         number = _amount(award.get(key))
         if number is not None:
             amounts.append(number)
-    for key in ("summary", "recipient", "agency"):
+    for key in ("summary", "recipient_name", "awarding_agency",
+                "naics_description", "set_aside", "extent_competed"):
         amounts.extend(_money_phrases(str(award.get(key) or "")))
     return amounts
 
@@ -272,7 +273,9 @@ def _plain_tokens(award):
     because the obligation is 4200000.
     """
     tokens = set()
-    for key in ("recipient", "agency", "piid", "naics", "summary", "slug",
+    for key in ("recipient_name", "awarding_agency", "awarding_sub_agency",
+                "piid", "naics_code", "naics_description", "summary", "slug",
+                "set_aside", "extent_competed", "psc_code",
                 "award_type_code", "generated_unique_award_id"):
         for match in _NUM.findall(str(award.get(key) or "")):
             tokens.add(match.replace(",", ""))
@@ -349,7 +352,8 @@ def _lead_amount(award):
 def award_facts_body(award, *, include_summary=True):
     """Template copy. Every sentence is a field from the feed, labeled."""
     amount, kind = _lead_amount(award)
-    lines = [f"{award['recipient']} was awarded work by {award['agency']}."]
+    lines = [f"{award['recipient_name']} was awarded work by "
+             f"{award['awarding_agency']}."]
     if kind == "obligated":
         lines.append(f"The obligated amount is {format_dollars(amount)}.")
         ceiling = _amount(award.get("ceiling"))
@@ -361,12 +365,19 @@ def award_facts_body(award, *, include_summary=True):
             f"It does not list a positive obligated amount, so this post "
             f"does not state one.")
     details = []
-    if award.get("naics"):
-        details.append(f"NAICS {award['naics']}")
+    if award.get("naics_code"):
+        naics = f"NAICS {award['naics_code']}"
+        if award.get("naics_description"):
+            naics += f" ({award['naics_description']})"
+        details.append(naics)
     if award.get("piid"):
         details.append(f"PIID {award['piid']}")
     if details:
         lines.append(". ".join(details) + ".")
+    if award.get("set_aside"):
+        lines.append(f"Set-aside: {award['set_aside']}.")
+    if award.get("extent_competed"):
+        lines.append(f"Competition: {award['extent_competed']}.")
     if include_summary:
         summary = clean_summary(award.get("summary"))
         if summary:
@@ -374,11 +385,23 @@ def award_facts_body(award, *, include_summary=True):
     return "\n\n".join(lines)
 
 
+_AWARD_PAGE = re.compile(
+    r"^https://pursuitai\.net/awards/[A-Za-z0-9][A-Za-z0-9_-]{0,160}/?$")
+
+
 def award_page_url(award):
-    """The public award page, with the same UTM tags as every other post."""
-    page = f"https://pursuitai.net/awards/{award['slug']}"
-    return links.build_url(page, "linkedin", award["slug"], "card",
-                           campaign="award")
+    """The public award page, with the same UTM tags as every other post.
+
+    The feed's `url` is already absolute. Use it. Build the path from
+    the slug only when that URL is missing or is not an award page.
+    """
+    feed = (award.get("url") or "").strip().split("?")[0].split("#")[0]
+    if _AWARD_PAGE.match(feed):
+        page = feed.rstrip("/")
+    else:
+        page = f"https://pursuitai.net/awards/{award['slug']}"
+    return links.build_url(page, "linkedin", award.get("slug") or "award",
+                           "card", campaign="award")
 
 
 def _assemble_award(body, award, brand):
@@ -401,9 +424,9 @@ def _award_body_ok(body, award):
     # outlet is someone else's writeup, whatever else it says.
     if "orangeslices" in folded.replace(" ", ""):
         return False
-    if award["recipient"].casefold() not in folded:
+    if award["recipient_name"].casefold() not in folded:
         return False
-    if award["agency"].casefold() not in folded:
+    if award["awarding_agency"].casefold() not in folded:
         return False
     if ungrounded_money(body, award) or ungrounded_numbers(body, award):
         return False

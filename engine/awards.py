@@ -5,31 +5,51 @@ and a machine feed:
 
     GET {base}/api/v1/public-awards/feed
     Authorization: Bearer $PUBLIC_AWARDS_FEED_TOKEN
-    ?since=<cursor>&limit=<n>&order=value_desc
+    ?since=<iso>&limit=<1-100>&order=recent
 
     {"items": [{
-        "is_new_award", "slug", "url", "first_published_at",
-        "recipient", "agency", "piid", "award_type_code",
-        "obligation", "ceiling", "naics", "summary",
-        "generated_unique_award_id", "official_urls"
+        "id", "is_new_award", "slug", "url",
+        "first_published_at", "published_at",
+        "recipient_name", "recipient_uei",
+        "awarding_agency", "awarding_sub_agency", "awarding_office",
+        "piid", "parent_award_piid", "award_type_code", "award_category",
+        "obligation", "ceiling", "action_date", "pop_start", "pop_end",
+        "naics_code", "naics_description", "psc_code",
+        "set_aside", "extent_competed", "summary", "description_source",
+        "generated_unique_award_id",
+        "official_urls": {"usaspending": "..."}
      }, ...],
-     "next_since": "<cursor>"}
+     "next_since": "<iso or null>",
+     "order": "recent"|"value_desc"}
 
-`base` defaults to https://api.pursuitai.net — the API host the marketing
-site already calls. Override with PUBLIC_AWARDS_FEED_BASE_URL.
+`next_since` is set only for `order=recent` (oldest first by
+first_published_at). `order=value_desc` always returns null and expects
+the caller to pass `since` itself. This client therefore pages with
+`recent`, keeps that cursor, and picks the largest awards on the page
+itself. Largest means the greater of obligation and ceiling, which is
+how the server orders `value_desc`.
+
+`limit` is at most 100 (the server default is 20; we ask for the max so
+the three we pick are the largest of the page, not of a 20-row slice).
+
+`url` is already absolute (`https://pursuitai.net/awards/<slug>`). The
+post uses that URL.
+
+`base` defaults to https://api.pursuitai.net. Override with
+PUBLIC_AWARDS_FEED_BASE_URL.
 
 The route is mounted only when PUBLIC_AWARD_PAGES_ENABLED is on, so a 404
-or an empty list is a normal day, not an outage. A rejected token is not:
-that fails the run so a wrong secret is visible.
+or an empty list is a normal day, not an outage. A 401 (bad token) and a
+422 (bad `since`) fail the run.
 
 What this will not do:
 
   * Post anything whose is_new_award is not true. The platform already
     limits the feed to IT NAICS, at least $1M, and no mods, options, or
     task orders. We still drop a row that is not flagged new.
-  * Post more than three a day. Largest obligated amount first (ceiling
-    only when the record has no positive obligation). The caption leads
-    with the same figure, and it labels a ceiling as a ceiling.
+  * Filter on extent_competed. Sole-source is not a skip.
+  * Post more than three a day. The caption still leads with the obligated
+    amount when the record has one, and it labels a ceiling as a ceiling.
   * Publish by itself. --prepare writes content/awards_pending.json and
     stops. The awards workflow parks on the social-publish environment,
     the same human gate as the daily post, with its own file so it cannot
@@ -64,7 +84,10 @@ import cards
 import compliance
 
 DAILY_CAP = 3
-FETCH_LIMIT = 50
+# Server maximum. The default of 20 would hide a larger award sitting
+# at row 21 of an oldest-first page.
+FETCH_LIMIT = 100
+FEED_LIMIT_MAX = 100
 DEFAULT_BASE = "https://api.pursuitai.net"
 FEED_PATH = "/api/v1/public-awards/feed"
 
@@ -157,54 +180,67 @@ def _slug(item):
     return match.group(1) if match else ""
 
 
-def normalize_item(raw):
-    """One feed row as flat fields. Nested name/amount objects are accepted.
+# Exact keys from apps/backend/app/api/public_awards.py. The earlier
+# names (recipient, agency, naics) are not on the feed and are not read.
+_STRING_KEYS = (
+    "id", "slug", "url", "first_published_at", "published_at",
+    "recipient_name", "recipient_uei", "awarding_agency",
+    "awarding_sub_agency", "awarding_office", "piid", "parent_award_piid",
+    "award_type_code", "award_category", "action_date", "pop_start",
+    "pop_end", "naics_code", "naics_description", "psc_code", "set_aside",
+    "extent_competed", "summary", "description_source",
+    "generated_unique_award_id",
+)
 
-    The documented shape is flat. A row that is not an object is dropped
-    here so a single bad element cannot abort the page.
+
+def _field(raw, key):
+    """A scalar feed field. Dicts are not unpacked — the keys are flat."""
+    value = raw.get(key)
+    if value is None or isinstance(value, (bool, dict, list)):
+        return ""
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    return str(value).strip()
+
+
+def _official_urls(raw):
+    official = raw.get("official_urls")
+    if not isinstance(official, dict):
+        return {}
+    return {str(key): str(value) for key, value in official.items()
+            if value not in (None, "")}
+
+
+def normalize_item(raw):
+    """One feed row, using the feed's own key names.
+
+    A row that is not an object is dropped so one bad element cannot
+    abort the page.
     """
     if not isinstance(raw, dict):
         return None
-    official = raw.get("official_urls")
-    return {
-        "is_new_award": _is_new(raw.get("is_new_award")),
-        "slug": _slug(raw),
-        "url": _text(raw.get("url"), ("url",)),
-        "first_published_at": _text(raw.get("first_published_at"),
-                                    ("first_published_at",)),
-        "recipient": _text(raw.get("recipient"),
-                           ("name", "recipient_name", "legal_business_name")),
-        "agency": _text(raw.get("agency"),
-                        ("name", "agency_name", "toptier_name")),
-        "piid": _text(raw.get("piid"), ("piid",)),
-        "award_type_code": _text(raw.get("award_type_code"),
-                                 ("award_type_code", "code")),
-        "obligation": _money(raw.get("obligation")),
-        "ceiling": _money(raw.get("ceiling")),
-        "naics": _text(raw.get("naics"), ("code", "naics_code", "naics")),
-        "summary": _text(raw.get("summary"),
-                         ("text", "description", "summary")),
-        "generated_unique_award_id": _text(
-            raw.get("generated_unique_award_id"),
-            ("generated_unique_award_id",)),
-        "official_urls": [str(u) for u in official] if isinstance(official, list) else [],
-    }
+    item = {key: _field(raw, key) for key in _STRING_KEYS}
+    item["slug"] = _slug(raw)
+    item["is_new_award"] = _is_new(raw.get("is_new_award"))
+    item["obligation"] = _money(raw.get("obligation"))
+    item["ceiling"] = _money(raw.get("ceiling"))
+    item["official_urls"] = _official_urls(raw)
+    return item
 
 
 def rank_value(award):
-    """Dollars used to order the day.
+    """Dollars used to order the day: the greater of obligation and ceiling.
 
-    The obligated amount is the award. The ceiling is only the ranking
-    key when the record has no positive obligation, and the caption then
-    says "ceiling" rather than presenting it as the amount awarded.
+    That is the server's value_desc key. The caption still leads with the
+    obligated amount when there is one; this number only decides which
+    three rows are chosen.
     """
-    obligation = award.get("obligation")
-    if isinstance(obligation, (int, float)) and obligation > 0:
-        return float(obligation)
-    ceiling = award.get("ceiling")
-    if isinstance(ceiling, (int, float)) and ceiling > 0:
-        return float(ceiling)
-    return None
+    amounts = []
+    for key in ("obligation", "ceiling"):
+        number = award.get(key)
+        if isinstance(number, (int, float)) and not isinstance(number, bool) and number > 0:
+            amounts.append(float(number))
+    return max(amounts) if amounts else None
 
 
 def _eligible(award, seen):
@@ -213,7 +249,7 @@ def _eligible(award, seen):
     aid = award.get("generated_unique_award_id") or ""
     if not aid or aid in seen:
         return False
-    if not award.get("slug") or not award.get("recipient") or not award.get("agency"):
+    if not award.get("slug") or not award.get("recipient_name") or not award.get("awarding_agency"):
         return False
     if rank_value(award) is None:
         return False
@@ -246,10 +282,11 @@ def select_awards(items, seen_ids=(), limit=DAILY_CAP):
 
 
 def fetch_feed(since=None, limit=FETCH_LIMIT, get=None, token=None, base=None):
-    """One page. 404 and a missing token return an empty unavailable page.
+    """One page, oldest first, so the response can carry next_since.
 
-    Both mean "do not queue and do not move the cursor". A 401, a 5xx,
-    or a body that is not the documented shape raises FeedError.
+    404 and a missing token return an empty unavailable page: do not
+    queue and do not move the cursor. 401 (bad token), 422 (bad since),
+    a 5xx, or a body that is not the documented shape raises FeedError.
     """
     if token is None:
         token = os.environ.get("PUBLIC_AWARDS_FEED_TOKEN")
@@ -258,7 +295,11 @@ def fetch_feed(since=None, limit=FETCH_LIMIT, get=None, token=None, base=None):
         return {"items": [], "next_since": None, "unavailable": True,
                 "status": None, "reason": "not_configured"}
     getter = get or requests.get
-    params = {"limit": str(limit), "order": "value_desc"}
+    capped = max(1, min(int(limit), FEED_LIMIT_MAX))
+    # recent, not value_desc. value_desc leaves next_since null, so a
+    # cursor cannot be advanced from it. Largest-first happens after
+    # this page is in hand.
+    params = {"limit": str(capped), "order": "recent"}
     if since:
         params["since"] = since
     url = feed_endpoint(base)
@@ -279,10 +320,14 @@ def fetch_feed(since=None, limit=FETCH_LIMIT, get=None, token=None, base=None):
               "still off (PUBLIC_AWARD_PAGES_ENABLED). Nothing to queue.")
         return {"items": [], "next_since": None, "unavailable": True,
                 "status": 404, "reason": "not_found"}
-    if status in (401, 403):
+    if status == 401:
         raise FeedError(
-            f"award feed rejected the token ({status}). "
-            f"Check PUBLIC_AWARDS_FEED_TOKEN.")
+            "award feed rejected the token (401). "
+            "Check PUBLIC_AWARDS_FEED_TOKEN.")
+    if status == 422:
+        raise FeedError(
+            "award feed rejected since (422). The stored cursor is not "
+            "a value this feed accepts.")
     if status is None or status >= 300:
         raise FeedError(f"award feed returned {status}")
     try:
@@ -381,11 +426,12 @@ def card_topic(award, short=False):
     stat = f"{captions.format_dollars(amount)} {kind}"
     if short:
         headline = captions.format_dollars(amount)
-        body = _clip(f"{award['recipient']}. {award['agency']}.", 120)
+        body = _clip(
+            f"{award['recipient_name']}. {award['awarding_agency']}.", 120)
     else:
-        headline = _clip(award["recipient"], 80)
+        headline = _clip(award["recipient_name"], 80)
         summary = captions.clean_summary(award.get("summary"))
-        body = award["agency"]
+        body = award["awarding_agency"]
         if summary:
             body = f"{body}. {summary}"
         body = _clip(body, 180)
@@ -463,7 +509,7 @@ def _build_posts(chosen, brand, root, dry_run):
                 })
             continue
         rel = f"assets/cards/award_{award['slug']}.png"
-        alt = f"{award['recipient']} — {card_topic(award)['stat']}"
+        alt = f"{award['recipient_name']} — {card_topic(award)['stat']}"
         if not dry_run:
             out = os.path.join(root, rel)
             topic = render_award(award, brand, out)
@@ -475,11 +521,13 @@ def _build_posts(chosen, brand, root, dry_run):
         posts.append({
             "generated_unique_award_id": award["generated_unique_award_id"],
             "slug": award["slug"],
-            "recipient": award["recipient"],
-            "agency": award["agency"],
+            "recipient_name": award["recipient_name"],
+            "awarding_agency": award["awarding_agency"],
             "obligation": award.get("obligation"),
             "ceiling": award.get("ceiling"),
-            "naics": award.get("naics") or "",
+            "naics_code": award.get("naics_code") or "",
+            "set_aside": award.get("set_aside") or "",
+            "extent_competed": award.get("extent_competed") or "",
             "piid": award.get("piid") or "",
             "text_linkedin": built["text"],
             "copy_varied": built["varied"],
@@ -498,7 +546,7 @@ def _print_posts(posts, deferred, page):
     print(f"[awards] {len(posts)} post(s); {len(deferred)} eligible "
           f"left for a later day.")
     for index, post in enumerate(posts, 1):
-        print(f"\n--- {index} {post['recipient']} ---")
+        print(f"\n--- {index} {post['recipient_name']} ---")
         print(post["text_linkedin"])
 
 

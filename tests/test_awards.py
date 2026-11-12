@@ -26,22 +26,38 @@ import compliance  # noqa: E402
 
 
 def award(**over):
+    """One feed row, using the keys public_awards.py actually returns."""
     base = {
         "is_new_award": True,
+        "id": "award-1",
         "slug": "acme-va",
         "url": "https://pursuitai.net/awards/acme-va",
         "first_published_at": "2026-11-12T15:00:00Z",
-        "recipient": "Acme Federal Solutions LLC",
-        "agency": "Department of Veterans Affairs",
+        "published_at": "2026-11-12T15:00:00Z",
+        "recipient_name": "Acme Federal Solutions LLC",
+        "recipient_uei": "ABC123DEF456",
+        "awarding_agency": "Department of Veterans Affairs",
+        "awarding_sub_agency": "Veterans Health Administration",
+        "awarding_office": "Network Contracting Office",
         "piid": "36C10B26C0001",
+        "parent_award_piid": None,
         "award_type_code": "D",
+        "award_category": "contract",
         "obligation": 4_200_000,
         "ceiling": 12_000_000,
-        "naics": "541512",
+        "action_date": "2026-11-01",
+        "pop_start": "2026-11-01",
+        "pop_end": "2027-10-31",
+        "naics_code": "541512",
+        "naics_description": "Computer Systems Design Services",
+        "psc_code": "D399",
+        "set_aside": None,
+        "extent_competed": None,
         "summary": "Cloud hosting and service desk for regional medical centers.",
+        "description_source": "usaspending",
         "generated_unique_award_id": "CONT_AWD_ACME",
-        "official_urls": [
-            "https://www.usaspending.gov/award/CONT_AWD_ACME"],
+        "official_urls": {
+            "usaspending": "https://www.usaspending.gov/award/CONT_AWD_ACME"},
     }
     base.update(over)
     return base
@@ -63,15 +79,15 @@ def quiet_model(monkeypatch):
 def test_only_new_awards_and_largest_obligation_first():
     rows = [
         award(generated_unique_award_id="SMALL", slug="small",
-              obligation=1_000_000),
+              obligation=1_000_000, ceiling=1_000_000),
         award(generated_unique_award_id="OLD", slug="old",
-              obligation=99_000_000, is_new_award=False),
+              obligation=99_000_000, ceiling=99_000_000, is_new_award=False),
         award(generated_unique_award_id="MID", slug="mid",
-              obligation=5_000_000),
+              obligation=5_000_000, ceiling=5_000_000),
         award(generated_unique_award_id="BIG", slug="big",
-              obligation=8_000_000),
+              obligation=8_000_000, ceiling=8_000_000),
         award(generated_unique_award_id="MISSING", slug="missing",
-              is_new_award=None, obligation=50_000_000),
+              is_new_award=None, obligation=50_000_000, ceiling=50_000_000),
     ]
     chosen, deferred = awards.select_awards(rows)
     assert [row["generated_unique_award_id"] for row in chosen] == [
@@ -82,7 +98,8 @@ def test_only_new_awards_and_largest_obligation_first():
 
 def test_caps_at_three_and_keeps_the_rest_for_later():
     rows = [award(generated_unique_award_id=f"A{i}", slug=f"a{i}",
-                  obligation=1_000_000 * (i + 1)) for i in range(5)]
+                  obligation=1_000_000 * (i + 1),
+                  ceiling=1_000_000 * (i + 1)) for i in range(5)]
     chosen, deferred = awards.select_awards(rows)
     assert len(chosen) == 3
     assert [row["obligation"] for row in chosen] == [
@@ -121,39 +138,63 @@ def test_string_false_and_missing_flag_are_not_new():
     assert [row["generated_unique_award_id"] for row in chosen] == ["M"]
 
 
-def test_obligation_outranks_a_larger_ceiling():
-    """The post leads with the obligated amount, so that is the sort key."""
+def test_rank_is_the_greater_of_obligation_and_ceiling():
+    """Same key the server uses for value_desc: greatest(obligation, ceiling)."""
     big_ceiling = award(generated_unique_award_id="CEIL", slug="ceil",
                         obligation=1_500_000, ceiling=80_000_000)
     big_obligation = award(generated_unique_award_id="OBL", slug="obl",
                            obligation=6_000_000, ceiling=6_000_000)
     chosen, _ = awards.select_awards([big_ceiling, big_obligation])
-    assert chosen[0]["generated_unique_award_id"] == "OBL"
+    assert chosen[0]["generated_unique_award_id"] == "CEIL"
+    assert awards.rank_value(chosen[0]) == 80_000_000
 
 
-def test_ceiling_is_the_rank_only_when_there_is_no_obligation():
+def test_either_figure_alone_is_enough_to_rank():
     only_ceiling = award(generated_unique_award_id="C", slug="c",
                          obligation=None, ceiling=4_000_000)
     smaller = award(generated_unique_award_id="S", slug="s",
-                    obligation=2_000_000, ceiling=2_000_000)
+                    obligation=2_000_000, ceiling=None)
     chosen, _ = awards.select_awards([only_ceiling, smaller])
     assert [row["generated_unique_award_id"] for row in chosen] == ["C", "S"]
 
 
-def test_nested_feed_objects_normalize():
+def test_reads_feed_keys_and_ignores_the_earlier_names():
     raw = award(
-        recipient={"name": "Nested Systems LLC"},
-        agency={"agency_name": "Department of Energy"},
-        obligation={"amount": 2500000},
-        naics={"code": "541511"},
-        summary={"text": "Identity services for the office."},
+        recipient="WRONG NAME",
+        agency="WRONG AGENCY",
+        naics="000000",
     )
     chosen, _ = awards.select_awards([raw])
-    assert chosen[0]["recipient"] == "Nested Systems LLC"
-    assert chosen[0]["agency"] == "Department of Energy"
-    assert chosen[0]["obligation"] == 2_500_000
-    assert chosen[0]["naics"] == "541511"
-    assert chosen[0]["summary"] == "Identity services for the office."
+    assert chosen[0]["recipient_name"] == "Acme Federal Solutions LLC"
+    assert chosen[0]["awarding_agency"] == "Department of Veterans Affairs"
+    assert chosen[0]["naics_code"] == "541512"
+    assert chosen[0]["official_urls"]["usaspending"].startswith(
+        "https://www.usaspending.gov/")
+
+
+def test_a_row_that_only_has_the_old_field_names_is_not_selected():
+    legacy = {
+        "is_new_award": True,
+        "slug": "legacy",
+        "url": "https://pursuitai.net/awards/legacy",
+        "recipient": "Legacy LLC",
+        "agency": "Department of Energy",
+        "naics": "541512",
+        "obligation": 9_000_000,
+        "generated_unique_award_id": "LEGACY",
+    }
+    chosen, deferred = awards.select_awards([legacy, award()])
+    assert [row["generated_unique_award_id"] for row in chosen] == [
+        "CONT_AWD_ACME"]
+    assert deferred == []
+
+
+def test_sole_source_is_not_filtered():
+    row = award(extent_competed="NOT AVAILABLE FOR COMPETITION",
+                set_aside="NO SET ASIDE USED",
+                generated_unique_award_id="SOLE", slug="sole")
+    chosen, _ = awards.select_awards([row])
+    assert [item["generated_unique_award_id"] for item in chosen] == ["SOLE"]
 
 
 def test_slug_can_come_from_the_page_url():
@@ -163,7 +204,7 @@ def test_slug_can_come_from_the_page_url():
 
 
 def test_a_row_missing_recipient_or_value_is_not_queued():
-    nameless = award(recipient="", generated_unique_award_id="NONAME",
+    nameless = award(recipient_name="", generated_unique_award_id="NONAME",
                      slug="noname")
     valueless = award(obligation=None, ceiling=None,
                       generated_unique_award_id="NOVAL", slug="noval")
@@ -201,7 +242,8 @@ def test_request_uses_the_documented_query_and_bearer_token():
         since="cursor-1", token="sekret",
         get=_get(200, {"items": [], "next_since": "cursor-2"}, sink=seen))
     assert seen["url"] == "https://api.pursuitai.net/api/v1/public-awards/feed"
-    assert seen["params"]["order"] == "value_desc"
+    assert seen["params"]["order"] == "recent"
+    assert seen["params"]["limit"] == "100"
     assert seen["params"]["since"] == "cursor-1"
     assert seen["headers"]["Authorization"] == "Bearer sekret"
     assert "sekret" not in seen["url"]
@@ -237,10 +279,30 @@ def test_missing_token_does_not_call_the_network(monkeypatch):
     assert page["reason"] == "not_configured"
 
 
-@pytest.mark.parametrize("status", [401, 403, 500, 503])
-def test_auth_and_server_errors_raise(status):
+def test_401_is_a_bad_token_not_an_empty_day():
+    with pytest.raises(awards.FeedError, match="401"):
+        awards.fetch_feed(token="t", get=_get(401, {"detail": "Unauthorized"}))
+
+
+def test_422_is_a_bad_cursor_not_an_empty_day():
+    with pytest.raises(awards.FeedError, match="since"):
+        awards.fetch_feed(token="t", since="not-a-date",
+                          get=_get(422, {"detail": "bad since"}))
+
+
+@pytest.mark.parametrize("status", [403, 500, 503])
+def test_other_errors_raise_and_are_not_treated_as_empty(status):
     with pytest.raises(awards.FeedError):
         awards.fetch_feed(token="t", get=_get(status, {"detail": "no"}))
+
+
+def test_limit_is_clamped_to_the_server_max():
+    seen = {}
+    awards.fetch_feed(token="t", limit=500,
+                      get=_get(200, {"items": [], "next_since": None,
+                                     "order": "recent"}, sink=seen))
+    assert seen["params"]["limit"] == "100"
+    assert seen["params"]["order"] == "recent"
 
 
 def test_non_json_and_a_missing_items_list_raise():
@@ -272,8 +334,10 @@ def test_prepare_on_404_writes_nothing(tmp_path, monkeypatch):
 def test_dry_run_prints_three_and_writes_nothing(tmp_path, monkeypatch, capsys,
                                                  quiet_model):
     rows = [award(generated_unique_award_id=f"A{i}", slug=f"slug-{i}",
+                  url=f"https://pursuitai.net/awards/slug-{i}",
                   obligation=1_000_000 * (i + 1),
-                  recipient=f"Firm {i} LLC") for i in range(4)]
+                  ceiling=1_000_000 * (i + 1),
+                  recipient_name=f"Firm {i} LLC") for i in range(4)]
     monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: {
         "items": rows, "next_since": "later", "unavailable": False,
         "status": 200, "reason": None})
@@ -304,6 +368,30 @@ def test_template_is_grounded_and_links_to_the_award_page(quiet_model):
     assert compliance.check_claims(captions._award_topic(award()), text) == []
     assert "orangeslices" not in text.casefold()
     assert "usaspending.gov" not in text
+
+
+def test_the_post_link_is_the_feed_url():
+    row = award(slug="from-slug",
+                url="https://pursuitai.net/awards/from-feed")
+    text = captions.build_award_linkedin(row, branded(), fresh=False)["text"]
+    assert "https://pursuitai.net/awards/from-feed" in text
+    assert "https://pursuitai.net/awards/from-slug" not in text
+
+
+def test_set_aside_and_competition_are_quoted_when_the_feed_has_them(quiet_model):
+    row = award(set_aside="8(a) Competed",
+                extent_competed="FULL AND OPEN AFTER EXCLUSION")
+    text = captions.build_award_linkedin(row, branded(), fresh=False)["text"]
+    assert "Set-aside: 8(a) Competed." in text
+    assert "Competition: FULL AND OPEN AFTER EXCLUSION." in text
+    assert captions.ungrounded_numbers(text, row) == []
+    assert captions.ungrounded_money(text, row) == []
+
+
+def test_set_aside_and_competition_are_omitted_when_absent(quiet_model):
+    text = captions.build_award_linkedin(award(), branded(), fresh=False)["text"]
+    assert "Set-aside:" not in text
+    assert "Competition:" not in text
 
 
 def test_an_invented_dollar_figure_is_not_grounded():
@@ -383,8 +471,10 @@ def _page(rows, nxt="next-cursor"):
 def test_prepare_queues_a_batch_and_holds_the_cursor_when_more_remain(
         tmp_path, monkeypatch, quiet_model):
     rows = [award(generated_unique_award_id=f"A{i}", slug=f"slug-{i}",
+                  url=f"https://pursuitai.net/awards/slug-{i}",
                   obligation=1_000_000 * (i + 1),
-                  recipient=f"Firm {i} LLC") for i in range(4)]
+                  ceiling=1_000_000 * (i + 1),
+                  recipient_name=f"Firm {i} LLC") for i in range(4)]
     monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page(rows))
     pending = awards.prepare(root=str(tmp_path))
     assert len(pending["posts"]) == 3
@@ -434,7 +524,8 @@ def test_a_posted_id_is_not_queued_on_the_next_run(tmp_path, monkeypatch,
         award(generated_unique_award_id="DONE", slug="done",
               obligation=9_000_000),
         award(generated_unique_award_id="NEXT", slug="next",
-              obligation=2_000_000, recipient="Next Firm LLC"),
+              url="https://pursuitai.net/awards/next",
+              obligation=2_000_000, recipient_name="Next Firm LLC"),
     ]
     monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page(rows))
     awards.prepare(root=root)

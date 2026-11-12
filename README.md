@@ -158,11 +158,13 @@ LinkedIn client as the daily run, after the same `social-publish`
 approval, and it writes `content/awards_pending.json` so it cannot collide
 with the daily queue.
 
-Only rows with `is_new_award: true` are eligible. The three are the
-largest obligated amounts that are not already in
-`logs/award_posted.jsonl`. Each caption is written from that row and
-links to `https://pursuitai.net/awards/<slug>`. A dry run prints them and
-stops:
+Only rows with `is_new_award: true` are eligible. The feed is read
+oldest-first (`order=recent`, which is the order that returns
+`next_since`). The three posts are the largest on that page — the
+greater of obligation and ceiling — that are not already in
+`logs/award_posted.jsonl`. Each caption is written from that row
+(`recipient_name`, `awarding_agency`, and the rest of the feed fields)
+and links to the feed's `url`. A dry run prints them and stops:
 
 ```bash
 .venv/bin/python engine/awards.py --dry-run

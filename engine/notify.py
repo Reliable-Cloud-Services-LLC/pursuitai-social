@@ -172,7 +172,7 @@ def awards_review(pending, review_url=None, media_urls=None):
                     "image_url": media_url,
                     "alt_text": post.get("alt") or f"award {index}",
                 })
-            who = post.get("recipient") or "award"
+            who = post.get("recipient_name") or post.get("recipient") or "award"
             blocks.append(_section(
                 f"*Post {index} — {who}*\n```"
                 + (post.get("text_linkedin") or "") + "```"))
