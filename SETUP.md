@@ -8,7 +8,7 @@ GitHub Actions runs `engine/run.py` on a daily cron in two stages.
 
 **Stage 1 — prepare.** Picks the next feature topic (round-robin through 24 topics in `content/calendar.json`), rotates the format (branded card → live screenshot → card → short video), builds captions, commits the media and `content/pending.json`, and sends the whole thing to Slack for review. If `ANTHROPIC_API_KEY` is set, Claude rewrites each caption fresh so posts never repeat verbatim.
 
-**Stage 2 — publish.** Runs only after a human approves. It re-checks that the content still matches what was approved, posts through the official X and Instagram APIs, and commits the state and post log.
+**Stage 2 — publish.** Runs only after a human approves. It re-checks that the content still matches what was approved, posts through the official X, Instagram, and LinkedIn Page APIs, and commits the state and post log. LinkedIn still needs a human to re-authorize its token about every 60 days; the approval gate is the same `social-publish` environment as the other channels. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md).
 
 Generation is automated. **Publishing is not.** Our audience is a small, reputation-dense professional market, and a single wrong factual claim in front of it is not recoverable — so a person reads every post before it ships. There is no auto-approve, no approve-on-timeout, and no environment variable that bypasses the gate.
 
@@ -156,7 +156,7 @@ Before the first live run, prove the credentials work without posting anything:
 # Actions → "Tests & credential validation" → Run workflow → validate_credentials = true
 ```
 
-That authenticates both platforms and confirms Instagram can fetch your media URL. It publishes nothing.
+That authenticates X and Instagram, confirms Instagram can fetch your media URL, and checks LinkedIn when those secrets are set. It publishes nothing.
 
 Then:
 
@@ -210,7 +210,7 @@ pip install -r requirements-voice.txt
 - **Adding topics**: append to `content/calendar.json` — new features, customer stories, promos. Nothing else changes.
 - **Cadence**: edit the cron in `.github/workflows/daily.yml`. Two posts/day: add a second cron line (e.g. `30 21 * * 1-5` for 5:30 PM ET). Each still needs its own approval.
 - **Kill switch**: disable the workflow in the Actions tab. Not approving is also a kill switch — nothing publishes on its own.
-- **Token maintenance**: X tokens don't expire. IG System User tokens don't expire; user-exchanged tokens need refreshing every ~60 days. When a token lapses the run exits non-zero, Slack alerts you, and `logs/posted.jsonl` records `failed` for that channel — the other channel keeps running.
+- **Token maintenance**: X tokens don't expire. IG System User tokens don't expire; user-exchanged Instagram tokens need refreshing every ~60 days. LinkedIn access tokens last 60 days. Re-authorization is a browser flow, and the expiry warning on the daily run still fires before that deadline (see [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md)). When an X or Instagram token lapses the run exits non-zero, Slack alerts you, and `logs/posted.jsonl` records `failed` for that channel — the other channels keep running.
 - **Silence detection**: the weekly heartbeat reports how many posts actually went out. If it says zero, something is wrong even though no alert fired.
 
 ## Attribution (UTM tagging)
@@ -252,6 +252,7 @@ link; the bio link attributes Instagram traffic in aggregate.
 ## Platform-rules notes (keep it boring, keep it safe)
 
 - Posting your own product content on a schedule is fully within X automation rules and Instagram platform terms; both endpoints used here are the official, documented publish APIs.
+- LinkedIn Page posts go through the Community Management Posts API, after the same `social-publish` approval. The token still has to be re-authorized about every 60 days. `scripts/preview.py --linkedin` remains the manual fallback. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md).
 - Instagram allows 100 API-published posts per rolling 24h period — we use 1.
 - Don't add follow/unfollow, DM, or mass-reply automation to this engine; that's where accounts get flagged.
 

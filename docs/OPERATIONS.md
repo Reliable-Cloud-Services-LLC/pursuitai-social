@@ -8,7 +8,7 @@ us, and what is still open.
 Keep it current. A stale operations doc is worse than none, because it is
 believed.
 
-_Last reviewed: 2026-11-06._
+_Last reviewed: 2026-11-12._
 
 ---
 
@@ -18,7 +18,7 @@ _Last reviewed: 2026-11-06._
 |---|---|
 | **X** | Automated. Cron live, every post human-approved. |
 | **Instagram** | Automated. System User token (never expires). Cards, screenshots and Reels all proven live. |
-| **LinkedIn** | Manual by necessity until a Page `LINKEDIN_ORG_ID` is set — see [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). Pilot mode, below, is the exception and it ships **off**. |
+| **LinkedIn** | Page API posting is live to the Pursuit AI Page, after the same `social-publish` approval as X and Instagram. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. `scripts/preview.py --linkedin` is the manual fallback. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
 | **Facebook** | Not wired. |
 | **Rotation** | 26 of 27 topics publishable. `card → screenshot → card → ad`. |
 | **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
@@ -61,6 +61,8 @@ out.
 ### LinkedIn pilot mode (off unless you turn it on)
 
 A 21-day message test aimed at GovCon buyers: 8(a)/SDB owners, BD and capture leads, proposal managers. Five angles in [`content/pilot.json`](../content/pilot.json), LinkedIn only. X and Instagram are not published while it is on, and the product topic cursor does not advance, so the normal feed resumes where it left off.
+
+`content/pilot.json` still ships `"enabled": false`. The post log shows the switch on from 2026-11-06 through 2026-11-12 (`pilot: true`), starting with angle `fifty-percent` on the Page. That is a publish record, not a LinkedIn approval date. `PILOT_MODE=0` forces the test off.
 
 **Settings.** Nothing here turns it on by itself. `content/pilot.json` has `"enabled": false`. To run the test, set one of:
 
@@ -543,7 +545,13 @@ queuing."
 
 ## Runbook
 
-### Post to LinkedIn (manual, ~weekly)
+### Post to LinkedIn by hand (fallback)
+
+The daily run posts to the Pursuit AI Page through the API after the
+`social-publish` approval. The 60-day token re-auth and the expiry warning
+are unchanged — see [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). Use the
+preview when that path is down, or for a one-off you intend to paste
+yourself:
 
 ```bash
 .venv/bin/python scripts/preview.py --linkedin              # next card
@@ -661,9 +669,10 @@ why before assuming there was nothing to say.
   2026-08-27 was not a delay but a **drop**. Moving the cron earlier does
   nothing for a drop, so this is now about whether ~2h late is worth
   correcting on its own. Probably not.
-- **LinkedIn automation** — being scoped. Manual today; see
-  [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md) for what was already refused and
-  why.
+- **LinkedIn Page posting** — live, after the `social-publish` gate. The
+  60-day token re-auth, the expiry warning, and the manual preview fallback
+  are in [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). Earlier refusals and the
+  in-review application notes in that file are historical.
 - **Hero animation** — was: a looping animation drifting across the headline
   in captures. Largely moot now that captures run with
   `reduced_motion="reduce"` and target an element rather than a viewport.
@@ -678,7 +687,7 @@ why before assuming there was nothing to say.
 |---|---|
 | How it works | [README.md](../README.md) |
 | Credentials | [SECRETS.md](../SECRETS.md) |
-| LinkedIn API refusal | [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md) |
+| LinkedIn Page API, and the historical access record | [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md) |
 | Why each claim is trusted | `verification` blocks in `content/calendar.json` |
 | Why a change was made | the PR that made it — they record reasoning, not just diffs |
 | Gotchas | test docstrings, which name the incident they came from |

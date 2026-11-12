@@ -1,8 +1,8 @@
 # PursuitAI Social Engine
 
 Generates branded content, live-site screenshots, and short vertical videos for
-[pursuitai.net](https://pursuitai.net), then publishes to X ([@pursuit_ai](https://x.com/pursuit_ai))
-and Instagram through the official APIs. Runs on GitHub Actions.
+[pursuitai.net](https://pursuitai.net), then publishes to X ([@pursuit_ai](https://x.com/pursuit_ai)),
+Instagram, and the Pursuit AI LinkedIn Page through the official APIs. Runs on GitHub Actions.
 
 **Every post is reviewed by a human before it goes out.** The audience is
 federal contracting BD and capture professionals at small businesses — a small,
@@ -28,7 +28,7 @@ Nothing publishes without an explicit approval.
         │
         ▼
   ┌───────────┐   verifies the content still matches what was approved,
-  │  publish  │   posts to X + Instagram, logs the outcome per channel
+  │  publish  │   posts to X, Instagram, and the LinkedIn Page; logs each channel
   └───────────┘
 ```
 
@@ -78,7 +78,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 |---|---|
 | `.github/workflows/daily.yml` | The two-job pipeline: `prepare` (cron) → approval → `publish`. |
 | `scripts/preview.py` | Renders every publishable post — all ratios, every channel's copy, with copy buttons — into one self-contained HTML sheet. Nothing ships that hasn't been looked at. |
-| `docs/LINKEDIN_ACCESS.md` | Why LinkedIn is pasted by hand, and the Development-tier application to submit. |
+| `docs/LINKEDIN_ACCESS.md` | LinkedIn Page API status, the 60-day token re-auth, the manual fallback, and the historical access record. |
 | `.github/workflows/heartbeat.yml` | Weekly "N posts in the last 7 days", so silence is itself detectable. |
 | `.github/workflows/test.yml` | Runs the test suite; separately, an opt-in credential pre-flight. |
 | `scripts/validate_x.py` | Proves the X credentials authenticate and can upload media. Posts nothing. |
@@ -171,10 +171,16 @@ While it is on:
 
 ## Posting by hand
 
-LinkedIn has no API access, and Instagram has none yet. Both are posted by
-hand from artifacts this script generates. Each channel keeps **its own
-cursor**, so the two queues advance independently and neither repeats a
-topic. Compliance runs first — a topic that cannot publish never reaches you.
+The daily run posts to the Pursuit AI LinkedIn Page through the API, after
+the same `social-publish` approval as X and Instagram. A human still
+re-authorizes the LinkedIn token about every 60 days; the expiry warning
+still runs. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md).
+
+`scripts/preview.py` is the fallback. Use it for LinkedIn when the API path
+cannot post, or when you want to paste a one-off, and for Instagram when
+its credentials are absent. Each channel keeps **its own cursor**, so the
+two queues advance independently and neither repeats a topic. Compliance
+runs first — a topic that cannot publish never reaches you.
 
 ```bash
 # Still card — fast, no voice model needed
@@ -305,7 +311,7 @@ environment, the Instagram bio link, and the daily review routine.
 |---|---|
 | X | API, automated — body plus a threaded CTA reply |
 | Instagram | API when credentials exist; **manual paste** meanwhile — see [Posting by hand](#posting-by-hand) |
-| **LinkedIn** | **Manual paste — see [Posting by hand](#posting-by-hand).** Community Management Standard tier review requires demonstrating application users, a third-party OAuth flow, and member profile data in a UI — none of which a first-party publishing bot has. See [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). **Pilot mode** (below) posts the message test as the Page when `LINKEDIN_ORG_ID` is set, as the token's member when it is not, or hands you the copy. It does not skip the channel. |
+| LinkedIn | Page API, to the Pursuit AI Page, after the same `social-publish` approval. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. Manual preview is the fallback — see [Posting by hand](#posting-by-hand) and [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). **Pilot mode** (below) posts the message test as the Page when `LINKEDIN_ORG_ID` is set, as the token's member when it is not, or hands you the copy. It does not skip the channel. |
 | Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 
 **Kill switch:** disable the workflow in the Actions tab.
