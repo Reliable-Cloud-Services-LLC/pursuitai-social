@@ -1,0 +1,180 @@
+name: Award LinkedIn posts
+
+# Contract-award posts for the PursuitAI Page. Separate from daily.yml on
+# purpose: that workflow's pending.json is one product post, and an award
+# run must not overwrite it (or be overwritten by it).
+#
+# Same human gate. `prepare` can queue up to three posts and cannot
+# publish them. `publish` targets the `social-publish` environment, so
+# GitHub pauses the run until a required reviewer approves. Nothing in
+# this file can skip that pause.
+#
+# The feed is empty or 404 while PUBLIC_AWARD_PAGES_ENABLED is off on the
+# platform. That is a quiet day, not a failed run. A rejected token is a
+# failed run.
+
+on:
+  schedule:
+    # 12:47 UTC, weekdays. Not the post time — prepare starts here, and
+    # publish waits on a person. Off :00 and :30, and off daily.yml's
+    # 05:13, so the two prepares are not born in the same minute.
+    - cron: "47 12 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Print the awards that would be queued. Does not write the
+          queue, upload a card, or post.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: award-posts
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Print the posts that would be queued
+        env:
+          PUBLIC_AWARDS_FEED_TOKEN: ${{ secrets.PUBLIC_AWARDS_FEED_TOKEN }}
+          PUBLIC_AWARDS_FEED_BASE_URL: ${{ secrets.PUBLIC_AWARDS_FEED_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python engine/awards.py --dry-run
+
+  prepare:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pending_sha256: ${{ steps.review.outputs.pending_sha256 }}
+      has_pending: ${{ steps.review.outputs.has_pending }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Queue award posts
+        env:
+          PUBLIC_AWARDS_FEED_TOKEN: ${{ secrets.PUBLIC_AWARDS_FEED_TOKEN }}
+          PUBLIC_AWARDS_FEED_BASE_URL: ${{ secrets.PUBLIC_AWARDS_FEED_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python engine/awards.py --prepare
+
+      - name: Upload award cards
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          if [ ! -f content/awards_pending.json ]; then
+            echo "no award posts this run — nothing to upload"
+            exit 0
+          fi
+          if [ -z "$BUCKET" ]; then
+            echo "::error::MEDIA_BUCKET is not set, so the award card has"
+            echo "::error::nowhere to go. See SECRETS.md."
+            exit 1
+          fi
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          aws s3 sync assets/ "s3://$BUCKET/assets/" $args \
+            --no-progress --only-show-errors \
+            --exclude "preview/*" --cache-control "public, max-age=300"
+
+      - name: Commit the award queue
+        env:
+          PUSH_FAILURE_HINT: >-
+            awards_pending.json is what the publish job reads. Re-dispatch
+            once the branch is clean.
+        run: scripts/commit_and_push.sh "awards prepare $(date -u +%F)" content/awards_pending.json logs/award_cursor.json logs/award_skipped.jsonl
+
+      - name: Send for review
+        id: review
+        env:
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          MEDIA_BASE_URL: ${{ secrets.MEDIA_BASE_URL }}
+          REVIEW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -f content/awards_pending.json ]; then
+            python engine/awards.py --notify-pending
+            echo "has_pending=true" >> "$GITHUB_OUTPUT"
+            echo "pending_sha256=$(python engine/awards.py --pending-hash)" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_pending=false" >> "$GITHUB_OUTPUT"
+            echo "pending_sha256=" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: prepare
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.has_pending == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: social-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch approved cards
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MEDIA_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.MEDIA_REGION || 'auto' }}
+          BUCKET: ${{ secrets.MEDIA_BUCKET }}
+          ENDPOINT: ${{ secrets.MEDIA_ENDPOINT }}
+        run: |
+          args=""
+          [ -n "$ENDPOINT" ] && args="--endpoint-url $ENDPOINT"
+          aws s3 sync "s3://$BUCKET/assets/" assets/ $args \
+            --no-progress --only-show-errors
+
+      - name: Record approval
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          EXPECT: ${{ needs.prepare.outputs.pending_sha256 }}
+        run: |
+          if [ -z "$EXPECT" ]; then
+            echo "::error::prepare published no pending_sha256."
+            echo "::error::Refusing to publish unverified award posts."
+            exit 1
+          fi
+          python engine/awards.py --approve --expect "$EXPECT"
+
+      - name: Post to the LinkedIn Page
+        env:
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: python engine/awards.py --publish
+
+      - name: Commit the award log
+        if: always()
+        env:
+          PUSH_FAILURE_HINT: >-
+            The award log is the only record that an award was posted.
+            Without it the next run will post the same award again.
+        run: scripts/commit_and_push.sh "award post log $(date -u +%F)" content/awards_pending.json content/awards_approved.json logs/award_posted.jsonl logs/award_cursor.json logs/award_skipped.jsonl

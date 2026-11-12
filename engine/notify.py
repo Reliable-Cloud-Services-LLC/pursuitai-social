@@ -148,6 +148,44 @@ def pending_review(pending, media_url=None, review_url=None,
     return _send_blocks(f"Ready for review: {topic} ({fmt})", blocks)
 
 
+def awards_review(pending, review_url=None, media_urls=None):
+    """Ask a human to approve a batch of award posts.
+
+    Same constraint as pending_review: no approve button here. The link
+    is the Actions run, and GitHub's environment gate is what actually
+    holds the publish. One approval covers the batch in the pending
+    file — that file is the unit the gate already knows how to hash.
+    """
+    try:
+        posts = pending.get("posts") or []
+        header = (f"*PursuitAI awards — {len(posts)} LinkedIn post(s) "
+                  f"ready for review*\n"
+                  f"Nothing publishes until this run is approved in the "
+                  f"`social-publish` environment.")
+        blocks = [_section(header)]
+        urls = media_urls or []
+        for index, post in enumerate(posts, 1):
+            media_url = urls[index - 1] if index - 1 < len(urls) else None
+            if media_url:
+                blocks.append({
+                    "type": "image",
+                    "image_url": media_url,
+                    "alt_text": post.get("alt") or f"award {index}",
+                })
+            who = post.get("recipient") or "award"
+            blocks.append(_section(
+                f"*Post {index} — {who}*\n```"
+                + (post.get("text_linkedin") or "") + "```"))
+        if review_url:
+            blocks.append(_section(
+                f"<{review_url}|Approve or reject this run →>"))
+        return _send_blocks(
+            f"Award posts ready for review ({len(posts)})", blocks)
+    except Exception as e:
+        print(f"[notify] award review failed: {type(e).__name__}: {e}")
+        return False
+
+
 def blocked(topic, fmt, reason):
     """A publish was refused by the approval gate."""
     return _send(f"*PursuitAI social — publish BLOCKED*\n"

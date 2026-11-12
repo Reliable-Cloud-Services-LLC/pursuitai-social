@@ -45,6 +45,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | File | What it does |
 |---|---|
 | `run.py` | **The orchestrator.** Owns the CLI, topic/format rotation, the state cursor, the approval gate, and per-channel publish outcomes. Everything else is called from here. |
+| `awards.py` | Contract-award LinkedIn posts. Reads the public award feed, picks up to three new awards, and queues them for the same approval gate on a separate pending file. |
 | `approval.py` | The content-integrity half of the gate. Hashes `pending.json`, writes and verifies `approved.json`, enforces the 24-hour expiry. |
 | `captions.py` | Turns a topic into platform copy. Optionally asks Claude for a fresh variant, always falls back to the hand-written hook. Enforces X's character limit. |
 | `links.py` | Builds UTM-tagged URLs so the admin dashboard can attribute a visit to a post. Also generates the Instagram bio link. |
@@ -77,6 +78,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | Path | What it does |
 |---|---|
 | `.github/workflows/daily.yml` | The two-job pipeline: `prepare` (cron) → approval → `publish`. |
+| `.github/workflows/awards.yml` | Weekday award posts. Same `social-publish` gate, its own queue, LinkedIn only. |
 | `scripts/preview.py` | Renders every publishable post — all ratios, every channel's copy, with copy buttons — into one self-contained HTML sheet. Nothing ships that hasn't been looked at. |
 | `docs/LINKEDIN_ACCESS.md` | LinkedIn Page API status, the 60-day token re-auth, the manual fallback, and the historical access record. |
 | `.github/workflows/heartbeat.yml` | Weekly "N posts in the last 7 days", so silence is itself detectable. |
@@ -86,6 +88,8 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `assets/` | Generated cards, screenshots, and video. **Not committed** — uploaded to object storage, which is what Instagram fetches from. |
 | `assets/icons/` | **Committed.** Lucide icons (ISC), rasterised once by `scripts/build_icons.py`, so the engine needs no SVG rasteriser at runtime. |
 | `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
+| `logs/award_posted.jsonl` | Award posts already sent, keyed by `generated_unique_award_id`, so a later run does not repeat one. |
+| `content/awards_pending.json` | The award batch waiting on review. Not the daily `pending.json`. |
 | `logs/metrics.jsonl` | Append-only performance samples, keyed to the post ids in `posted.jsonl`. |
 | `.github/workflows/analytics.yml` | Weekly metrics collection. Separate from publishing because X reads are billed. |
 | `tests/` | 73 tests. See below. |
@@ -119,6 +123,7 @@ scheme that misbehaves on thin data is worse than none.
 .venv/bin/python engine/run.py --approve          # record approval (never automatic)
 .venv/bin/python engine/run.py --publish          # verify approval, then post
 .venv/bin/python engine/run.py --dry-run          # generate and print, post nothing
+.venv/bin/python engine/awards.py --dry-run       # print today's award posts, queue nothing
 .venv/bin/python engine/run.py                    # prepare only, then tell you what's next
 
 .venv/bin/python engine/run.py --prepare --format ad   # force a format instead of the rotation
@@ -143,6 +148,30 @@ advance, so it cannot skip whatever was actually due. It bypasses the
 cursor, never compliance.
 
 ---
+
+## Award posts
+
+Weekdays, `awards.yml` reads the platform feed
+`GET /api/v1/public-awards/feed` and queues up to three LinkedIn posts
+about brand-new contract awards. It posts to the Page through the same
+LinkedIn client as the daily run, after the same `social-publish`
+approval, and it writes `content/awards_pending.json` so it cannot collide
+with the daily queue.
+
+Only rows with `is_new_award: true` are eligible. The three are the
+largest obligated amounts that are not already in
+`logs/award_posted.jsonl`. Each caption is written from that row and
+links to `https://pursuitai.net/awards/<slug>`. A dry run prints them and
+stops:
+
+```bash
+.venv/bin/python engine/awards.py --dry-run
+```
+
+The feed 404s until the platform turns `PUBLIC_AWARD_PAGES_ENABLED` on.
+That queues nothing. The token and the optional base URL are in
+[SECRETS.md](SECRETS.md). The operating rules are in
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## LinkedIn pilot mode
 
@@ -278,6 +307,7 @@ wrong can be traced afterwards instead of guessed at.
 | `test_publish_outcomes.py` | Per-channel outcomes, exit codes, topic consumption, notifications |
 | `test_links.py` | UTM construction, the landing-page rule, X character weighting |
 | `test_approval.py` | The gate: expiry, tampering, CI bypass refusal, no auto-approve |
+| `test_awards.py` | Award selection, feed errors, caption fact-grounding, the separate queue |
 
 Failure is injected by overwriting the poster modules inside a throwaway copy of
 the project, so tests exercise the real code path and never touch a network.

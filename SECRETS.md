@@ -31,10 +31,16 @@ shell or put them in a `.env` you never commit (`.env` is gitignored).
 | `LINKEDIN_TOKEN_EXPIRES_AT` | strongly recommended | `validate_linkedin.py --discover` | **Nothing can warn before the 60-day token dies.** The first symptom is a channel that quietly stopped posting. |
 | `LINKEDIN_CLIENT_ID` | recommended | LinkedIn app → Auth tab | No token introspection: a **revoked** token reads as healthy, and granted scopes are invisible until a post 403s. |
 | `LINKEDIN_CLIENT_SECRET` | recommended | LinkedIn app → Auth tab | As above — both are needed for introspection. |
+| `PUBLIC_AWARDS_FEED_TOKEN` | yes, for award posts | PursuitAI platform | `awards.yml` logs that the feed is not configured and queues nothing. The daily post is unaffected. |
+| `PUBLIC_AWARDS_FEED_BASE_URL` | optional | PursuitAI platform | Defaults to `https://api.pursuitai.net`. Set it only to point the award feed at another environment. |
 
 Only `X_API_KEY` and `IG_USER_ID` gate whether a channel is *attempted* — the
 engine checks those two as the "are credentials present" signal. The rest fail
 at authentication time if missing, which surfaces as a `failed` channel.
+
+`PUBLIC_AWARDS_FEED_TOKEN` is not one of those gates. With it unset,
+`awards.yml` queues nothing and exits clean. A token the feed rejects
+(401/403) fails the run.
 
 ### Not secrets — supplied automatically
 
@@ -205,6 +211,31 @@ without programmatic refresh tokens. `LINKEDIN_TOKEN_EXPIRES_AT` is what
 makes the deadline visible in advance instead of as an outage.
 
 ---
+
+## Public award feed — 1 secret, 1 optional URL
+
+`awards.yml` reads the platform's public award feed and queues up to three
+LinkedIn posts a day. It never publishes them; the `social-publish`
+environment still has to approve the batch. See the award-posts section in
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+| Secret | Example | Required? |
+|---|---|---|
+| `PUBLIC_AWARDS_FEED_TOKEN` | bearer token for `GET /api/v1/public-awards/feed` | yes, or the workflow queues nothing |
+| `PUBLIC_AWARDS_FEED_BASE_URL` | `https://api.pursuitai.net` | no — that origin is the default |
+
+The token is a bearer token on the feed, not a LinkedIn token and not a
+GitHub PAT. The platform serves the route only when
+`PUBLIC_AWARD_PAGES_ENABLED` is on. Until then the feed 404s and the
+workflow treats that as an empty day.
+
+The base URL is the API origin. The client appends
+`/api/v1/public-awards/feed`. You can also set the API root
+(`https://api.pursuitai.net/api/v1`) or the full feed URL; all three work.
+Leave it unset to use production.
+
+Do not put the token in the repo. It is a repository secret, same as the
+LinkedIn token.
 
 ## Media hosting — 4 secrets
 

@@ -50,7 +50,8 @@ def test_the_cron_times_are_current():
     """
     for wf_name, label in (("daily.yml", "post"),
                            ("missed-run.yml", "alarm"),
-                           ("heartbeat.yml", "heartbeat")):
+                           ("heartbeat.yml", "heartbeat"),
+                           ("awards.yml", "award")):
         m = re.search(r'cron:\s*"(\d+)\s+(\d+)', _wf(wf_name))
         assert m, f"no cron in {wf_name}"
         minute, hour = m.group(1), m.group(2)
