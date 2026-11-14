@@ -81,7 +81,7 @@ def asset_label(rel_path):
 
 
 def pending_review(pending, media_url=None, review_url=None,
-                   linkedin_url=None):
+                   linkedin_url=None, ig_url=None):
     """Ask a human to review the prepared post.
 
     There are no approve/reject buttons: interactive Slack actions need an
@@ -97,6 +97,13 @@ def pending_review(pending, media_url=None, review_url=None,
         header += (f"\npilot angle `{pending['angle_id']}`"
                    f" · utm_campaign `{utm.get('utm_campaign', 'pilot21')}`"
                    f" · utm_content `{pending['angle_id']}`")
+        enabled = pending.get("pilot_channels") or {}
+        if enabled:
+            on = [name for name, flag in enabled.items() if flag]
+            off = [name for name, flag in enabled.items() if not flag]
+            header += "\nchannels: " + ", ".join(on)
+            if off:
+                header += " (off: " + ", ".join(off) + ")"
     blocks = [_section(header)]
     if media_url:
         # The format, not a hardcoded "card". The label said card over a
@@ -108,6 +115,9 @@ def pending_review(pending, media_url=None, review_url=None,
     blocks.append(_section("*X*\n```" + (pending.get("text_x") or "") + "```"))
     blocks.append(_section("*Instagram*\n```"
                            + (pending.get("text_ig") or "") + "```"))
+    if ig_url:
+        blocks.append({"type": "image", "image_url": ig_url,
+                       "alt_text": f"{topic} instagram card"})
 
     # LinkedIn is posted BY HAND — the API needs w_organization_social, which
     # only the vetted Community Management product grants, and that access is

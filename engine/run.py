@@ -354,8 +354,8 @@ def prepare(force_format=None, force_topic=None):
                   f"{_posts.get(topic['id'], 0) % len(_usable)} "
                   f"of {len(_usable)} for {topic['id']}")
         topic = angles.apply_angle(topic, _angle)
-    # The message test is LinkedIn copy on a card. Pinning the format keeps
-    # a 21-day run from rendering an ad every morning that nothing will post.
+    # The message test is a card on every channel. Pinning the format keeps
+    # a 21-day run from rendering an ad the pilot graphic would replace.
     # An explicit --format still wins: the operator asked for it.
     pilot_angle = None
     if pilot.active():
@@ -366,9 +366,10 @@ def prepare(force_format=None, force_topic=None):
             sys.exit(1)
         issued = pilot.shipped_count(analytics.load_jsonl(LOG))
         pilot_angle = pilot.pick(catalog, issued)
+        on = [name for name, ok in pilot.enabled_channels().items() if ok]
         print(f"[prepare] pilot mode: angle={pilot_angle['id']} "
               f"({issued % len(catalog) + 1} of {len(catalog)}) — "
-              f"X and Instagram will not publish")
+              f"channels: {', '.join(on) or 'none'}")
     if pilot_angle and not force_format:
         fmt = "card"
     else:
@@ -546,7 +547,8 @@ def prepare(force_format=None, force_topic=None):
             sys.exit(1)
         # The angle is the copy on purpose. Recording it as an AI variation
         # would make copy_varied lie about a message we chose.
-        _template["text_linkedin"] = pending["text_linkedin"]
+        for field in ("text_x", "text_ig", "text_linkedin"):
+            _template[field] = pending[field]
     # AFTER the fallback, not before. A post whose AI copy tripped a rule
     # has just been reset to the template, and recording it as "varied"
     # would make the one measurement of this feature lie in precisely the
@@ -634,6 +636,51 @@ POSTERS = {
 # with no entry here is governed by its credential alone, as before.
 NOT_READY = {"linkedin": _linkedin_not_ready}
 
+def _credential_rejection(err):
+    """True when the platform refused the credentials, not the content.
+
+    401 and the expired-session phrases are the ones we can name. A 403 is
+    left as a failure: Instagram uses it for a bad file as well as a
+    permission, and those two need opposite responses.
+    """
+    low = (err or "").lower()
+    return any(phrase in low for phrase in (
+        "401",
+        "unauthorized",
+        "invalid oauth",
+        "could not authenticate",
+        "error validating access token",
+        "session has expired",
+        "token has expired",
+        "expired token",
+        "oauthexception",
+    ))
+
+
+def _pilot_skip_reason(ch, pending):
+    """Why a stamped pilot post must not attempt this channel, or None.
+
+    Missing secrets and a missing Instagram graphic are skips. The log
+    names the secrets. An expired token is also a skip, handled where the
+    poster raises, and it is not recorded as a post.
+    """
+    if not pending.get("pilot") or ch not in pilot.REQUIRED_SECRETS:
+        return None
+    missing = pilot.missing_secrets(ch)
+    if missing:
+        return ("missing " + ", ".join(missing)
+                + " — set those repository secrets; nothing was posted")
+    if ch == "ig":
+        rel = pending.get("media_ig") or ""
+        path = os.path.join(ROOT, rel) if rel else ""
+        if (not rel.lower().endswith((".jpg", ".jpeg"))
+                or not os.path.isfile(path)):
+            shown = rel or "media_ig unset"
+            return (f"Instagram requires the rendered JPEG graphic ({shown}); "
+                    "nothing was posted")
+    return None
+
+
 def _pilot_handoff(pending, reason):
     """LinkedIn could not be published. Hand the founder the copy.
 
@@ -665,7 +712,7 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
       failed    the call raised, carries the error
       skipped   enabled but credentials absent
       disabled  turned off explicitly with --skip-x / --skip-ig /
-                --skip-linkedin, or by pilot mode for X and Instagram
+                --skip-linkedin, or by a pilot channel toggle
       handoff   pilot only: LinkedIn could not be published, so the caption
                 was handed to the founder instead of skipped
 
@@ -702,15 +749,34 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     cal = load_json(os.path.join(ROOT, "content", "calendar.json"), None)
     state = load_json(STATE, {"topic_index": 0, "run_count": 0})
 
-    # The prepared post is the authority. PILOT_MODE on the publish job is
-    # the same switch, so a job that forgot the env still will not send a
-    # pilot caption to X, and a job that set it still holds X and Instagram.
+    # The prepared post is the authority. A stamped pilot post publishes
+    # to every channel the toggle leaves on, even if this job forgot
+    # PILOT_MODE. The env is the same switch for member posting, the
+    # LinkedIn handoff, and the per-channel toggles.
     in_pilot = bool(pending.get("pilot")) or pilot.active()
+    disabled_why = {}
     if in_pilot:
-        if not (skip_x and skip_ig):
-            print("[publish] pilot mode: skipping X and Instagram")
-        skip_x = True
-        skip_ig = True
+        toggles = (
+            ("x", "PILOT_X", "channels.x"),
+            ("ig", "PILOT_INSTAGRAM", "channels.instagram"),
+            ("linkedin", "PILOT_LINKEDIN", "channels.linkedin"),
+        )
+        for ch, env_name, field in toggles:
+            if pilot.channel_on(ch):
+                continue
+            if ch == "x":
+                skip_x = True
+            elif ch == "ig":
+                skip_ig = True
+            else:
+                skip_linkedin = True
+            disabled_why[ch] = (
+                f"pilot channel toggle ({env_name}=0 or "
+                f"content/pilot.json {field})")
+        planned = [name for name, flag in (
+            ("x", not skip_x), ("instagram", not skip_ig),
+            ("linkedin", not skip_linkedin)) if flag]
+        print("[publish] pilot channels: " + (", ".join(planned) or "none"))
         if (os.environ.get("LINKEDIN_ACCESS_TOKEN")
                 and not os.environ.get("LINKEDIN_ORG_ID")
                 and not skip_linkedin):
@@ -733,10 +799,14 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
     for ch, (env_var, poster) in POSTERS.items():
         not_ready = NOT_READY.get(ch)
         reason = not_ready() if not_ready else None
+        skip_reason = _pilot_skip_reason(ch, pending)
         if disabled[ch]:
             results[ch] = {"status": "disabled", "id": None, "error": None}
-            why = ("pilot mode" if in_pilot and ch in ("x", "ig") else "flag")
+            why = disabled_why.get(ch, "flag")
             print(f"[publish] {ch} disabled by {why}")
+        elif skip_reason:
+            results[ch] = {"status": "skipped", "id": None, "error": skip_reason}
+            print(f"[publish] {ch} SKIPPED: {skip_reason}")
         elif not os.environ.get(env_var):
             if ch == "linkedin" and in_pilot:
                 results[ch] = _pilot_handoff(
@@ -779,6 +849,14 @@ def publish(skip_x=False, skip_ig=False, skip_linkedin=False,
                 err = f"{type(e).__name__}: {e}"
                 if ch == "linkedin" and in_pilot:
                     results[ch] = _pilot_handoff(pending, err)
+                elif (pending.get("pilot") and ch in ("x", "ig")
+                        and _credential_rejection(err)):
+                    names = ", ".join(pilot.REQUIRED_SECRETS[ch])
+                    results[ch] = {"status": "skipped", "id": None,
+                                   "error": f"{err} — refresh {names}"}
+                    print(f"[publish] {ch} SKIPPED: credentials rejected "
+                          f"({err}). Refresh {names}. Nothing was posted "
+                          f"to {ch}.")
                 else:
                     results[ch] = {"status": "failed", "id": None, "error": err}
                     print(f"[publish] {ch} FAILED: {err}")
@@ -911,9 +989,13 @@ def notify_pending():
     li_rel = pending.get("media_linkedin")
     linkedin_url = (media.public_url(li_rel, cache_bust=True)
                     if base and li_rel else None)
+    ig_rel = pending.get("media_ig") if pending.get("pilot") else None
+    ig_url = (media.public_url(ig_rel, cache_bust=True)
+              if base and ig_rel else None)
     sent = notify.pending_review(pending, media_url=media_url,
                                  review_url=os.environ.get("REVIEW_URL"),
-                                 linkedin_url=linkedin_url)
+                                 linkedin_url=linkedin_url,
+                                 ig_url=ig_url)
     if sent:
         print(f"[notify] review request sent for {pending['topic']}")
     else:
@@ -982,7 +1064,10 @@ def main(argv=None):
     if args.dry_run:
         p = prepare()
         print("--- X ---\n" + p["text_x"])
+        if p.get("text_x_reply"):
+            print("--- X reply ---\n" + p["text_x_reply"])
         print("--- IG ---\n" + p["text_ig"])
+        print("--- LinkedIn ---\n" + (p.get("text_linkedin") or ""))
         return
     if args.prepare:
         prepare(force_format=args.fmt, force_topic=args.topic_id)

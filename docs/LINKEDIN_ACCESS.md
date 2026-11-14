@@ -24,6 +24,13 @@ LinkedIn status `posted`:
 The run log read `[linkedin] posted ...share:7524472017090166784`. Later
 rows in the same file, through 2026-11-12, are also LinkedIn `posted`.
 
+From the change that reopened X and Instagram, a pilot run posts that
+same angle to all three channels after the same `social-publish`
+approval. `PILOT_X`, `PILOT_INSTAGRAM`, and `PILOT_LINKEDIN` (or
+`channels` in `content/pilot.json`) hold one channel. A missing X or
+Instagram secret skips that channel and names the secret. It does not
+record a post that did not happen.
+
 Three things did not change with that post:
 
 - **The human approval gate is unchanged.** Publish still waits on the

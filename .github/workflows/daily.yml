@@ -291,10 +291,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORMAT: ${{ inputs.format }}
           TOPIC: ${{ inputs.topic }}
-          # LinkedIn message test. Unset stays off (content/pilot.json
-          # ships with enabled false). Set the repository variable
-          # PILOT_MODE to 1, or a secret of the same name. "0" forces off.
+          # LinkedIn/X/Instagram message test. Unset stays off
+          # (content/pilot.json ships with enabled false). Set the
+          # repository variable PILOT_MODE to 1, or a secret of the same
+          # name. "0" forces off. PILOT_X, PILOT_INSTAGRAM, and
+          # PILOT_LINKEDIN hold one channel: "0" off, "1" on, unset
+          # defers to content/pilot.json channels.
           PILOT_MODE: ${{ vars.PILOT_MODE || secrets.PILOT_MODE }}
+          PILOT_X: ${{ vars.PILOT_X || secrets.PILOT_X }}
+          PILOT_INSTAGRAM: ${{ vars.PILOT_INSTAGRAM || secrets.PILOT_INSTAGRAM }}
+          PILOT_LINKEDIN: ${{ vars.PILOT_LINKEDIN || secrets.PILOT_LINKEDIN }}
         run: |
           args=""
           [ -n "$FORMAT" ] && args="$args --format $FORMAT"
@@ -457,11 +463,15 @@ jobs:
           # channel, with no workflow edit and no code change. An unset
           # secret arrives as "", which is falsy.
           LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
-          # Same switch the prepare job used. A prepared pilot post also
-          # carries pilot:true, so publish still skips X and Instagram if
-          # this line is empty — but member posting and the handoff need
-          # the flag in this job too when prepare did not stamp it.
+          # Same switch the prepare job used. A prepared pilot post carries
+          # pilot:true, so this job still publishes that angle to every
+          # channel the toggle leaves on when this line is empty. Member
+          # posting, the LinkedIn handoff, and the per-channel toggles
+          # read the flag here too.
           PILOT_MODE: ${{ vars.PILOT_MODE || secrets.PILOT_MODE }}
+          PILOT_X: ${{ vars.PILOT_X || secrets.PILOT_X }}
+          PILOT_INSTAGRAM: ${{ vars.PILOT_INSTAGRAM || secrets.PILOT_INSTAGRAM }}
+          PILOT_LINKEDIN: ${{ vars.PILOT_LINKEDIN || secrets.PILOT_LINKEDIN }}
           SKIP: ${{ inputs.skip }}
           # Empty string on a schedule event, which is falsy — a cron run
           # can only ever publish for real.

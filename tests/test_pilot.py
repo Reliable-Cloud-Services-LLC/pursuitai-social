@@ -1,9 +1,9 @@
-"""LinkedIn 21-day message test.
+"""21-day message test.
 
-Off unless PILOT_MODE=1 or content/pilot.json says enabled. While on, X and
-Instagram are not published, LinkedIn rotates five angles, and every link
-uses the same UTM quartet: source linkedin, medium organic, campaign
-pilot21, content = the angle id.
+Off unless PILOT_MODE=1 or content/pilot.json says enabled. While on, the
+run posts the angle to LinkedIn, X, and Instagram after the same approval
+gate. Each link uses utm_medium=organic, utm_campaign=pilot21, and
+utm_content = the angle id. utm_source is linkedin, x, or instagram.
 """
 import json
 import os
@@ -43,7 +43,10 @@ def test_shipped_config_is_off_and_uses_the_agreed_slugs():
     cfg = json.load(open(os.path.join(ROOT, "content", "pilot.json")))
     assert cfg["enabled"] is False
     assert cfg["campaign"] == "pilot21"
+    assert cfg["channels"] == {"x": True, "instagram": True, "linkedin": True}
     assert [a["id"] for a in cfg["angles"]] == ANGLE_IDS
+    for angle in cfg["angles"]:
+        assert angle.get("hook_x"), angle["id"]
 
 
 def test_off_by_default(monkeypatch):
@@ -60,6 +63,40 @@ def test_only_the_digit_one_enables(monkeypatch):
     assert pilot.active() is False
 
 
+def test_each_channel_toggles_without_code(monkeypatch, tmp_path):
+    cfg = tmp_path / "pilot.json"
+    cfg.write_text(json.dumps({
+        "enabled": True,
+        "channels": {"x": True, "instagram": False, "linkedin": True},
+    }))
+    monkeypatch.setattr(pilot, "CONFIG", str(cfg))
+    for var in ("PILOT_X", "PILOT_INSTAGRAM", "PILOT_LINKEDIN"):
+        monkeypatch.delenv(var, raising=False)
+    assert pilot.channel_on("x") is True
+    assert pilot.channel_on("ig") is False
+    assert pilot.channel_on("linkedin") is True
+    # "1" forces on over a false file. "0" forces off over a true file.
+    # "true" is not the contract, so the file stays in charge.
+    monkeypatch.setenv("PILOT_INSTAGRAM", "1")
+    assert pilot.channel_on("ig") is True
+    monkeypatch.setenv("PILOT_X", "0")
+    assert pilot.channel_on("x") is False
+    monkeypatch.setenv("PILOT_X", "true")
+    assert pilot.channel_on("x") is True
+
+
+def test_a_missing_channel_key_stays_on(monkeypatch, tmp_path):
+    cfg = tmp_path / "pilot.json"
+    cfg.write_text(json.dumps({"enabled": True, "channels": {"ig": False}}))
+    monkeypatch.setattr(pilot, "CONFIG", str(cfg))
+    monkeypatch.delenv("PILOT_X", raising=False)
+    monkeypatch.delenv("PILOT_INSTAGRAM", raising=False)
+    monkeypatch.delenv("PILOT_LINKEDIN", raising=False)
+    assert pilot.channel_on("ig") is False
+    assert pilot.channel_on("x") is True
+    assert pilot.channel_on("linkedin") is True
+
+
 def test_zero_beats_an_enabled_file(monkeypatch, tmp_path):
     cfg = tmp_path / "pilot.json"
     cfg.write_text(json.dumps({"enabled": True, "campaign": "pilot21",
@@ -74,6 +111,7 @@ def test_zero_beats_an_enabled_file(monkeypatch, tmp_path):
 # ---------- links, log fields, cards ----------
 
 def test_every_angle_link_uses_the_pilot_utm():
+    import links
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         brand = json.load(f)["brand"]
     for angle in pilot.angles():
@@ -87,27 +125,59 @@ def test_every_angle_link_uses_the_pilot_utm():
         assert _params(url) == tags
         assert url.startswith("https://pursuitai.net/")
 
+        bundle = pilot.utm_channels(angle)
+        assert set(bundle) == {"x", "ig", "linkedin"}
+        assert bundle["ig"]["utm_source"] == "instagram"
+        assert bundle["x"]["utm_source"] == "x"
+        assert bundle["linkedin"] == tags
+
+        x_body = pilot.x_text(angle, brand, "fit-scoring")
+        x_urls = [w for w in x_body.split() if w.startswith("http")]
+        assert x_urls, angle["id"]
+        assert len(x_urls) == 1
+        assert links.x_weighted_length(x_body, x_urls) <= 280
+        assert "…" not in x_body
+        assert _params(x_urls[0]) == bundle["x"]
+        assert "14-day" in x_body
+
+        ig_body = pilot.ig_text(angle, brand, "fit-scoring")
+        assert len(ig_body) <= 2200
+        assert "link in bio" in ig_body
+        assert "not tappable" in ig_body
+        ig_urls = [w for w in ig_body.split() if w.startswith("http")]
+        assert len(ig_urls) == 1
+        assert _params(ig_urls[0]) == bundle["ig"]
+
 
 def test_pilot_copy_passes_compliance():
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         cal = json.load(f)
     topic = next(t for t in cal["topics"] if compliance.is_publishable(t))
     for angle in pilot.angles():
-        text = pilot.linkedin_text(angle, cal["brand"], topic["id"])
-        fields = [text, angle["headline"], angle["body"], angle["stat"]]
+        fields = [
+            pilot.linkedin_text(angle, cal["brand"], topic["id"]),
+            pilot.x_text(angle, cal["brand"], topic["id"]),
+            pilot.ig_text(angle, cal["brand"], topic["id"]),
+            angle["headline"], angle["body"], angle["stat"],
+            angle.get("hook_x") or "",
+        ]
         for field in fields:
             problems = compliance.check_claims(topic, field)
             assert not problems, (angle["id"], problems)
 
 
 def test_pilot_cards_fit_the_linkedin_canvas(tmp_path):
+    from PIL import Image
     with open(os.path.join(ROOT, "content", "calendar.json")) as f:
         brand = json.load(f)["brand"]
     for angle in pilot.angles():
-        img = cards.render_card(
-            pilot.card_topic(angle), brand, size=(1600, 900),
-            out_path=str(tmp_path / f"{angle['id']}.png"))
-        assert img.size == (1600, 900)
+        assets = pilot.render_assets(angle, brand, root=str(tmp_path))
+        with Image.open(tmp_path / assets["x"]) as img:
+            assert img.size == (1600, 900)
+        with Image.open(tmp_path / assets["ig"]) as img:
+            assert img.size == (1080, 1350)
+        assert assets["ig"].endswith(".jpg")
+        assert assets["linkedin"] == assets["x"]
 
 
 def test_angles_rotate_in_config_order():
@@ -128,6 +198,14 @@ def test_a_handoff_advances_the_angle_and_a_draft_does_not():
     assert pilot.shipped_count(rows) == 2
     assert pilot.pick(pilot.angles(), pilot.shipped_count(rows))["id"] == (
         ANGLE_IDS[2])
+
+
+def test_an_x_post_advances_the_angle_when_linkedin_is_held():
+    rows = [{"angle_id": "fifty-percent",
+             "channels": {"x": {"status": "posted", "id": "1"},
+                          "linkedin": {"status": "disabled"},
+                          "ig": {"status": "skipped"}}}]
+    assert pilot.shipped_count(rows) == 1
 
 
 # ---------- winner report ----------
@@ -184,6 +262,8 @@ def test_the_winner_ignores_the_bots_own_reply_and_names_utm_content():
     assert summary["campaign"] == "pilot21"
     text = pilot.render_report(summary)
     assert "utm_campaign `pilot21`" in text
+    assert "utm_source is the channel" in text
+    assert "instagram" in text
     assert "utm_content=sam-search" in text
     assert "Winner this week: `sam-search`" in text
     assert "own replies" in text
@@ -270,14 +350,25 @@ def _sandbox(tmp_path):
     return str(dst)
 
 
+X_READY = {
+    "X_API_KEY": "k", "X_API_SECRET": "s",
+    "X_ACCESS_TOKEN": "t", "X_ACCESS_SECRET": "ts",
+}
+IG_READY = {
+    "IG_USER_ID": "u", "IG_ACCESS_TOKEN": "ig-tok",
+    "MEDIA_BASE_URL": "https://cdn.example.test",
+}
+
+
 def _run(args, cwd, extra=None):
     env = dict(os.environ)
     for var in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN",
                 "X_ACCESS_SECRET", "IG_USER_ID", "IG_ACCESS_TOKEN",
-                "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL",
+                "MEDIA_BASE_URL", "ANTHROPIC_API_KEY", "NOTIFY_WEBHOOK_URL",
                 "LINKEDIN_ACCESS_TOKEN", "LINKEDIN_ORG_ID",
                 "LINKEDIN_ALLOW_MEMBER_POST", "LINKEDIN_DRAFT",
-                "PILOT_MODE", "GITHUB_ACTIONS"):
+                "PILOT_MODE", "PILOT_X", "PILOT_INSTAGRAM", "PILOT_LINKEDIN",
+                "GITHUB_ACTIONS"):
         env.pop(var, None)
     env.update(extra or {})
     return subprocess.run([sys.executable, "engine/run.py", *args],
@@ -299,76 +390,236 @@ def test_prepare_without_pilot_does_not_stamp_an_angle(tmp_path):
     assert pending["text_x"] and pending["text_ig"] and pending["text_linkedin"]
 
 
-def test_pilot_skips_x_and_ig_and_hands_linkedin_off(tmp_path):
-    sandbox = _sandbox(tmp_path)
+def _install_recorders(sandbox):
     _install(sandbox, "x",
-             "def post(*a, **k):\n"
-             "    raise AssertionError('X must not post in pilot mode')\n")
+             "import json\n"
+             "def post(text, media_path=None, reply_text=None):\n"
+             "    json.dump({'text': text, 'media': media_path,\n"
+             "               'reply': reply_text}, open('x_call.json', 'w'))\n"
+             "    return {'id': '111', 'reply_id': None, 'reply_error': None}\n")
     _install(sandbox, "ig",
-             "def post_image(*a, **k):\n"
-             "    raise AssertionError('IG must not post in pilot mode')\n"
-             "def post_reel(*a, **k):\n"
-             "    raise AssertionError('IG must not post in pilot mode')\n")
-    env = {"PILOT_MODE": "1", "X_API_KEY": "k", "IG_USER_ID": "u"}
+             "import json\n"
+             "def post_image(path, caption):\n"
+             "    json.dump({'path': path, 'caption': caption},\n"
+             "              open('ig_call.json', 'w'))\n"
+             "    return 'ig-1'\n"
+             "def post_reel(path, caption, cover_rel_path=None):\n"
+             "    raise AssertionError('pilot card is not a reel')\n")
+    _install(sandbox, "linkedin",
+             "def post_media(path, caption, alt_text=None):\n"
+             "    return {'id': 'urn:li:share:555', 'url': 'https://li/555'}\n")
+
+
+def _last(sandbox):
+    return json.loads(open(os.path.join(
+        sandbox, "logs", "posted.jsonl")).read().splitlines()[-1])
+
+
+def test_pilot_prepare_stamps_every_channel(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    env = {"PILOT_MODE": "1"}
     r = _run(["--prepare"], sandbox, env)
     assert r.returncode == 0, r.stdout + r.stderr
     pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
     assert pending["angle_id"] == "fifty-percent"
     assert pending["pilot"] is True
     assert pending["utm"] == {**UTM, "utm_content": "fifty-percent"}
-    url = next(w for w in pending["text_linkedin"].split() if w.startswith("http"))
-    assert _params(url) == pending["utm"]
-    assert pending["text_x"] and pending["text_ig"]
+    assert pending["utm_channels"]["x"]["utm_source"] == "x"
+    assert pending["utm_channels"]["ig"]["utm_source"] == "instagram"
+    assert pending["utm_channels"]["linkedin"]["utm_source"] == "linkedin"
+    assert pending["pilot_channels"] == {
+        "x": True, "instagram": True, "linkedin": True}
+    assert pending["text_x_reply"] is None
+    assert pending["copy_varied"] == {
+        "x": False, "ig": False, "linkedin": False}
+    for field, source in (("text_x", "x"), ("text_ig", "instagram"),
+                          ("text_linkedin", "linkedin")):
+        url = next(w for w in pending[field].split() if w.startswith("http"))
+        assert _params(url)["utm_source"] == source
+        assert _params(url)["utm_content"] == "fifty-percent"
+        assert _params(url)["utm_campaign"] == "pilot21"
     assert pending["media_linkedin"].endswith("pilot-fifty-percent_x.png")
+    assert pending["media_x"].endswith("pilot-fifty-percent_x.png")
+    assert pending["media_ig"].endswith("pilot-fifty-percent_ig.jpg")
+    assert "link in bio" in pending["text_ig"]
+    assert "not tappable" in pending["text_ig"]
 
-    r = _run(["--approve"], sandbox, env)
-    assert r.returncode == 0, r.stdout + r.stderr
+
+def test_missing_secrets_skip_x_and_ig_and_hand_linkedin_off(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    _install(sandbox, "x",
+             "def post(*a, **k):\n"
+             "    raise AssertionError('X must not be called')\n")
+    _install(sandbox, "ig",
+             "def post_image(*a, **k):\n"
+             "    raise AssertionError('IG must not be called')\n"
+             "def post_reel(*a, **k):\n"
+             "    raise AssertionError('IG must not be called')\n")
+    env = {"PILOT_MODE": "1"}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    assert _run(["--approve"], sandbox, env).returncode == 0
     r = _run(["--publish"], sandbox, env)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "X must not post" not in r.stdout + r.stderr
-    entry = json.loads(open(os.path.join(
-        sandbox, "logs", "posted.jsonl")).read().splitlines()[-1])
-    assert entry["angle_id"] == "fifty-percent"
-    assert entry["utm"]["utm_campaign"] == "pilot21"
-    assert entry["utm"]["utm_content"] == "fifty-percent"
-    assert entry["channels"]["x"]["status"] == "disabled"
-    assert entry["channels"]["ig"]["status"] == "disabled"
+    assert "must not be called" not in r.stdout + r.stderr
+    assert "nothing was posted" in r.stdout
+    entry = _last(sandbox)
     assert entry["channels"]["linkedin"]["status"] == "handoff"
     assert entry["outcome"] == "handoff"
-    assert "LINKEDIN_ACCESS_TOKEN" in entry["channels"]["linkedin"]["error"]
+    for name in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN",
+                 "X_ACCESS_SECRET"):
+        assert name in entry["channels"]["x"]["error"]
+    assert entry["channels"]["x"]["status"] == "skipped"
+    for name in ("IG_USER_ID", "IG_ACCESS_TOKEN", "MEDIA_BASE_URL"):
+        assert name in entry["channels"]["ig"]["error"]
+    assert entry["channels"]["ig"]["status"] == "skipped"
     assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
 
     r = _run(["--prepare"], sandbox, env)
     assert r.returncode == 0, r.stdout + r.stderr
     nxt = json.load(open(os.path.join(sandbox, "content", "pending.json")))
     assert nxt["angle_id"] == "sam-search"
-    assert nxt["utm"]["utm_content"] == "sam-search"
+
+
+def test_pilot_posts_all_three_after_approval(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    _install_recorders(sandbox)
+    env = {"PILOT_MODE": "1", "LINKEDIN_ACCESS_TOKEN": "tok",
+           "LINKEDIN_ORG_ID": "109876", **X_READY, **IG_READY}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    blocked = _run(["--publish"], sandbox, env)
+    assert blocked.returncode != 0
+    assert "BLOCKED" in blocked.stdout + blocked.stderr
+    assert not os.path.exists(os.path.join(sandbox, "logs", "posted.jsonl"))
+
+    assert _run(["--approve"], sandbox, env).returncode == 0
+    r = _run(["--publish"], sandbox, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    entry = _last(sandbox)
+    assert entry["channels"]["x"]["status"] == "posted"
+    assert entry["channels"]["ig"]["status"] == "posted"
+    assert entry["channels"]["linkedin"]["status"] == "posted"
+    assert entry["x"] == "111"
+    assert entry["ig"] == "ig-1"
+    assert entry["linkedin"] == "urn:li:share:555"
+    x_call = json.load(open(os.path.join(sandbox, "x_call.json")))
+    assert x_call["reply"] is None
+    assert "utm_source=x" in x_call["text"]
+    assert "utm_content=fifty-percent" in x_call["text"]
+    assert x_call["media"].endswith("pilot-fifty-percent_x.png")
+    ig_call = json.load(open(os.path.join(sandbox, "ig_call.json")))
+    assert ig_call["path"].endswith("pilot-fifty-percent_ig.jpg")
+    assert "utm_source=instagram" in ig_call["caption"]
+    assert "not tappable" in ig_call["caption"]
+    assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
 
 
 def test_pilot_posts_as_the_member_when_there_is_no_org(tmp_path):
     sandbox = _sandbox(tmp_path)
-    _install(sandbox, "x",
-             "def post(*a, **k):\n    raise AssertionError('X')\n")
-    _install(sandbox, "ig",
-             "def post_image(*a, **k):\n    raise AssertionError('IG')\n"
-             "def post_reel(*a, **k):\n    raise AssertionError('IG')\n")
-    _install(sandbox, "linkedin",
-             "def post_media(path, caption, alt_text=None):\n"
-             "    return {'id': 'urn:li:share:555', 'url': 'https://li/555'}\n")
-    env = {"PILOT_MODE": "1", "X_API_KEY": "k", "IG_USER_ID": "u",
-           "LINKEDIN_ACCESS_TOKEN": "tok"}
+    _install_recorders(sandbox)
+    env = {"PILOT_MODE": "1", "LINKEDIN_ACCESS_TOKEN": "tok",
+           **X_READY, **IG_READY}
     assert _run(["--prepare"], sandbox, env).returncode == 0
     assert _run(["--approve"], sandbox, env).returncode == 0
     r = _run(["--publish"], sandbox, env)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "member" in r.stdout
-    entry = json.loads(open(os.path.join(
-        sandbox, "logs", "posted.jsonl")).read().splitlines()[-1])
+    entry = _last(sandbox)
     assert entry["channels"]["linkedin"]["status"] == "posted"
-    assert entry["linkedin"] == "urn:li:share:555"
-    assert entry["channels"]["x"]["status"] == "disabled"
+    assert entry["channels"]["x"]["status"] == "posted"
+    assert entry["channels"]["ig"]["status"] == "posted"
     assert entry["angle_id"] == "fifty-percent"
     assert not os.path.exists(os.path.join(sandbox, "content", "state.json"))
+
+
+def test_pilot_x_toggle_holds_x_only(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    _install_recorders(sandbox)
+    env = {"PILOT_MODE": "1", "PILOT_X": "0",
+           "LINKEDIN_ACCESS_TOKEN": "tok", "LINKEDIN_ORG_ID": "109876",
+           **X_READY, **IG_READY}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    assert _run(["--approve"], sandbox, env).returncode == 0
+    r = _run(["--publish"], sandbox, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    entry = _last(sandbox)
+    assert entry["channels"]["x"]["status"] == "disabled"
+    assert "PILOT_X" in r.stdout
+    assert entry["channels"]["ig"]["status"] == "posted"
+    assert entry["channels"]["linkedin"]["status"] == "posted"
+    assert not os.path.exists(os.path.join(sandbox, "x_call.json"))
+
+
+def test_pilot_json_holds_instagram_until_the_env_overrides(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    path = os.path.join(sandbox, "content", "pilot.json")
+    cfg = json.load(open(path))
+    cfg["channels"]["instagram"] = False
+    json.dump(cfg, open(path, "w"))
+    _install_recorders(sandbox)
+    env = {"PILOT_MODE": "1", "LINKEDIN_ACCESS_TOKEN": "tok",
+           "LINKEDIN_ORG_ID": "109876", **X_READY, **IG_READY}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
+    assert pending["pilot_channels"]["instagram"] is False
+    assert _run(["--approve"], sandbox, env).returncode == 0
+    r = _run(["--publish"], sandbox, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    entry = _last(sandbox)
+    assert entry["channels"]["ig"]["status"] == "disabled"
+    assert entry["channels"]["x"]["status"] == "posted"
+    assert not os.path.exists(os.path.join(sandbox, "ig_call.json"))
+
+    env["PILOT_INSTAGRAM"] = "1"
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
+    assert pending["pilot_channels"]["instagram"] is True
+
+
+def test_a_missing_graphic_skips_instagram(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    _install_recorders(sandbox)
+    env = {"PILOT_MODE": "1", "LINKEDIN_ACCESS_TOKEN": "tok",
+           "LINKEDIN_ORG_ID": "109876", **X_READY, **IG_READY}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    pending = json.load(open(os.path.join(sandbox, "content", "pending.json")))
+    os.remove(os.path.join(sandbox, pending["media_ig"]))
+    assert _run(["--approve"], sandbox, env).returncode == 0
+    r = _run(["--publish"], sandbox, env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    entry = _last(sandbox)
+    assert entry["channels"]["ig"]["status"] == "skipped"
+    assert "JPEG" in entry["channels"]["ig"]["error"]
+    assert entry["channels"]["x"]["status"] == "posted"
+    assert not os.path.exists(os.path.join(sandbox, "ig_call.json"))
+
+
+def test_a_rejected_token_skips_and_an_outage_fails(tmp_path):
+    sandbox = _sandbox(tmp_path)
+    _install(sandbox, "x",
+             "def post(text, media_path=None, reply_text=None):\n"
+             "    raise RuntimeError('401 Unauthorized')\n")
+    _install(sandbox, "ig",
+             "def post_image(path, caption):\n"
+             "    raise RuntimeError('simulated IG outage')\n"
+             "def post_reel(path, caption, cover_rel_path=None):\n"
+             "    raise RuntimeError('simulated IG outage')\n")
+    _install(sandbox, "linkedin",
+             "def post_media(path, caption, alt_text=None):\n"
+             "    return {'id': 'urn:li:share:555'}\n")
+    env = {"PILOT_MODE": "1", "LINKEDIN_ACCESS_TOKEN": "tok",
+           "LINKEDIN_ORG_ID": "109876", **X_READY, **IG_READY}
+    assert _run(["--prepare"], sandbox, env).returncode == 0
+    assert _run(["--approve"], sandbox, env).returncode == 0
+    r = _run(["--publish"], sandbox, env)
+    assert r.returncode != 0
+    entry = _last(sandbox)
+    assert entry["channels"]["x"]["status"] == "skipped"
+    assert "401" in entry["channels"]["x"]["error"]
+    assert "X_ACCESS_TOKEN" in entry["channels"]["x"]["error"]
+    assert "Nothing was posted" in r.stdout
+    assert entry["channels"]["ig"]["status"] == "failed"
+    assert "simulated IG outage" in entry["channels"]["ig"]["error"]
+    assert entry["channels"]["linkedin"]["status"] == "posted"
 
 
 def test_docs_and_workflows_name_the_switch():
@@ -377,14 +628,21 @@ def test_docs_and_workflows_name_the_switch():
     for doc in (readme, ops):
         assert "PILOT_MODE" in doc
         assert "pilot21" in doc
-        assert "content/pilot.json" in doc or "content/pilot.json" in doc
+        assert "content/pilot.json" in doc
+        assert "social-publish" in doc
+        for name in ("PILOT_X", "PILOT_INSTAGRAM", "PILOT_LINKEDIN"):
+            assert name in doc
         for angle_id in ANGLE_IDS:
             assert angle_id in doc
         assert "utm_content" in doc
+        assert "instagram" in doc
     daily = open(os.path.join(ROOT, ".github", "workflows", "daily.yml")).read()
     analytics = open(os.path.join(
         ROOT, ".github", "workflows", "analytics.yml")).read()
     assert daily.count("PILOT_MODE:") >= 2
+    for name in ("PILOT_X:", "PILOT_INSTAGRAM:", "PILOT_LINKEDIN:"):
+        assert daily.count(name) >= 2
+    assert "environment: social-publish" in daily
     assert "PILOT_MODE:" in analytics
     assert "NOTIFY_WEBHOOK_URL" in analytics
     assert "LINKEDIN_ACCESS_TOKEN" in analytics
