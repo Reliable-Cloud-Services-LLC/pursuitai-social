@@ -57,7 +57,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `post_x.py` | Posts to X. Media rides the v1.1 upload endpoint, the post itself is API v2. |
 | `post_ig.py` | Posts to Instagram. The Graph API fetches media from a public URL itself, which is why assets are committed. |
 | `notify.py` | Slack notifications: review requests, failure alerts, the weekly heartbeat, and the LinkedIn pilot winner report. Silent no-op when unconfigured, and never raises. |
-| `pilot.py` | LinkedIn 21-day message test. Off unless `PILOT_MODE=1` or `content/pilot.json` has `"enabled": true`. |
+| `pilot.py` | 21-day message test on LinkedIn, X, and Instagram. Off unless `PILOT_MODE=1` or `content/pilot.json` has `"enabled": true`. |
 | `media.py` | Builds the public media URL, and rejects a base Instagram's fetcher couldn't reach. One place the media host is resolved. |
 | `analytics.py` | Reads post performance back from each platform into `logs/metrics.jsonl`. Runs weekly, never on the publish path. |
 | `rotation.py` | Weights the topic order by measured engagement. Degrades to plain round-robin when metrics are thin. |
@@ -67,7 +67,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | File | What it does |
 |---|---|
 | `calendar.json` | **The single source of truth.** Brand config plus 24 feature topics, each with a headline, body, per-platform hooks, and a stat. Add a topic here and nothing else changes. |
-| `pilot.json` | The five LinkedIn pilot angles. Edit the copy here. Ids are `utm_content`. `"enabled"` ships `false`. |
+| `pilot.json` | The five pilot angles. Edit the copy here. Ids are `utm_content`. `"enabled"` ships `false`. `"channels"` turns X, Instagram, or LinkedIn off without a code change. |
 | `state.json` | The rotation cursor: which topic is next, how many runs have published. Only advances on a confirmed post. |
 | `pending.json` | The prepared-but-unpublished post, awaiting review. Committed, because the publish job is a separate run. |
 | `approved.json` | Proof of approval: a hash of `pending.json` plus a timestamp. Deleted once spent. |
@@ -179,9 +179,9 @@ That queues nothing. The token and the optional base URL are in
 [SECRETS.md](SECRETS.md). The operating rules are in
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-## LinkedIn pilot mode
+## Pilot mode
 
-Off by default. A 21-day message test: five angles, LinkedIn only, then a weekly winner so the best one can be boosted.
+Off by default. A 21-day message test: five angles, posted to LinkedIn, X, and Instagram after the same `social-publish` approval as every other post, then a weekly winner so the best one can be boosted.
 
 **Turn it on with either of these. Both have to be the digit `1`, not the word `true`.**
 
@@ -190,13 +190,26 @@ Off by default. A 21-day message test: five angles, LinkedIn only, then a weekly
 
 `PILOT_MODE=0` forces the pilot off even if the file says enabled. Do not commit access tokens. Turning this on does not change any credential.
 
+**Hold one channel** without a code change. Either spelling works, and the env wins:
+
+| Channel | `content/pilot.json` | Actions variable (or secret of the same name) |
+|---|---|---|
+| X | `"channels": {"x": false}` | `PILOT_X=0` |
+| Instagram | `"channels": {"instagram": false}` | `PILOT_INSTAGRAM=0` |
+| LinkedIn | `"channels": {"linkedin": false}` | `PILOT_LINKEDIN=0` |
+
+`1` forces the channel on. `0` forces it off. Unset, or any other word, leaves the file in charge. The file ships all three `true`. `daily.yml` passes the three variables into prepare and publish.
+
 While it is on:
 
-- X and Instagram are not published. Their poster code is unchanged; the run marks those channels disabled.
-- LinkedIn rotates the angles in `content/pilot.json`. The product topic cursor does not move, so the normal feed resumes on the topic that was next when the test started.
-- Every link is `https://pursuitai.net/` with `utm_source=linkedin`, `utm_medium=organic`, `utm_campaign=pilot21`, and `utm_content` set to the angle id. The same four values are stored on the `posted.jsonl` row as `utm`, next to `angle_id`.
+- Each run posts the next angle to LinkedIn, X, and Instagram, unless that channel's toggle is off. The publish job still waits on the `social-publish` environment. Nothing goes out before a human approves.
+- X gets `hook_x` plus the tagged link in the post itself, sized to X's 280-character count (a URL weighs 23). There is no threaded reply on a pilot post.
+- Instagram gets the angle's portrait card as a JPEG. The caption carries a link-in-bio line and the tagged URL, because an Instagram caption does not make a link tappable.
+- LinkedIn rotates the same angles. The product topic cursor does not move, so the normal feed resumes on the topic that was next when the test started.
+- Every link is `https://pursuitai.net/` with `utm_medium=organic`, `utm_campaign=pilot21`, and `utm_content` set to the angle id. `utm_source` is `linkedin`, `x`, or `instagram`, matching the channel. The LinkedIn quartet is stored on the `posted.jsonl` row as `utm`. `utm_channels` stores the same tags for x, ig, and linkedin.
 - Starting ids, in rotation order: `fifty-percent`, `sam-search`, `teaming`, `proposal-load`, `recompete`. Edit the copy in the JSON. Keep an id once a post has shipped — it is the log key and the `utm_content` value.
-- If `LINKEDIN_ORG_ID` is set, the post goes to the Page. If it is not, and `LINKEDIN_ACCESS_TOKEN` is set, the post goes out as that member's profile (the same opt-in `LINKEDIN_ALLOW_MEMBER_POST=1` already is; pilot mode sets it for the run). If there is no token, or the API call fails, the caption is sent through the Slack webhook and logged as `handoff`. LinkedIn is not skipped.
+- If `LINKEDIN_ORG_ID` is set, the LinkedIn post goes to the Page. If it is not, and `LINKEDIN_ACCESS_TOKEN` is set, the post goes out as that member's profile (the same opt-in `LINKEDIN_ALLOW_MEMBER_POST=1` already is; pilot mode sets it for the run). If there is no token, or the API call fails, the caption is sent through the Slack webhook and logged as `handoff`. LinkedIn is not skipped.
+- X posts only when `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, and `X_ACCESS_SECRET` are all set. Instagram posts only when `IG_USER_ID`, `IG_ACCESS_TOKEN`, and `MEDIA_BASE_URL` are set and the JPEG graphic rendered. A missing name is a skip: the log names the secrets, and that channel is not recorded as posted. An expired or rejected token (HTTP 401, or an expired-session error) is the same skip, and the log names the secrets to refresh. Any other API error stays `failed`.
 - Monday's analytics run sends the winner report on the same webhook as the heartbeat (`NOTIFY_WEBHOOK_URL`). It sums impressions, engagement, and clicks per angle where the platform returned them. X's own CTA reply is removed from engagement before anyone is ranked. No angled posts yet means no message.
 
 ```bash
@@ -345,9 +358,9 @@ environment, the Instagram bio link, and the daily review routine.
 
 | Channel | How it publishes |
 |---|---|
-| X | API, automated — body plus a threaded CTA reply |
-| Instagram | API when credentials exist; **manual paste** meanwhile — see [Posting by hand](#posting-by-hand) |
-| LinkedIn | Page API, to the Pursuit AI Page, after the same `social-publish` approval. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. Manual preview is the fallback — see [Posting by hand](#posting-by-hand) and [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). **Pilot mode** (below) posts the message test as the Page when `LINKEDIN_ORG_ID` is set, as the token's member when it is not, or hands you the copy. It does not skip the channel. |
+| X | API, automated — body plus a threaded CTA reply. **Pilot mode** puts the tagged link in the post itself and still waits on `social-publish`. Hold it with `PILOT_X=0`. |
+| Instagram | API when credentials exist; **manual paste** meanwhile — see [Posting by hand](#posting-by-hand). **Pilot mode** posts the portrait JPEG and a caption whose link is a copy-paste CTA, after the same approval. Hold it with `PILOT_INSTAGRAM=0`. |
+| LinkedIn | Page API, to the Pursuit AI Page, after the same `social-publish` approval. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. Manual preview is the fallback — see [Posting by hand](#posting-by-hand) and [docs/LINKEDIN_ACCESS.md](docs/LINKEDIN_ACCESS.md). **Pilot mode** posts the message test as the Page when `LINKEDIN_ORG_ID` is set, as the token's member when it is not, or hands you the copy. It does not skip the channel. Hold it with `PILOT_LINKEDIN=0`. |
 | Facebook | Not wired. Needs `pages_manage_posts`; permission path documented, not yet verified. |
 
 **Kill switch:** disable the workflow in the Actions tab.

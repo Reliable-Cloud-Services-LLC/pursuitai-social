@@ -1,17 +1,22 @@
-"""LinkedIn message-test pilot.
+"""Message-test pilot.
 
 Off unless PILOT_MODE=1 or content/pilot.json says "enabled": true.
 PILOT_MODE=0 forces it off even when the file is enabled. Any other value
 (including unset and "true") leaves the file in charge, and the file ships
 with enabled false.
 
-While it is on, the daily run does not publish to X or Instagram. LinkedIn
-rotates the angles in content/pilot.json. The product topic cursor does not
-move: this is a pause for a message test, not a turn of the normal feed.
+While it is on, each run publishes the next angle to LinkedIn, X, and
+Instagram, after the same social-publish approval as every other post.
+The product topic cursor does not move: this is a pause for a message
+test, not a turn of the normal feed.
+
+Each channel can be held on its own. PILOT_X, PILOT_INSTAGRAM, and
+PILOT_LINKEDIN use the same "1" / "0" contract as PILOT_MODE. Unset
+defers to content/pilot.json "channels", which ships all true.
 
 The angle id is the experiment's unit. It is written on the post log and
 it is utm_content, so a click and a post can be tied back to the message
-that produced them.
+that produced them. utm_source is the channel: linkedin, x, or instagram.
 """
 import datetime
 import json
@@ -86,20 +91,110 @@ def campaign(path=None):
         return CAMPAIGN
 
 
-def utm_for(angle, path=None):
-    """The four UTM params on every pilot link, and on the post log.
+# Engine channel -> the env var that overrides content/pilot.json.
+# utm_source for Instagram is the word "instagram", not the engine's "ig"
+# key. The dashboard groups on that string, and "ig" would be a second
+# name for the same channel.
+CHANNEL_ENV = {
+    "x": "PILOT_X",
+    "ig": "PILOT_INSTAGRAM",
+    "linkedin": "PILOT_LINKEDIN",
+}
+UTM_SOURCE = {
+    "x": "x",
+    "ig": "instagram",
+    "linkedin": "linkedin",
+}
+# Keys a person edits. "instagram" is the spelling in the file; "ig" is
+# accepted so the engine's own name holds the channel too.
+CHANNEL_JSON = {
+    "x": ("x",),
+    "ig": ("instagram", "ig"),
+    "linkedin": ("linkedin",),
+}
+
+# Present before a pilot publish is attempted. A missing name skips that
+# channel and is printed. The run must not look like it posted somewhere
+# it could not authenticate.
+REQUIRED_SECRETS = {
+    "x": ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"),
+    "ig": ("IG_USER_ID", "IG_ACCESS_TOKEN", "MEDIA_BASE_URL"),
+}
+
+
+def channel_on(name, path=None):
+    """Whether this pilot channel should publish.
+
+    "1" and "0" are the whole env contract, matching PILOT_MODE. Any other
+    value, including unset, defers to content/pilot.json. A missing key
+    publishes the channel: the test's default is all three.
+    """
+    if name not in CHANNEL_ENV:
+        raise ValueError(f"unknown pilot channel {name!r}")
+    env = os.environ.get(CHANNEL_ENV[name])
+    if env == "1":
+        return True
+    if env == "0":
+        return False
+    try:
+        channels = load(path).get("channels") or {}
+    except (OSError, ValueError):
+        return True
+    for key in CHANNEL_JSON[name]:
+        if key in channels:
+            return bool(channels[key])
+    return True
+
+
+def enabled_channels(path=None):
+    """Public names, for the log and the review."""
+    return {
+        "x": channel_on("x", path),
+        "instagram": channel_on("ig", path),
+        "linkedin": channel_on("linkedin", path),
+    }
+
+
+def missing_secrets(name):
+    """Secret names this channel still needs, in listed order."""
+    return [var for var in REQUIRED_SECRETS.get(name, ())
+            if not os.environ.get(var)]
+
+
+def utm_for(angle, path=None, *, source="linkedin"):
+    """The four UTM params for one channel's link, and for the post log.
 
     utm_content is the angle id. The weekly report groups by that same id,
     so a click, a row in posted.jsonl, and a line in the winner report are
-    the same message.
+    the same message. utm_source is the channel the click came from.
+    `source` defaults to linkedin so existing callers keep that quartet.
     """
     import links
     return {
-        "utm_source": "linkedin",
+        "utm_source": source,
         "utm_medium": links.MEDIUM,
         "utm_campaign": campaign(path),
         "utm_content": angle["id"],
     }
+
+
+def utm_channels(angle, path=None):
+    """One quartet per engine channel. The ig entry's source is instagram."""
+    return {ch: utm_for(angle, path, source=src)
+            for ch, src in UTM_SOURCE.items()}
+
+
+def _issued(row):
+    """True when this angle reached someone, or was handed to the founder.
+
+    Any channel counts. A LinkedIn-only row from before X and Instagram
+    joined the test still counts, and a row whose only delivery was X
+    counts too. Holding LinkedIn would otherwise repeat the same angle.
+    """
+    for payload in (row.get("channels") or {}).values():
+        if isinstance(payload, dict) and payload.get("status") in SHIPPED:
+            return True
+    return False
 
 
 def shipped_count(rows):
@@ -111,10 +206,7 @@ def shipped_count(rows):
     """
     n = 0
     for row in rows or []:
-        if not row.get("angle_id"):
-            continue
-        status = ((row.get("channels") or {}).get("linkedin") or {}).get("status")
-        if status in SHIPPED:
+        if row.get("angle_id") and _issued(row):
             n += 1
     return n
 
@@ -142,6 +234,21 @@ def card_topic(angle):
     }
 
 
+def _hashtags(brand):
+    primary = (brand.get("hashtags_ig") or ["#GovCon"])[0]
+    extras = [t for t in ("#8aCertified", "#SAMgov") if t != primary]
+    return " ".join([primary, *extras[:2]])
+
+
+def _tagged_url(angle, brand, topic_id, source, path=None):
+    import links
+    utm = utm_for(angle, path, source=source)
+    url = links.build_url(
+        brand["url"], utm["utm_source"], topic_id, "card",
+        content=utm["utm_content"], campaign=utm["utm_campaign"])
+    return url, utm
+
+
 def linkedin_text(angle, brand, topic_id, path=None):
     """The LinkedIn caption for one angle.
 
@@ -149,43 +256,137 @@ def linkedin_text(angle, brand, topic_id, path=None):
     a per-angle landing page — the calendar does not map these messages to
     one. Tags come from utm_for so the caption and the log cannot diverge.
     """
-    import links
-    utm = utm_for(angle, path)
-    url = links.build_url(
-        brand["url"], utm["utm_source"], topic_id, "card",
-        content=utm["utm_content"], campaign=utm["utm_campaign"])
-    primary = (brand.get("hashtags_ig") or ["#GovCon"])[0]
-    extras = [t for t in ("#8aCertified", "#SAMgov") if t != primary]
-    tags = " ".join([primary, *extras[:2]])
+    url, _utm = _tagged_url(angle, brand, topic_id, "linkedin", path)
     return (f"{(angle.get('post') or '').strip()}\n\n"
             f"Start a free 14-day trial — no credit card, set up in under "
-            f"two minutes:\n{url}\n\n{tags}")
+            f"two minutes:\n{url}\n\n{_hashtags(brand)}")
+
+
+# X weighs every URL as 23 characters. The hook gives when the sum would
+# pass 280. The URL is never cut.
+X_LIMIT = 280
+
+
+def _fit_x(hook, suffix, url):
+    import links
+    hook = " ".join((hook or "").split())
+    if hook and links.x_weighted_length(f"{hook}{suffix}", [url]) <= X_LIMIT:
+        return f"{hook}{suffix}"
+    overhead = links.x_weighted_length(suffix, [url])
+    budget = X_LIMIT - overhead - 1
+    if budget < 1 or not hook:
+        return suffix.lstrip("\n")
+    cut = hook[:budget].rsplit(" ", 1)[0].rstrip(".,; ")
+    if not cut:
+        cut = hook[:budget].rstrip()
+    text = f"{cut}…{suffix}"
+    while cut and links.x_weighted_length(text, [url]) > X_LIMIT:
+        cut = cut.rsplit(" ", 1)[0] if " " in cut else ""
+        text = f"{cut}…{suffix}" if cut else suffix.lstrip("\n")
+    return text
+
+
+def x_text(angle, brand, topic_id, path=None):
+    """The X post. The link is in the body, and the weighted length fits.
+
+    Product posts keep the link in a reply. This test needs the click on
+    the post itself, attributed to the angle, so the tagged URL is the
+    last line and there is no second reply.
+    """
+    url, _utm = _tagged_url(angle, brand, topic_id, "x", path)
+    hook = (angle.get("hook_x") or angle.get("post") or "").strip()
+    suffix = "\n\nFree 14-day trial — no credit card:\n" + url
+    return _fit_x(hook, suffix, url)
+
+
+# Instagram captions cap at 2,200 characters.
+IG_LIMIT = 2200
+
+
+def ig_text(angle, brand, topic_id, path=None):
+    """Instagram caption. The link is copy-paste, because captions do not link.
+
+    "Link in bio" points at the standing profile link. The URL under it is
+    this post, with this angle's utm_content, so a copied link still
+    attributes the click.
+    """
+    url, _utm = _tagged_url(angle, brand, topic_id, "instagram", path)
+    body = (angle.get("post") or "").strip()
+    cta = (
+        "Start your free 14-day trial — link in bio, or copy this link "
+        "(captions are not tappable):\n"
+        f"{url}\n"
+        "No credit card. Set up in under 2 minutes."
+    )
+    text = f"{body}\n\n{cta}\n\n{_hashtags(brand)}"
+    if len(text) <= IG_LIMIT:
+        return text
+    keep = IG_LIMIT - (len(text) - len(body)) - 1
+    trimmed = body[:max(keep, 0)].rsplit(" ", 1)[0].rstrip(".,;")
+    if trimmed and len(trimmed) < len(body):
+        trimmed += "…"
+    return f"{trimmed}\n\n{cta}\n\n{_hashtags(brand)}"
+
+
+def render_assets(angle, brand, root=None):
+    """Landscape for X and LinkedIn, portrait JPEG for Instagram.
+
+    Instagram's publishing reference accepts JPEG only. A missing portrait
+    fails prepare. Publish then refuses an Instagram post that has no graphic.
+    """
+    import cards
+    import media
+    root = root or ROOT
+    topic = card_topic(angle)
+    landscape = os.path.join("assets", "cards", f"pilot-{angle['id']}_x.png")
+    portrait = os.path.join("assets", "cards", f"pilot-{angle['id']}_ig.png")
+    cards.render_card(topic, brand, size=(1600, 900),
+                      out_path=os.path.join(root, landscape))
+    cards.render_card(topic, brand, size=(1080, 1350),
+                      out_path=os.path.join(root, portrait))
+    jpeg = media.as_jpeg(os.path.join(root, portrait))
+
+    def rel(path):
+        return os.path.relpath(path, root).replace(os.sep, "/")
+
+    return {
+        "x": rel(os.path.join(root, landscape)),
+        "ig": rel(jpeg),
+        "linkedin": rel(os.path.join(root, landscape)),
+    }
 
 
 def render_asset(angle, brand, root=None):
-    """Write the landscape card for this angle. Returns the repo-relative path."""
-    import cards
-    root = root or ROOT
-    rel = os.path.join("assets", "cards", f"pilot-{angle['id']}_x.png")
-    cards.render_card(card_topic(angle), brand, size=(1600, 900),
-                      out_path=os.path.join(root, rel))
-    return rel.replace(os.sep, "/")
+    """The landscape card. LinkedIn and X both use it."""
+    return render_assets(angle, brand, root)["x"]
 
 
 def apply_pending(pending, angle, topic, brand, root=None):
-    """Stamp the angle onto a prepared post. The product captions stay.
+    """Stamp the angle onto a prepared post.
 
-    X and Instagram copy is still built — those code paths keep working —
-    and publish refuses to send it while the pilot flag is on the post.
+    Replaces the product captions. The X reply is cleared: a product reply
+    would thread a different campaign under this post, and the pilot link
+    is already in the body.
     """
     pending["pilot"] = True
     pending["angle_id"] = angle["id"]
-    # Same dict the caption URL was built from. publish() copies pending
-    # onto the posted.jsonl row, so the log records the tags even if a
-    # later edit of the caption drops the link.
-    pending["utm"] = utm_for(angle)
+    channels = utm_channels(angle)
+    # The flat dict is the LinkedIn quartet. Rows written before X and
+    # Instagram joined the test have this shape, and the handoff message
+    # reads it. utm_channels is the same tags per channel, which is what
+    # each caption was built from.
+    pending["utm"] = channels["linkedin"]
+    pending["utm_channels"] = channels
+    pending["pilot_channels"] = enabled_channels()
     pending["text_linkedin"] = linkedin_text(angle, brand, topic["id"])
-    pending["media_linkedin"] = render_asset(angle, brand, root)
+    pending["text_x"] = x_text(angle, brand, topic["id"])
+    pending["text_ig"] = ig_text(angle, brand, topic["id"])
+    pending["text_x_reply"] = None
+    assets = render_assets(angle, brand, root)
+    pending["media_x"] = assets["x"]
+    pending["media_linkedin"] = assets["linkedin"]
+    pending["media_ig"] = assets["ig"]
+    pending["cover_ig"] = None
     return pending
 
 
@@ -445,11 +646,13 @@ def render_report(summary):
     winner = summary.get("winner")
     running = summary.get("running")
     lines = [
-        "*PursuitAI LinkedIn pilot — weekly winner*",
+        "*PursuitAI pilot — weekly winner*",
         f"Week ending {summary['today']}. "
-        f"utm_source=linkedin · utm_medium=organic · "
+        f"utm_medium=organic · "
         f"utm_campaign `{summary.get('campaign') or CAMPAIGN}` · "
         f"utm_content is the angle id. "
+        f"utm_source is the channel the click came from "
+        f"(linkedin, x, or instagram). "
         f"Engagement excludes this account's own replies.",
         "",
         ("Winner this week: none yet — metrics are not back."
@@ -504,7 +707,7 @@ def deliver_report(log_path, metrics_path, today=None, path=None):
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="LinkedIn message-test pilot")
+    ap = argparse.ArgumentParser(description="Message-test pilot")
     ap.add_argument("--report", action="store_true",
                     help="send the weekly winner report via notify")
     args = ap.parse_args()
@@ -514,6 +717,9 @@ if __name__ == "__main__":
     else:
         state = "ON" if active() else "OFF"
         print(f"[pilot] {state}")
+        if active():
+            for name, on in enabled_channels().items():
+                print(f"  channel {name}: {'on' if on else 'off'}")
         try:
             for index, angle in enumerate(angles()):
                 print(f"  {index} {angle['id']} — {angle.get('feature')}")

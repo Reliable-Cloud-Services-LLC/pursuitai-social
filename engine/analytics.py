@@ -259,7 +259,10 @@ def collect(log_path, metrics_path, now=None):
             entry = meta.get((channel, post_id)) or {}
             if entry.get("angle_id"):
                 row["angle_id"] = entry["angle_id"]
-            if entry.get("utm"):
+            per_channel = (entry.get("utm_channels") or {}).get(channel)
+            if per_channel:
+                row["utm"] = per_channel
+            elif entry.get("utm"):
                 row["utm"] = entry["utm"]
             f.write(json.dumps(row) + "\n")
             collected += 1
