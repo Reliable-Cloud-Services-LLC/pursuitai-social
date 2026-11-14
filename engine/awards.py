@@ -9,10 +9,11 @@ and a machine feed:
 
     {"items": [{
         "id", "is_new_award", "slug", "url",
-        "first_published_at", "published_at",
+        "first_published_at", "published_at", "first_seen_at",
         "recipient_name", "recipient_uei",
         "awarding_agency", "awarding_sub_agency", "awarding_office",
-        "piid", "parent_award_piid", "award_type_code", "award_category",
+        "piid", "parent_award_piid", "contract_vehicle", "is_task_order",
+        "award_type_code", "award_category",
         "obligation", "ceiling", "action_date", "pop_start", "pop_end",
         "naics_code", "naics_description", "psc_code",
         "set_aside", "extent_competed", "summary", "description_source",
@@ -32,6 +33,14 @@ how the server orders `value_desc`.
 `limit` is at most 100 (the server default is 20; we ask for the max so
 the three we pick are the largest of the page, not of a 20-row slice).
 
+`is_task_order`, `contract_vehicle`, `first_seen_at`, and a filled-in
+`generated_unique_award_id` are additive. Older feeds omit them. An
+FPDS-first row can have an empty `generated_unique_award_id` and an
+empty `official_urls.usaspending` until USAspending has the award.
+`first_seen_at` / `first_published_at` is when the record became public,
+which for DoD can be about 90 days after `action_date`. Withdrawn
+awards are not in the feed.
+
 `url` is already absolute (`https://pursuitai.net/awards/<slug>`). The
 post uses that URL.
 
@@ -45,21 +54,28 @@ or an empty list is a normal day, not an outage. A 401 (bad token) and a
 What this will not do:
 
   * Post anything whose is_new_award is not true. The platform already
-    limits the feed to IT NAICS, at least $1M, and no mods, options, or
-    task orders. We still drop a row that is not flagged new.
+    limits the feed to IT NAICS and at least $1M, and it leaves out
+    modifications, options, and withdrawn awards. Task orders are in
+    the feed. We still drop a row that is not flagged new.
   * Filter on extent_competed. Sole-source is not a skip.
-  * Post more than three a day. The caption still leads with the obligated
-    amount when the record has one, and it labels a ceiling as a ceiling.
+  * Drop a row because `generated_unique_award_id` is empty. FPDS can
+    publish the page before USAspending has that id.
+  * Post more than three a day. The caption and the card lead with the
+    greater of obligation and ceiling. A ceiling is "valued at up to".
+    An obligation is "obligated".
   * Publish by itself. --prepare writes content/awards_pending.json and
     stops. The awards workflow parks on the social-publish environment,
     the same human gate as the daily post, with its own file so it cannot
     overwrite content/pending.json.
   * Invent a fact. Copy is built from the feed row. A model rewrite that
-    adds a number, drops the recipient, or swaps the link is thrown away.
+    adds a number, drops the recipient, names a vehicle the feed left
+    null, or swaps the link is thrown away.
   * Follow the cursor past awards we have not posted. next_since is saved
     only once every eligible row in the page has been posted or recorded
-    as unpostable. Deduping is logs/award_posted.jsonl, keyed by
-    generated_unique_award_id.
+    as unpostable. Deduping is logs/award_posted.jsonl, keyed by the
+    feed item id (the PursuitAI page id). A row with no page id uses
+    PIID + parent_award_piid + awarding agency. Entries already logged
+    under generated_unique_award_id still count.
 
     python engine/awards.py --dry-run     # print the day's posts, write nothing
     python engine/awards.py --prepare     # queue them for approval
@@ -170,6 +186,69 @@ def _is_new(value):
     return False
 
 
+def _token(value):
+    """A log or feed identity token. Bools and objects are not keys."""
+    if value is None or isinstance(value, (bool, dict, list)):
+        return ""
+    return str(value).strip()
+
+
+def fallback_key(award):
+    """PIID + parent award PIID + awarding agency.
+
+    The page id is the key we log. This is the fallback when a row has
+    no page id, and it is also stored so the same PIID is not posted
+    again if a later row arrives with a different id. Parent is empty
+    on a definitive contract; the PIID and the agency still have to be
+    there, or this is not a key.
+    """
+    if not isinstance(award, dict):
+        return ""
+    piid = _token(award.get("piid"))
+    agency = _token(award.get("awarding_agency"))
+    if not piid or not agency:
+        return ""
+    parent = _token(award.get("parent_award_piid"))
+    return f"{piid}|{parent}|{agency}"
+
+
+def dedupe_key(award):
+    """Page id, else the PIID fallback, else a generated USAspending id.
+
+    The last case is only a row that has none of the others. New logs
+    still record a generated id when the feed sent one, so an older
+    entry keyed only by that id matches a later row.
+    """
+    if not isinstance(award, dict):
+        return ""
+    page_id = _token(award.get("id"))
+    if page_id:
+        return page_id
+    fallback = fallback_key(award)
+    if fallback:
+        return fallback
+    return _token(award.get("generated_unique_award_id"))
+
+
+def identity_keys(award):
+    """Every stored token that means this award was already handled."""
+    if not isinstance(award, dict):
+        return set()
+    keys = set()
+    for field in ("id", "generated_unique_award_id", "dedupe_key",
+                  "fallback_key"):
+        token = _token(award.get(field))
+        if token:
+            keys.add(token)
+    fallback = fallback_key(award)
+    if fallback:
+        keys.add(fallback)
+    primary = dedupe_key(award)
+    if primary:
+        keys.add(primary)
+    return keys
+
+
 def _slug(item):
     slug = _text(item.get("slug"), ("slug",))
     slug = slug.strip("/")
@@ -184,11 +263,11 @@ def _slug(item):
 # names (recipient, agency, naics) are not on the feed and are not read.
 _STRING_KEYS = (
     "id", "slug", "url", "first_published_at", "published_at",
-    "recipient_name", "recipient_uei", "awarding_agency",
+    "first_seen_at", "recipient_name", "recipient_uei", "awarding_agency",
     "awarding_sub_agency", "awarding_office", "piid", "parent_award_piid",
-    "award_type_code", "award_category", "action_date", "pop_start",
-    "pop_end", "naics_code", "naics_description", "psc_code", "set_aside",
-    "extent_competed", "summary", "description_source",
+    "contract_vehicle", "award_type_code", "award_category", "action_date",
+    "pop_start", "pop_end", "naics_code", "naics_description", "psc_code",
+    "set_aside", "extent_competed", "summary", "description_source",
     "generated_unique_award_id",
 )
 
@@ -222,6 +301,8 @@ def normalize_item(raw):
     item = {key: _field(raw, key) for key in _STRING_KEYS}
     item["slug"] = _slug(raw)
     item["is_new_award"] = _is_new(raw.get("is_new_award"))
+    # Missing on the current feed. False, not a guess from the type code.
+    item["is_task_order"] = _is_new(raw.get("is_task_order"))
     item["obligation"] = _money(raw.get("obligation"))
     item["ceiling"] = _money(raw.get("ceiling"))
     item["official_urls"] = _official_urls(raw)
@@ -229,11 +310,11 @@ def normalize_item(raw):
 
 
 def rank_value(award):
-    """Dollars used to order the day: the greater of obligation and ceiling.
+    """Dollars used to order the day and to lead the caption.
 
-    That is the server's value_desc key. The caption still leads with the
-    obligated amount when there is one; this number only decides which
-    three rows are chosen.
+    The greater of obligation and ceiling, which is the server's
+    value_desc key. The caption labels a ceiling as "valued at up to"
+    and an obligation as "obligated".
     """
     amounts = []
     for key in ("obligation", "ceiling"):
@@ -246,8 +327,10 @@ def rank_value(award):
 def _eligible(award, seen):
     if not award or not award.get("is_new_award"):
         return False
-    aid = award.get("generated_unique_award_id") or ""
-    if not aid or aid in seen:
+    keys = identity_keys(award)
+    # No page id, no PIID fallback, and no generated id: nothing to log,
+    # so a later run could not tell this row from the next one.
+    if not keys or keys & set(seen or ()):
         return False
     if not award.get("slug") or not award.get("recipient_name") or not award.get("awarding_agency"):
         return False
@@ -271,13 +354,12 @@ def select_awards(items, seen_ids=(), limit=DAILY_CAP):
         award = normalize_item(raw)
         if not _eligible(award, seen):
             continue
-        aid = award["generated_unique_award_id"]
-        if aid in taken:
+        keys = identity_keys(award)
+        if not keys or keys & taken:
             continue
-        taken.add(aid)
+        taken.update(keys)
         pool.append(award)
-    pool.sort(key=lambda award: (-rank_value(award),
-                                 award["generated_unique_award_id"]))
+    pool.sort(key=lambda award: (-rank_value(award), dedupe_key(award)))
     return pool[:limit], pool[limit:]
 
 
@@ -364,9 +446,7 @@ def _read_jsonl_ids(path):
                 row = json.loads(line)
             except ValueError:
                 continue
-            aid = row.get("generated_unique_award_id")
-            if aid:
-                found.add(aid)
+            found.update(identity_keys(row))
     return found
 
 
@@ -421,11 +501,16 @@ def _clip(text, limit):
 
 
 def card_topic(award, short=False):
-    """The fields render_card draws. Facts only, and short enough to fit."""
-    amount, kind = captions._lead_amount(award)
-    stat = f"{captions.format_dollars(amount)} {kind}"
+    """The fields render_card draws. Facts only, and short enough to fit.
+
+    The eyebrow is TASK ORDER or CONTRACT AWARD. The chip leads with the
+    same dollars as the caption: "Up to $…" for a ceiling, "$… obligated"
+    for an obligation. render_card uppercases the eyebrow.
+    """
+    amount, _kind = captions._lead_amount(award)
+    stat = captions.lead_stat(award)
     if short:
-        headline = captions.format_dollars(amount)
+        headline = captions.format_dollars(amount) if amount is not None else ""
         body = _clip(
             f"{award['recipient_name']}. {award['awarding_agency']}.", 120)
     else:
@@ -435,16 +520,17 @@ def card_topic(award, short=False):
         if summary:
             body = f"{body}. {summary}"
         body = _clip(body, 180)
+    feature = "Task order" if award.get("is_task_order") else "Contract award"
     return {
         "id": f"award-{award['slug']}",
-        "feature": "Contract award",
+        "feature": feature,
         "headline": headline,
         "body": body,
         "stat": stat,
         "verification": {
             "status": "VERIFIED",
             "source_type": "public_awards_feed",
-            "source_ref": award.get("generated_unique_award_id") or "",
+            "source_ref": dedupe_key(award),
         },
     }
 
@@ -481,6 +567,27 @@ def _append_jsonl(path, row):
         os.fsync(handle.fileno())
 
 
+def _log_row(award, **extra):
+    """Identity fields every posted or skipped line has to carry.
+
+    `id` is the page id. `generated_unique_award_id` may be empty on an
+    FPDS-first row and is still written so a legacy reader can see it.
+    `fallback_key` is PIID + parent + agency.
+    """
+    row = {
+        "id": award.get("id") or "",
+        "dedupe_key": dedupe_key(award),
+        "fallback_key": fallback_key(award),
+        "generated_unique_award_id": award.get("generated_unique_award_id") or "",
+        "piid": award.get("piid") or "",
+        "parent_award_piid": award.get("parent_award_piid") or "",
+        "awarding_agency": award.get("awarding_agency") or "",
+        "slug": award.get("slug") or "",
+    }
+    row.update(extra)
+    return row
+
+
 def _build_posts(chosen, brand, root, dry_run):
     """Captions (and, unless this is a dry run, cards) for the chosen rows.
 
@@ -497,16 +604,13 @@ def _build_posts(chosen, brand, root, dry_run):
         # the key is set. The key check lives in captions; with no key this
         # is the template and does not touch the network.
         built = captions.build_award_linkedin(award, brand, fresh=True)
+        label = dedupe_key(award) or award.get("slug")
         if built is None:
-            print(f"[awards] skip {award['generated_unique_award_id']}: "
+            print(f"[awards] skip {label}: "
                   f"caption is not grounded or breaks a content rule")
             if not dry_run:
-                _append_jsonl(state["skipped"], {
-                    "generated_unique_award_id": award["generated_unique_award_id"],
-                    "slug": award["slug"],
-                    "reason": "caption",
-                    "at": _now(),
-                })
+                _append_jsonl(state["skipped"], _log_row(
+                    award, reason="caption", at=_now()))
             continue
         rel = f"assets/cards/award_{award['slug']}.png"
         alt = f"{award['recipient_name']} — {card_topic(award)['stat']}"
@@ -514,27 +618,29 @@ def _build_posts(chosen, brand, root, dry_run):
             out = os.path.join(root, rel)
             topic = render_award(award, brand, out)
             if topic is None:
-                print(f"[awards] {award['generated_unique_award_id']}: "
+                print(f"[awards] {label}: "
                       f"card would not render — leaving it for the next run")
                 blocked = True
                 continue
-        posts.append({
-            "generated_unique_award_id": award["generated_unique_award_id"],
-            "slug": award["slug"],
-            "recipient_name": award["recipient_name"],
-            "awarding_agency": award["awarding_agency"],
-            "obligation": award.get("obligation"),
-            "ceiling": award.get("ceiling"),
-            "naics_code": award.get("naics_code") or "",
-            "set_aside": award.get("set_aside") or "",
-            "extent_competed": award.get("extent_competed") or "",
-            "piid": award.get("piid") or "",
-            "text_linkedin": built["text"],
-            "copy_varied": built["varied"],
-            "media_linkedin": rel,
-            "url": captions.award_page_url(award),
-            "alt": alt,
-        })
+        posts.append(_log_row(
+            award,
+            is_task_order=bool(award.get("is_task_order")),
+            contract_vehicle=award.get("contract_vehicle") or "",
+            action_date=award.get("action_date") or "",
+            first_seen_at=award.get("first_seen_at") or "",
+            first_published_at=award.get("first_published_at") or "",
+            recipient_name=award["recipient_name"],
+            obligation=award.get("obligation"),
+            ceiling=award.get("ceiling"),
+            naics_code=award.get("naics_code") or "",
+            set_aside=award.get("set_aside") or "",
+            extent_competed=award.get("extent_competed") or "",
+            text_linkedin=built["text"],
+            copy_varied=built["varied"],
+            media_linkedin=rel,
+            url=captions.award_page_url(award),
+            alt=alt,
+        ))
     return posts, blocked
 
 
@@ -581,10 +687,12 @@ def prepare(root=None, dry_run=False, get=None):
     # Advance only when a later run, seeing the skips we just recorded,
     # would find nothing left on this page that we did not queue. A card
     # that failed to render is still eligible, so it holds the cursor.
-    queued_ids = {post["generated_unique_award_id"] for post in posts}
+    queued_ids = set()
+    for post in posts:
+        queued_ids.update(identity_keys(post))
     rest, still_deferred = select_awards(page["items"], seen_ids(root))
     held = [award for award in rest
-            if award["generated_unique_award_id"] not in queued_ids]
+            if not (identity_keys(award) & queued_ids)]
     unfinished = bool(still_deferred or render_blocked or held)
     advance_to = (page["next_since"]
                   if not unfinished and page.get("next_since")
@@ -691,28 +799,26 @@ def publish(root=None, poster=None, force=False):
     # duplicate them.
     already = posted_ids(root)
     for post in pending["posts"]:
-        if post["generated_unique_award_id"] in already:
+        if identity_keys(post) & already:
             print(f"[awards] {post['slug']} is already in the dedupe log "
                   f"— not posting it again")
-            posted.append(post["generated_unique_award_id"])
+            posted.append(dedupe_key(post))
             continue
         try:
             outcome = poster(post["media_linkedin"], post["text_linkedin"],
                              post.get("alt"))
         except Exception as exc:
             failed = f"{type(exc).__name__}: {exc}"
-            print(f"[awards] FAILED {post['generated_unique_award_id']}: "
-                  f"{failed}")
+            print(f"[awards] FAILED {dedupe_key(post)}: {failed}")
             break
         extra = outcome if isinstance(outcome, dict) else {"id": outcome}
-        _append_jsonl(state["posted"], {
-            "generated_unique_award_id": post["generated_unique_award_id"],
-            "slug": post["slug"],
-            "linkedin_id": extra.get("id"),
-            "url": extra.get("url"),
-            "posted_at": _now(),
-        })
-        posted.append(post["generated_unique_award_id"])
+        _append_jsonl(state["posted"], _log_row(
+            post,
+            linkedin_id=extra.get("id"),
+            url=extra.get("url"),
+            posted_at=_now(),
+        ))
+        posted.append(dedupe_key(post))
         print(f"[awards] posted {post['slug']} ({extra.get('id')})")
 
     if failed is None and pending.get("cursor_advance_to"):

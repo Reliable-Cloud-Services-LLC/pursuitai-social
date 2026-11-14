@@ -8,7 +8,7 @@ us, and what is still open.
 Keep it current. A stale operations doc is worse than none, because it is
 believed.
 
-_Last reviewed: 2026-11-12._
+_Last reviewed: 2026-11-14._
 
 ---
 
@@ -58,23 +58,39 @@ the server uses for `value_desc`).
 What gets queued, in order:
 
 1. `is_new_award` is true. Anything else is skipped, including a row where
-   the flag is missing. The platform already limits the feed to IT NAICS,
-   at least $1M, and no modifications, options, or task orders.
-   `extent_competed` is not a filter: a sole-source award is still queued.
-2. Not already in `logs/award_posted.jsonl` (keyed by
-   `generated_unique_award_id`).
-3. At most three, largest value first. The caption still leads with the
-   obligated amount when the record has one, and it labels a ceiling as
-   a ceiling.
+   the flag is missing. The platform limits the feed to IT NAICS and at
+   least $1M, and it leaves out modifications, options, and withdrawn
+   awards. Task orders are included. `extent_competed` is not a filter:
+   a sole-source award is still queued. An empty
+   `generated_unique_award_id` is not a skip. FPDS can publish the page
+   before USAspending has that id, and `official_urls.usaspending` may
+   be empty until then.
+2. Not already in `logs/award_posted.jsonl`. The key is the feed item
+   `id` (the PursuitAI page id). A row with no page id uses
+   PIID + `parent_award_piid` + awarding agency. Lines written earlier,
+   keyed only by `generated_unique_award_id`, still count, so an award
+   that already went out is not posted again when the feed adds a page id.
+3. At most three, largest value first. Largest is the greater of
+   obligation and ceiling, and that same figure leads the caption and
+   the card. A ceiling is "valued at up to". An obligation is
+   "obligated".
 
 Copy is written from that row: `recipient_name`, `awarding_agency`, the
-obligated amount, the ceiling, `naics_code`, PIID, the feed's summary,
-and `set_aside` / `extent_competed` when those are present. It is not
-taken from OrangeSlices or any other outlet. The link is the feed's
-`url` (`https://pursuitai.net/awards/<slug>`). Claude may rewrite the
-template; a rewrite that adds a number or drops the recipient is thrown
-out and the template is what gets queued. The card is the same square
-renderer as the daily cards.
+lead value, `naics_code`, PIID, the parent PIID, the vehicle, the signed
+date, the release date, the feed's summary, and `set_aside` /
+`extent_competed` when those are present. A task order is called a task
+order. `contract_vehicle` is quoted only when the feed set it ("under
+GSA MAS"); a null vehicle is not guessed from the parent PIID. When
+`action_date` is more than 14 days before `first_seen_at` (or
+`first_published_at`), the caption says the record was recently released
+and may cite the signed date. It is not taken from OrangeSlices or any
+other outlet. The link is the feed's `url`
+(`https://pursuitai.net/awards/<slug>`). Claude may rewrite the
+template; a rewrite that adds a number, drops the recipient, invents a
+vehicle, or calls a task order a new contract is thrown out and the
+template is what gets queued. The card is the same square renderer as
+the daily cards. Its eyebrow reads TASK ORDER or CONTRACT AWARD, and
+the chip uses the lead value.
 
 Nothing posts by itself. Prepare writes `content/awards_pending.json` and
 Slack asks for review. Publish waits on the `social-publish` environment.

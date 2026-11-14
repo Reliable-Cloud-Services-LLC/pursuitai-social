@@ -88,7 +88,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 | `assets/` | Generated cards, screenshots, and video. **Not committed** — uploaded to object storage, which is what Instagram fetches from. |
 | `assets/icons/` | **Committed.** Lucide icons (ISC), rasterised once by `scripts/build_icons.py`, so the engine needs no SVG rasteriser at runtime. |
 | `logs/posted.jsonl` | Append-only audit trail. One row per run: date, topic, format, captions, and each channel's outcome. |
-| `logs/award_posted.jsonl` | Award posts already sent, keyed by `generated_unique_award_id`, so a later run does not repeat one. |
+| `logs/award_posted.jsonl` | Award posts already sent, keyed by the feed page `id` (with a PIID + parent + agency fallback). Older lines keyed by `generated_unique_award_id` still suppress a repeat. |
 | `content/awards_pending.json` | The award batch waiting on review. Not the daily `pending.json`. |
 | `logs/metrics.jsonl` | Append-only performance samples, keyed to the post ids in `posted.jsonl`. |
 | `.github/workflows/analytics.yml` | Weekly metrics collection. Separate from publishing because X reads are billed. |
@@ -158,13 +158,17 @@ LinkedIn client as the daily run, after the same `social-publish`
 approval, and it writes `content/awards_pending.json` so it cannot collide
 with the daily queue.
 
-Only rows with `is_new_award: true` are eligible. The feed is read
-oldest-first (`order=recent`, which is the order that returns
-`next_since`). The three posts are the largest on that page — the
-greater of obligation and ceiling — that are not already in
-`logs/award_posted.jsonl`. Each caption is written from that row
-(`recipient_name`, `awarding_agency`, and the rest of the feed fields)
-and links to the feed's `url`. A dry run prints them and stops:
+Only rows with `is_new_award: true` are eligible, including a task
+order and a row whose `generated_unique_award_id` is still empty.
+The feed is read oldest-first (`order=recent`, which is the order that
+returns `next_since`). The three posts are the largest on that page —
+the greater of obligation and ceiling — that are not already in
+`logs/award_posted.jsonl` (page id, or the older generated id). Each
+caption is written from that row (`recipient_name`, `awarding_agency`,
+the lead value, and the rest of the feed fields) and links to the
+feed's `url`. A task order is not called a new contract, and a vehicle
+is named only when `contract_vehicle` is set. A dry run prints them
+and stops:
 
 ```bash
 .venv/bin/python engine/awards.py --dry-run

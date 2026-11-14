@@ -1,13 +1,14 @@
 name: Award LinkedIn posts
 
-# Contract-award posts for the PursuitAI Page. Separate from daily.yml on
-# purpose: that workflow's pending.json is one product post, and an award
-# run must not overwrite it (or be overwritten by it).
+# Contract-award and task-order posts for the PursuitAI Page. Separate
+# from daily.yml on purpose: that workflow's pending.json is one product
+# post, and an award run must not overwrite it (or be overwritten by it).
 #
-# Same human gate. `prepare` can queue up to three posts and cannot
-# publish them. `publish` targets the `social-publish` environment, so
-# GitHub pauses the run until a required reviewer approves. Nothing in
-# this file can skip that pause.
+# Same human gate. `prepare` can queue up to three posts (largest value
+# first) and cannot publish them. `publish` targets the `social-publish`
+# environment, so GitHub pauses the run until a required reviewer
+# approves. Nothing in this file can skip that pause, and nothing here
+# posts on its own.
 #
 # The feed is empty or 404 while PUBLIC_AWARD_PAGES_ENABLED is off on the
 # platform. That is a quiet day, not a failed run. A rejected token is a

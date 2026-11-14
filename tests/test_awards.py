@@ -1,7 +1,8 @@
 """Public-award LinkedIn posts.
 
-Selection: only is_new_award, largest obligated amount first, at most
-three, and never an id already in the dedupe log.
+Selection: only is_new_award, greatest(obligation, ceiling) first, at most
+three, and never an award already in the dedupe log. The log key is the
+feed page id. Older lines keyed by generated_unique_award_id still match.
 
 The feed: a 404 (the feature flag is off) and a missing token queue
 nothing. A rejected token, a 5xx, and a body without `items` fail.
@@ -58,6 +59,64 @@ def award(**over):
         "generated_unique_award_id": "CONT_AWD_ACME",
         "official_urls": {
             "usaspending": "https://www.usaspending.gov/award/CONT_AWD_ACME"},
+    }
+    base.update(over)
+    # Production dedupes on the page id, and also on PIID + parent +
+    # agency. Rows that only vary the generated id still need their own
+    # page id and PIID, or they are the same award.
+    if "id" not in over:
+        base["id"] = (base.get("generated_unique_award_id")
+                      or base.get("slug")
+                      or "award-1")
+    if "piid" not in over:
+        gid = str(base.get("generated_unique_award_id") or "")
+        if gid and gid != "CONT_AWD_ACME":
+            safe = "".join(ch for ch in gid if ch.isalnum())[:24]
+            base["piid"] = f"PIID{safe}"
+    return base
+
+
+def navy(**over):
+    """FPDS-first Navy delivery/task order N0002426F6230.
+
+    Provecta Tech, Inc. under GSA MAS 47QTCA24D006J. Obligation
+    $915,980, ceiling $2,778,270, NAICS 541519. Signed 2026-07-27,
+    released 2026-11-13. No USAspending id yet. The gap is the DoD
+    publication lag: the news is the release, not a signature this week.
+    """
+    base = {
+        "is_new_award": True,
+        "id": "page-n0002426f6230",
+        "slug": "provecta-navy-n0002426f6230",
+        "url": "https://pursuitai.net/awards/provecta-navy-n0002426f6230",
+        "first_published_at": "2026-11-13T15:04:00Z",
+        "published_at": "2026-11-13T15:04:00Z",
+        "first_seen_at": "2026-11-13T15:04:00Z",
+        "recipient_name": "Provecta Tech, Inc.",
+        "recipient_uei": "WVEVFB4888S4",
+        "awarding_agency": "Department of the Navy",
+        "awarding_sub_agency": "Naval Sea Systems Command",
+        "awarding_office": "",
+        "piid": "N0002426F6230",
+        "parent_award_piid": "47QTCA24D006J",
+        "contract_vehicle": "GSA MAS",
+        "is_task_order": True,
+        "award_type_code": "C",
+        "award_category": "task_order",
+        "obligation": 915_980,
+        "ceiling": 2_778_270,
+        "action_date": "2026-07-27",
+        "pop_start": "2026-07-27",
+        "pop_end": None,
+        "naics_code": "541519",
+        "naics_description": "Other Computer Related Services",
+        "psc_code": None,
+        "set_aside": None,
+        "extent_competed": None,
+        "summary": "EPS support for Navy systems.",
+        "description_source": "fpds",
+        "generated_unique_award_id": "",
+        "official_urls": {"usaspending": None},
     }
     base.update(over)
     return base
@@ -357,9 +416,12 @@ def test_template_is_grounded_and_links_to_the_award_page(quiet_model):
     assert built["varied"] is False
     assert "Acme Federal Solutions LLC" in text
     assert "Department of Veterans Affairs" in text
+    assert "was awarded a contract" in text
     assert "$4.2 million" in text
-    assert "ceiling" in text.casefold()
+    assert "valued at up to" in text.casefold()
     assert "$12 million" in text
+    # Ceiling is the larger figure, so it leads.
+    assert text.index("$12 million") < text.index("$4.2 million")
     assert "https://pursuitai.net/awards/acme-va" in text
     assert "utm_source=linkedin" in text
     assert "utm_campaign=award" in text
@@ -446,19 +508,184 @@ def test_ceiling_only_copy_does_not_call_the_ceiling_an_obligation(quiet_model):
     row = award(obligation=None, ceiling=4_000_000)
     built = captions.build_award_linkedin(row, branded(), fresh=False)
     text = built["text"].casefold()
-    assert "ceiling" in text
-    assert "obligated amount is" not in text
+    assert "valued at up to" in text
+    assert "obligated" not in text
     assert "$4 million" in built["text"]
 
 
 def test_award_card_renders_square(tmp_path, quiet_model):
     row = awards.normalize_item(award())
     topic = awards.card_topic(row)
+    assert topic["feature"] == "Contract award"
+    assert topic["stat"] == "Up to $12 million"
     out = str(tmp_path / "card.png")
     img = cards.render_award_card(topic, branded(), out)
     assert img.size == (1080, 1080)
     assert os.path.getsize(out) > 10_000
     assert compliance.check_rendered(topic) == []
+
+
+def test_task_order_card_badge_leads_with_the_ceiling(tmp_path, quiet_model):
+    topic = awards.card_topic(awards.normalize_item(navy()))
+    assert topic["feature"] == "Task order"
+    assert topic["stat"] == "Up to $2,778,270"
+    assert "obligated" not in topic["stat"].casefold()
+    out = str(tmp_path / "navy.png")
+    img = cards.render_award_card(topic, branded(), out)
+    assert img.size == (1080, 1080)
+    assert os.path.getsize(out) > 10_000
+    assert compliance.check_rendered(topic) == []
+    contract = awards.card_topic(awards.normalize_item(
+        award(obligation=5_000_000, ceiling=2_000_000)))
+    assert contract["feature"] == "Contract award"
+    assert contract["stat"] == "$5 million obligated"
+
+
+def test_task_order_caption_names_the_vehicle_and_not_a_new_contract(quiet_model):
+    built = captions.build_award_linkedin(navy(), branded(), fresh=False)
+    text = built["text"]
+    folded = text.casefold()
+    assert "task order" in folded
+    assert "under gsa mas" in folded
+    assert "new contract" not in folded
+    assert "just signed" not in folded
+    assert "recently released" in folded
+    assert "July 27, 2026" in text
+    assert "November 13, 2026" in text
+    assert "$2,778,270" in text
+    assert "$915,980" in text
+    assert text.index("$2,778,270") < text.index("$915,980")
+    assert "valued at up to" in folded
+    assert "obligated" in folded
+    assert "47QTCA24D006J" in text
+    assert "N0002426F6230" in text
+    assert captions.ungrounded_money(text, navy()) == []
+    assert captions.ungrounded_numbers(text, navy()) == []
+    assert compliance.check_claims(captions._award_topic(navy()), text) == []
+
+
+def test_task_order_without_a_vehicle_does_not_invent_one(quiet_model):
+    row = navy(
+        contract_vehicle=None,
+        action_date="2026-11-10",
+        first_seen_at="2026-11-13T15:04:00Z",
+        first_published_at="2026-11-13T15:04:00Z",
+        summary="EPS support for Navy systems.",
+    )
+    built = captions.build_award_linkedin(row, branded(), fresh=False)
+    text = built["text"]
+    folded = text.casefold()
+    assert "task order" in folded
+    assert "under gsa mas" not in folded
+    assert "gsa mas" not in folded
+    assert "sewp" not in folded
+    assert "stars iii" not in folded
+    assert "new contract" not in folded
+    assert "recently released" not in folded
+    assert captions.ungrounded_numbers(text, row) == []
+    assert captions.ungrounded_money(text, row) == []
+
+
+def test_null_vehicle_string_is_not_quoted(quiet_model):
+    row = navy(contract_vehicle="", is_task_order=True,
+               action_date="2026-11-12",
+               first_seen_at="2026-11-13T00:00:00Z")
+    text = captions.build_award_linkedin(row, branded(), fresh=False)["text"]
+    assert "under" not in text.casefold()
+
+
+def test_delayed_release_is_not_described_as_just_signed(quiet_model):
+    text = captions.build_award_linkedin(navy(), branded(), fresh=False)["text"]
+    folded = text.casefold()
+    assert "recently released" in folded
+    assert "signed on july 27, 2026" in folded
+    assert "just signed" not in folded
+    assert "recently signed" not in folded
+    assert "was awarded a contract" not in folded
+    assert captions.is_delayed_release(navy()) is True
+
+
+def test_release_lag_boundary_is_fourteen_days():
+    fresh = award(action_date="2026-11-01",
+                  first_seen_at="2026-11-15T00:00:00Z",
+                  first_published_at="")
+    assert captions.is_delayed_release(fresh) is False
+    late = award(action_date="2026-11-01",
+                 first_seen_at="2026-11-16T00:00:00Z",
+                 first_published_at="")
+    assert captions.is_delayed_release(late) is True
+    undated = award(action_date="2020-01-01", first_seen_at="",
+                    first_published_at="")
+    assert captions.is_delayed_release(undated) is False
+
+
+def test_value_lead_is_the_greater_of_obligation_and_ceiling():
+    order = navy()
+    amount, kind = captions._lead_amount(order)
+    assert amount == 2_778_270
+    assert kind == "ceiling"
+    assert awards.rank_value(awards.normalize_item(order)) == 2_778_270
+
+    obligated = award(obligation=6_000_000, ceiling=1_500_000)
+    amount, kind = captions._lead_amount(obligated)
+    assert amount == 6_000_000
+    assert kind == "obligated"
+    text = captions.build_award_linkedin(obligated, branded(), fresh=False)["text"]
+    assert text.index("$6 million") < text.index("$1.5 million")
+    assert "obligated" in text.casefold()
+    assert "valued at up to" in text.casefold()
+
+    tied = award(obligation=4_000_000, ceiling=4_000_000)
+    amount, kind = captions._lead_amount(tied)
+    assert kind == "obligated"
+    tied_text = captions.build_award_linkedin(tied, branded(), fresh=False)["text"]
+    assert "obligated" in tied_text.casefold()
+
+
+def test_citing_vehicle_parent_and_dates_passes_grounding():
+    row = navy(contract_vehicle="8(a) STARS III")
+    text = (
+        "Provecta Tech, Inc. received a task order from "
+        "Department of the Navy under 8(a) STARS III. "
+        "Parent award PIID 47QTCA24D006J. "
+        "Signed July 27, 2026. Released November 13, 2026. "
+        "Valued at up to $2,778,270. The obligated amount is $915,980."
+    )
+    assert captions.ungrounded_money(text, row) == []
+    assert captions.ungrounded_numbers(text, row) == []
+    built = captions.build_award_linkedin(row, branded(), fresh=False)
+    assert "under 8(a) STARS III" in built["text"]
+    assert "gsa mas" not in built["text"].casefold()
+    assert captions.ungrounded_numbers(built["text"], row) == []
+    assert captions.ungrounded_money(built["text"], row) == []
+
+
+def test_a_rewrite_that_invents_a_vehicle_falls_back(monkeypatch, quiet_model):
+    row = navy(contract_vehicle=None, action_date="2026-11-12",
+               first_seen_at="2026-11-13T00:00:00Z")
+
+    def fake(topic, platform, brand):
+        return topic["hook_ig"].replace(
+            "received a task order from Department of the Navy.",
+            "received a task order from Department of the Navy under GSA MAS.")
+
+    monkeypatch.setattr(captions, "_claude_variant", fake)
+    built = captions.build_award_linkedin(row, branded(), fresh=True)
+    assert "gsa mas" not in built["text"].casefold()
+    assert built["varied"] is False
+
+
+def test_current_feed_without_the_new_keys_still_posts(quiet_model):
+    row = award()
+    for key in ("is_task_order", "contract_vehicle", "first_seen_at"):
+        row.pop(key, None)
+    chosen, _ = awards.select_awards([row])
+    assert chosen[0]["is_task_order"] is False
+    assert chosen[0]["contract_vehicle"] == ""
+    assert chosen[0]["first_seen_at"] == ""
+    text = captions.build_award_linkedin(row, branded(), fresh=False)["text"]
+    assert "was awarded a contract" in text
+    assert "task order" not in text.casefold()
 
 
 # ---------- queue, dedupe log, cursor ----------
@@ -568,6 +795,99 @@ def test_an_already_seen_page_advances_the_cursor(tmp_path, monkeypatch,
     assert result["posts"] == []
     assert awards.load_cursor(root) == "next-cursor"
     assert not os.path.exists(os.path.join(root, "content", "awards_pending.json"))
+
+
+def test_fpds_first_row_posts_and_dedupes_on_page_id(
+        tmp_path, monkeypatch, quiet_model):
+    """Empty generated id is not a skip. The log key is the page id."""
+    root = str(tmp_path)
+    row = navy()
+    assert row["generated_unique_award_id"] == ""
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([row]))
+    pending = awards.prepare(root=root)
+    assert len(pending["posts"]) == 1
+    post = pending["posts"][0]
+    assert post["id"] == "page-n0002426f6230"
+    assert post["generated_unique_award_id"] == ""
+    assert post["dedupe_key"] == "page-n0002426f6230"
+    assert "Provecta Tech, Inc." in post["text_linkedin"]
+    assert "task order" in post["text_linkedin"].casefold()
+
+    calls = []
+
+    def poster(path, text, alt=None):
+        calls.append(path)
+        return {"id": "urn:li:share:navy", "url": "https://www.linkedin.com/feed/update/urn:li:share:navy/"}
+
+    assert awards.approve(root=root) == 0
+    assert awards.publish(root, poster=poster) == 0
+    assert calls and calls[0].endswith("award_provecta-navy-n0002426f6230.png")
+    assert "page-n0002426f6230" in awards.posted_ids(root)
+    logged = open(os.path.join(root, "logs", "award_posted.jsonl")).read()
+    assert "page-n0002426f6230" in logged
+    assert "N0002426F6230|47QTCA24D006J|Department of the Navy" in logged
+
+    # Same page later, now with a USAspending id attached. Still one award.
+    later = navy(generated_unique_award_id="CONT_AWD_N0002426F6230_1700")
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([later]))
+    again = awards.prepare(root=root)
+    assert again["posts"] == []
+    assert calls == [calls[0]]
+
+
+def test_empty_generated_ids_do_not_collapse_distinct_pages():
+    first = navy()
+    second = navy(
+        id="page-other",
+        slug="other-order",
+        url="https://pursuitai.net/awards/other-order",
+        piid="N0002426F9999",
+        parent_award_piid="47QTCA24D006J",
+        obligation=3_000_000,
+        ceiling=3_000_000,
+        generated_unique_award_id=None,
+    )
+    chosen, _ = awards.select_awards([first, second, dict(first)])
+    assert [row["id"] for row in chosen] == ["page-other", "page-n0002426f6230"]
+
+
+def test_legacy_generated_id_still_dedupes(tmp_path, monkeypatch, quiet_model):
+    """A log line from before page ids still suppresses that award."""
+    root = str(tmp_path)
+    log = os.path.join(root, "logs")
+    os.makedirs(log)
+    with open(os.path.join(log, "award_posted.jsonl"), "w") as handle:
+        handle.write(json.dumps({
+            "generated_unique_award_id": "CONT_AWD_ACME"}) + "\n")
+    # The feed now also sends a page id the old log never stored.
+    row = award(id="page-from-later-feed")
+    assert row["generated_unique_award_id"] == "CONT_AWD_ACME"
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([row]))
+    result = awards.prepare(root=root)
+    assert result["posts"] == []
+    assert awards.load_cursor(root) == "next-cursor"
+
+
+def test_fallback_key_dedupes_when_the_page_id_is_missing(
+        tmp_path, monkeypatch, quiet_model):
+    root = str(tmp_path)
+    row = navy(id="", generated_unique_award_id="")
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([row]))
+    pending = awards.prepare(root=root)
+    assert len(pending["posts"]) == 1
+    fallback = "N0002426F6230|47QTCA24D006J|Department of the Navy"
+    assert pending["posts"][0]["dedupe_key"] == fallback
+
+    def poster(path, text, alt=None):
+        return {"id": "urn:li:share:fb", "url": "https://www.linkedin.com/x"}
+
+    assert awards.approve(root=root) == 0
+    assert awards.publish(root, poster=poster) == 0
+
+    # A later row has a page id, but it is the same PIID and agency.
+    later = navy(id="page-assigned-later", generated_unique_award_id="")
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([later]))
+    assert awards.prepare(root=root)["posts"] == []
 
 
 def test_force_is_refused_in_ci(tmp_path, monkeypatch, quiet_model):

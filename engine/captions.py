@@ -4,6 +4,7 @@ If ANTHROPIC_API_KEY is set, asks Claude for a fresh variant so posts never
 repeat verbatim; otherwise uses the hand-written hooks in calendar.json.
 Every caption is validated (X <= 280 chars) and always carries the trial CTA.
 """
+import datetime
 import os
 import json
 import random
@@ -266,19 +267,69 @@ def _allowed_amounts(award):
     return amounts
 
 
+# Fields a caption may quote. Vehicle, parent PIID, the signed date, and
+# the public release date are optional on the feed; a caption that cites
+# one of them is still grounded when the row actually carries it.
+_COPIED_TEXT_KEYS = (
+    "id", "recipient_name", "awarding_agency", "awarding_sub_agency",
+    "awarding_office", "piid", "parent_award_piid", "contract_vehicle",
+    "naics_code", "naics_description", "summary", "slug",
+    "set_aside", "extent_competed", "psc_code",
+    "award_type_code", "award_category", "generated_unique_award_id",
+    "action_date", "first_seen_at", "first_published_at", "published_at",
+)
+_DATE_KEYS = ("action_date", "first_seen_at", "first_published_at", "published_at")
+
+
+def _parse_date(value):
+    """A calendar day from a date or an ISO timestamp, or None."""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1]
+    try:
+        return datetime.date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _add_date_tokens(tokens, value):
+    """Allow the day, month, and year, with or without a leading zero.
+
+    "2026-07-07" yields the digits 2026, 07, and 07. A caption that writes
+    "July 7, 2026" uses 7, which is not the same token as 07.
+    """
+    day = _parse_date(value)
+    if day is None:
+        return
+    tokens.add(str(day.year))
+    tokens.add(str(day.month))
+    tokens.add(f"{day.month:02d}")
+    tokens.add(str(day.day))
+    tokens.add(f"{day.day:02d}")
+
+
 def _plain_tokens(award):
     """Whole numbers the feed record itself contains.
 
     Matched as whole tokens, not substrings: "4" is not allowed merely
-    because the obligation is 4200000.
+    because the obligation is 4200000. Dollar amounts are checked
+    separately. Dates contribute their parts so a caption can cite the
+    signed date or the day the record was released.
     """
     tokens = set()
-    for key in ("recipient_name", "awarding_agency", "awarding_sub_agency",
-                "piid", "naics_code", "naics_description", "summary", "slug",
-                "set_aside", "extent_competed", "psc_code",
-                "award_type_code", "generated_unique_award_id"):
+    for key in _COPIED_TEXT_KEYS:
         for match in _NUM.findall(str(award.get(key) or "")):
             tokens.add(match.replace(",", ""))
+    for key in _DATE_KEYS:
+        _add_date_tokens(tokens, award.get(key))
     for key in ("obligation", "ceiling"):
         number = _amount(award.get(key))
         if number is None:
@@ -321,49 +372,191 @@ def ungrounded_numbers(text, award):
 def _award_topic(award):
     """A topic-shaped record so the existing compliance gate can run.
 
-    VERIFIED because the figures are the feed's, traced to
-    generated_unique_award_id. That status is what lets a real dollar
-    amount through check_claims. It does not excuse a number the feed
-    never supplied — ungrounded_money is the check for that, and it runs
-    even when this topic is VERIFIED.
+    VERIFIED because the figures are the feed's, traced to the page id
+    (or the USAspending id when that is all the row has). That status is
+    what lets a real dollar amount through check_claims. It does not
+    excuse a number the feed never supplied — ungrounded_money is the
+    check for that, and it runs even when this topic is VERIFIED.
     """
     return {
         "id": f"award-{award.get('slug') or 'unknown'}",
         "verification": {
             "status": "VERIFIED",
             "source_type": "public_awards_feed",
-            "source_ref": award.get("generated_unique_award_id") or "",
+            "source_ref": (award.get("id")
+                           or award.get("generated_unique_award_id")
+                           or ""),
         },
     }
 
 
-def _lead_amount(award):
-    """The figure the post leads with: obligated if we have it, else ceiling.
+# DoD often publishes a record about 90 days after it was signed. Past
+# two weeks, "just awarded" is the wrong tense: the news is the release.
+RELEASE_LAG_DAYS = 14
 
-    Ceiling is the potential value of the contract. Leading with it when
-    an obligated amount is on the record overstates what was awarded.
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+# A delayed release must not be rewritten as if it were signed today.
+# A task order must not be rewritten as a new contract.
+_JUST_SIGNED = re.compile(
+    r"\b(?:just|newly|recently)\s+signed\b"
+    r"|\bsigned\s+(?:today|yesterday|this week)\b",
+    re.I)
+_NEW_CONTRACT = re.compile(r"\bnew contract\b", re.I)
+# Names the feed sends in contract_vehicle. A caption may use one only
+# when that field is set. This is not a guess at the vehicle: it is the
+# list of labels we will not let a rewrite invent when the field is null.
+_KNOWN_VEHICLES = (
+    "GSA MAS", "NASA SEWP", "8(a) STARS", "STARS III", "Alliant",
+    "OASIS", "CIO-SP3", "CIO-SP4", "VETS 2",
+)
+
+
+def _names_a_known_vehicle(body):
+    """True when copy says "under {vehicle}" for a label the feed did not set.
+
+    The name alone is not enough: "Alliant" is also a company name. The
+    tell is the same "under …" phrase the template uses for a real vehicle.
+    """
+    for name in _KNOWN_VEHICLES:
+        if re.search(rf"\bunder\b.{{0,16}}{re.escape(name)}\b", body, re.I):
+            return True
+    return False
+
+
+def _flag(value):
+    if value is True:
+        return True
+    if isinstance(value, str) and value.strip().lower() == "true":
+        return True
+    return False
+
+
+def _is_task_order(award):
+    return _flag(award.get("is_task_order"))
+
+
+def _vehicle_name(award):
+    """The feed's vehicle label, or "" when it did not name one.
+
+    A null vehicle is unknown. The parent PIID is not a license to guess
+    "GSA MAS" or any other vehicle.
+    """
+    raw = award.get("contract_vehicle")
+    if raw is None or isinstance(raw, (bool, dict, list)):
+        return ""
+    return str(raw).strip()
+
+
+def format_date(value):
+    """'July 27, 2026', or "" when the feed has no date."""
+    day = _parse_date(value)
+    if day is None:
+        return ""
+    return f"{_MONTHS[day.month - 1]} {day.day}, {day.year}"
+
+
+def release_raw(award):
+    """Public release timestamp: first_seen_at, else first_published_at."""
+    return award.get("first_seen_at") or award.get("first_published_at") or ""
+
+
+def is_delayed_release(award, lag_days=RELEASE_LAG_DAYS):
+    """True when the signature is more than `lag_days` before release."""
+    signed = _parse_date(award.get("action_date"))
+    released = _parse_date(release_raw(award))
+    if signed is None or released is None:
+        return False
+    return (released - signed).days > lag_days
+
+
+def _lead_amount(award):
+    """The figure the post leads with: greatest(obligation, ceiling).
+
+    kind is "ceiling" when the ceiling is strictly larger, labeled
+    "valued at up to". Otherwise the figure is the obligation, including
+    when the two amounts are equal, labeled "obligated".
     """
     obligation = _amount(award.get("obligation"))
-    if obligation is not None:
-        return obligation, "obligated"
-    return _amount(award.get("ceiling")), "ceiling"
+    ceiling = _amount(award.get("ceiling"))
+    if ceiling is not None and (obligation is None or ceiling > obligation):
+        return ceiling, "ceiling"
+    return obligation, "obligated"
+
+
+def lead_stat(award):
+    """The image-card chip: the lead value, labeled the way the caption is."""
+    amount, kind = _lead_amount(award)
+    if amount is None:
+        return ""
+    dollars = format_dollars(amount)
+    if kind == "ceiling":
+        return f"Up to {dollars}"
+    return f"{dollars} obligated"
+
+
+def _opening(award):
+    """Who received what. A task order is never called a new contract."""
+    recipient = award.get("recipient_name") or ""
+    agency = award.get("awarding_agency") or ""
+    vehicle = _vehicle_name(award)
+    under = f" under {vehicle}" if vehicle else ""
+    if _is_task_order(award):
+        instrument = "task order"
+        received = (f"{recipient} received a task order from "
+                    f"{agency}{under}.")
+    else:
+        instrument = "contract"
+        received = (f"{recipient} was awarded a contract by "
+                    f"{agency}{under}.")
+    if not is_delayed_release(award):
+        return received
+    released = (f"A {instrument} for {recipient} from {agency}{under} "
+                f"was recently released.")
+    return released
+
+
+def _value_lines(award):
+    amount, kind = _lead_amount(award)
+    if amount is None:
+        return []
+    lines = []
+    obligation = _amount(award.get("obligation"))
+    ceiling = _amount(award.get("ceiling"))
+    if kind == "ceiling":
+        lines.append(f"It is valued at up to {format_dollars(amount)}.")
+        if obligation is not None:
+            lines.append(
+                f"The obligated amount is {format_dollars(obligation)}.")
+    else:
+        lines.append(f"The obligated amount is {format_dollars(amount)}.")
+        if ceiling is not None and ceiling != amount:
+            lines.append(
+                f"It is valued at up to {format_dollars(ceiling)}.")
+    return lines
+
+
+def _parent_piid(award):
+    raw = award.get("parent_award_piid")
+    if raw is None or isinstance(raw, (bool, dict, list)):
+        return ""
+    return str(raw).strip()
 
 
 def award_facts_body(award, *, include_summary=True):
     """Template copy. Every sentence is a field from the feed, labeled."""
-    amount, kind = _lead_amount(award)
-    lines = [f"{award['recipient_name']} was awarded work by "
-             f"{award['awarding_agency']}."]
-    if kind == "obligated":
-        lines.append(f"The obligated amount is {format_dollars(amount)}.")
-        ceiling = _amount(award.get("ceiling"))
-        if ceiling is not None:
-            lines.append(f"The contract ceiling is {format_dollars(ceiling)}.")
-    elif kind == "ceiling":
-        lines.append(
-            f"The public record lists a ceiling of {format_dollars(amount)}. "
-            f"It does not list a positive obligated amount, so this post "
-            f"does not state one.")
+    lines = [_opening(award)]
+    if is_delayed_release(award):
+        signed = format_date(award.get("action_date"))
+        if signed:
+            lines.append(f"It was signed on {signed}.")
+        released = format_date(release_raw(award))
+        if released:
+            lines.append(f"The public record is dated {released}.")
+    lines.extend(_value_lines(award))
     details = []
     if award.get("naics_code"):
         naics = f"NAICS {award['naics_code']}"
@@ -372,6 +565,9 @@ def award_facts_body(award, *, include_summary=True):
         details.append(naics)
     if award.get("piid"):
         details.append(f"PIID {award['piid']}")
+    parent = _parent_piid(award)
+    if parent:
+        details.append(f"Parent award PIID {parent}")
     if details:
         lines.append(". ".join(details) + ".")
     if award.get("set_aside"):
@@ -427,6 +623,18 @@ def _award_body_ok(body, award):
     if award["recipient_name"].casefold() not in folded:
         return False
     if award["awarding_agency"].casefold() not in folded:
+        return False
+    if _is_task_order(award) and _NEW_CONTRACT.search(body):
+        return False
+    if is_delayed_release(award) and (
+            _JUST_SIGNED.search(body) or _NEW_CONTRACT.search(body)):
+        return False
+    vehicle = _vehicle_name(award)
+    if vehicle and vehicle.casefold() not in folded:
+        # The template names a vehicle the feed supplied. A rewrite may
+        # not drop it or swap in a different one.
+        return False
+    if not vehicle and _names_a_known_vehicle(body):
         return False
     if ungrounded_money(body, award) or ungrounded_numbers(body, award):
         return False
