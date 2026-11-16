@@ -890,6 +890,19 @@ def test_fallback_key_dedupes_when_the_page_id_is_missing(
     assert awards.prepare(root=root)["posts"] == []
 
 
+def test_approve_names_the_missing_awards_queue(tmp_path, capsys):
+    """A checkout with no queue must say so, and must not point at the
+    daily pending.json. Nothing has been posted."""
+    code = awards.approve(expect="a" * 64, root=str(tmp_path))
+    out = capsys.readouterr().out
+    assert code == 1
+    assert out.strip().endswith("Nothing was posted.")
+    assert "awards_pending.json" in out
+    assert "is missing" in out
+    # The old gate text named the daily file and nothing else.
+    assert "nothing to approve — pending.json is missing" not in out
+
+
 def test_force_is_refused_in_ci(tmp_path, monkeypatch, quiet_model):
     root = str(tmp_path)
     monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([award()]))
@@ -919,6 +932,22 @@ def test_awards_workflow_is_its_own_queue():
     assert "secrets.LINKEDIN_ACCESS_TOKEN" in text
     assert "secrets.LINKEDIN_ORG_ID" in text
     assert 'cron: "47 12 * * 1-5"' in text
+    # Publish checks the branch out, then refuses a queue that is not there
+    # before it will hash or post. The check that the prepared bytes
+    # actually reached that branch runs before anyone is asked to approve.
+    assert "ref: ${{ github.ref_name }}" in text
+    assert 'python engine/awards.py --approve --expect "$EXPECT"' in text
+    confirm = text.index("Confirm the award queue is on the branch")
+    review = text.index("Send for review")
+    assert confirm < review
+    assert ("content/awards_pending.json was prepared but is not on origin/"
+            in text)
+    publish = text.index("\n  publish:\n")
+    assert text.index("content/awards_pending.json is not in this checkout",
+                      publish) < text.index("Post to the LinkedIn Page",
+                                            publish)
+    assert "actions/upload-artifact" not in text
+    assert "actions/download-artifact" not in text
 
 
 def test_docs_name_the_new_secret_and_the_schedule():

@@ -493,7 +493,7 @@ def test_the_daily_run_does_not_trigger_the_test_suite():
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     written = set()
-    for wf in ("daily.yml", "analytics.yml"):
+    for wf in ("daily.yml", "analytics.yml", "awards.yml"):
         with open(os.path.join(root, ".github", "workflows", wf)) as f:
             for call in re.findall(r"commit_and_push\.sh\s+\"[^\"]*\"\s+(.+)",
                                    f.read()):

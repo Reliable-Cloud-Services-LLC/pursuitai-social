@@ -105,6 +105,13 @@ def write_approval_at(sandbox, when, pending_hash=None):
 
 # ---------- approval.py units ----------
 
+def test_a_missing_pending_file_names_that_path(tmp_path):
+    missing = os.path.join(str(tmp_path), "content", "pending.json")
+    with pytest.raises(FileNotFoundError, match="pending.json is missing") as caught:
+        approval.write_approval(missing, os.path.join(str(tmp_path), "approved.json"))
+    assert missing in str(caught.value)
+
+
 def test_hash_is_sha256_of_the_exact_bytes(tmp_path):
     p = tmp_path / "pending.json"
     p.write_bytes(b'{"a": 1}')

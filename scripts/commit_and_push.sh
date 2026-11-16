@@ -31,10 +31,43 @@ shift
 git config user.name "pursuitai-bot"
 git config user.email "bot@pursuitai.net"
 
-# `-- "$@"` so a path is never mistaken for a flag, and `|| true` because a
-# path that does not exist this run (prepare writes no log; publish may
-# delete pending.json) is normal, not an error.
-git add -A -- "$@" || true
+# A path that does not exist this run is normal. Prepare names the cursor
+# and the skip log even on a day it did not write them. Publish names the
+# queue after deleting it, and the award log is the path that has to land.
+#
+# `git add` does not skip a missing path. One pathspec that matches nothing
+# aborts the whole command and stages nothing — including the files that
+# do exist. `|| true` then turned that abort into "nothing to commit" and
+# a green step. That is how awards prepare on 2026-11-13 and 2026-11-16
+# left content/awards_pending.json off develop: logs/award_cursor.json was
+# not written (the cursor stays put while eligible awards remain), git add
+# died on that pathspec, and the queue file sat untracked. Publish checked
+# the branch out and had nothing to approve. The same abort would drop
+# logs/award_posted.jsonl the moment the queue file was already gone, and
+# the next run would post the award again.
+#
+# So: stage a path that is on disk, or that git already tracks (a deletion
+# has to be recorded). Skip a path that is neither, and say so. A real
+# `git add` failure — an ignored file, a bad index — still fails the step.
+to_add=()
+for path in "$@"; do
+  if [ -e "$path" ] || git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+    to_add+=("$path")
+  else
+    echo "absent, not part of this commit: $path"
+  fi
+done
+
+if [ "${#to_add[@]}" -eq 0 ]; then
+  echo "nothing to commit"
+  exit 0
+fi
+
+git add -A -- "${to_add[@]}" || {
+  echo "::error::could not stage: ${to_add[*]}"
+  echo "::error::${PUSH_FAILURE_HINT:-Fix the branch by hand.}"
+  exit 1
+}
 
 if git diff --cached --quiet; then
   echo "nothing to commit"
