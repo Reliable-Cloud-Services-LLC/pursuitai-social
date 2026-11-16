@@ -101,20 +101,29 @@ VIDEO_TRIES, VIDEO_DELAY = 60, 5     # 5min
 # on a plausible phrase. Eleven of our 24 topics carry a paren; the earliest
 # sits at character 5, which would have published a 5-character post.
 #
-# Two reserved characters are deliberately NOT escaped, against the blanket
-# rule, because escaping them breaks things that demonstrably work:
+# "#" is deliberately NOT escaped, against the blanket rule. It is our
+# hashtag block. recompete-radar (2026-10-06) rendered its hashtags, and
+# posts-api documents sending "#coding" unescaped and LinkedIn returning
+# "{hashtag|\\#|coding}" — it converts them. Escaping would publish literal
+# "#GovCon" text.
 #
-#   _  appears only inside UTM query strings. recompete-radar (2026-10-06)
-#      carries one at character 430 and published complete, link shortened
-#      to lnkd.in. Escaping would put backslashes inside the URL.
-#   #  is our hashtag block. Same post rendered its hashtags correctly, and
-#      posts-api documents sending "#coding" unescaped and LinkedIn
-#      returning "{hashtag|\\#|coding}" — it converts them for us.
-#      Escaping would publish literal "#GovCon" text instead.
+# "_" IS escaped. It is italic syntax in little text. Left raw, LinkedIn
+# pairs the underscores in a UTM query and deletes the delimiters, so the
+# linkified href loses them. The 2026-11-16 award posts were queued with
+# utm_source / utm_medium / utm_campaign / utm_content (see
+# content/awards_pending.json). The browser that opened those links showed
+# utmsource / utmmedium / utmcampaign / utmcontent, which GA does not read.
+# "Published complete and shortened to lnkd.in" (recompete-radar) only
+# proved the post was not truncated. It did not prove the destination
+# query still contained underscores.
 #
-# So: the reserved set minus those two. Backslash goes FIRST, or we escape
-# the backslashes we just added.
-_LITTLE_TEXT_ESCAPE = "\\" + "|{}@[]()<>*~"
+# The backslash is little-text escaping, not part of the URL. LinkedIn
+# strips it when it renders commentary. This function is only applied to
+# Posts API commentary. The Comments API is plain text and would publish
+# the backslash literally; do not call this on a comment.
+#
+# Backslash goes FIRST, or we escape the backslashes we just added.
+_LITTLE_TEXT_ESCAPE = "\\" + "|{}@[]()<>*~_"
 
 
 def escape_commentary(text):

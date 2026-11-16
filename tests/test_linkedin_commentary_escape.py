@@ -38,24 +38,31 @@ cut precisely where "(each with the reason it's flagged)" begins — 348 of
 the surviving text ends on a plausible-looking phrase. That is the failure
 mode these tests exist to catch: not a crash, not an error, just less.
 
-WHY # AND _ ARE DELIBERATELY NOT ESCAPED
-The grammar's blanket rule covers them, but escaping them would break two
-things that demonstrably work, and the evidence is specific:
+WHY # IS STILL NOT ESCAPED, AND WHY _ NOW IS
+"#" is the hashtag block. posts-api documents sending "Follow best
+practices #coding" unescaped and LinkedIn returning
+"{hashtag|\\#|coding}" — it converts for you. Escaping would publish
+literal "#GovCon" text. recompete-radar (2026-10-06) rendered its hashtags.
 
-  * recompete-radar (2026-10-06) carries "_" at character 430 and three
-    hashtags, and published COMPLETE — the UTM link was linkified and
-    shortened to lnkd.in, the hashtags render as hashtags.
-  * posts-api documents sending "Follow best practices #coding" unescaped
-    and LinkedIn returning "{hashtag|\\#|coding}" — it converts for you.
+"_" is italic syntax. Left raw inside a UTM query, LinkedIn pairs the
+underscores and deletes the delimiters, so the linkified href is
+utmsource / utmmedium / utmcampaign / utmcontent. GA does not read those.
+The 2026-11-16 award posts were queued with utm_source and the browser
+that opened them showed utmsource. "Published complete and shortened to
+lnkd.in" only proved the post was not truncated.
 
-Escaping "_" would put backslashes inside a UTM query string, and escaping
-"#" would turn clickable hashtags into literal text. Both are a worse post
-than the one we have. So the escape set is the reserved set MINUS those
-two, and these tests pin that boundary in both directions.
+Escaping "_" puts a backslash in the commentary payload. LinkedIn strips
+that backslash when it renders Posts API commentary, so the clickable
+href is utm_source again. This function is commentary only. The Comments
+API is plain text and would show the backslash; do not use it there.
+
+So the escape set is the reserved set minus "#". These tests pin that
+boundary in both directions.
 """
 import json
-import sys
 import os
+import re
+import sys
 
 import pytest
 
@@ -90,8 +97,9 @@ def test_nothing_after_the_paren_is_lost():
     """
     out = post_linkedin.escape_commentary(LIVE_CAPTION)
     for tail in ("compliance matrix", "free 14-day trial",
-                 "utm_source=linkedin", "#WOSB"):
+                 "utm\\_source=linkedin", "#WOSB"):
         assert tail in out, f"lost {tail!r} — the exact production failure"
+    assert "utm_source=linkedin" in _little_text_rendered(out)
 
 
 def test_hashtags_are_left_alone():
@@ -101,16 +109,34 @@ def test_hashtags_are_left_alone():
     assert r"\#" not in out
 
 
-def test_underscores_in_urls_are_left_alone():
-    """Escaping these would put backslashes inside a UTM query string."""
+def _little_text_rendered(commentary):
+    """What LinkedIn shows after it strips a backslash before a reserved character.
+
+    Posts API commentary is little text. The backslash is the escape, not
+    a character in the link. The Comments API does not do this; this helper
+    models commentary only.
+    """
+    return re.sub(r"\\([|{}@\[\]()<>*~_\\])", r"\1", commentary)
+
+
+def test_underscores_in_urls_are_escaped_for_little_text():
+    """A raw "_" is italic. LinkedIn deletes it and the href becomes utmsource.
+
+    The payload carries the escape. The rendered href, after LinkedIn strips
+    the backslash, is the utm_source GA reads.
+    """
     out = post_linkedin.escape_commentary(LIVE_CAPTION)
-    assert "utm_source=linkedin&utm_medium=organic" in out
-    assert r"\_" not in out
+    assert r"utm\_source=linkedin&utm\_medium=organic" in out
+    assert "utm_source=linkedin&utm_medium=organic" not in out
+    rendered = _little_text_rendered(out)
+    assert "utm_source=linkedin&utm_medium=organic" in rendered
+    assert "utmsource=" not in rendered
+    assert "utmmedium=" not in rendered
 
 
-@pytest.mark.parametrize("ch", list("|{}@[]()<>*~"))
+@pytest.mark.parametrize("ch", list("|{}@[]()<>*~_"))
 def test_every_dangerous_reserved_character_is_escaped(ch):
-    """The documented reserved set, minus the two proven-safe exceptions."""
+    """The documented reserved set, minus "#", which LinkedIn turns into a hashtag."""
     out = post_linkedin.escape_commentary(f"a{ch}b")
     assert out == f"a\\{ch}b"
 
@@ -174,4 +200,6 @@ def test_post_image_escapes_at_the_payload_boundary(monkeypatch):
 
     commentary = sent["payload"]["commentary"]
     assert r"\(PDF" in commentary, "post_image published an unescaped paren"
+    assert r"utm\_source=linkedin" in commentary, "post_image left a raw underscore in the UTM link"
+    assert "utm_source=linkedin" not in commentary
     assert "#WOSB" in commentary, "post_image lost the tail"

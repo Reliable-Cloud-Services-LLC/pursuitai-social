@@ -13,6 +13,7 @@ discarded. The link is the award page on pursuitai.net.
 """
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -24,6 +25,7 @@ import awards  # noqa: E402
 import captions  # noqa: E402
 import cards  # noqa: E402
 import compliance  # noqa: E402
+import post_linkedin  # noqa: E402
 
 
 def award(**over):
@@ -425,11 +427,40 @@ def test_template_is_grounded_and_links_to_the_award_page(quiet_model):
     assert "https://pursuitai.net/awards/acme-va" in text
     assert "utm_source=linkedin" in text
     assert "utm_campaign=award" in text
+    # The queued caption keeps the real query. LinkedIn's payload escapes
+    # the underscores; see test_award_utm_underscores_are_escaped_for_linkedin.
     assert captions.ungrounded_money(text, award()) == []
     assert captions.ungrounded_numbers(text, award()) == []
     assert compliance.check_claims(captions._award_topic(award()), text) == []
     assert "orangeslices" not in text.casefold()
     assert "usaspending.gov" not in text
+
+
+def test_award_utm_underscores_are_escaped_for_linkedin(quiet_model):
+    """Queued copy uses utm_source. The LinkedIn payload escapes the underscore.
+
+    GA only reads utm_source / utm_medium / utm_campaign / utm_content.
+    Little text treats "_" as italic and deletes the delimiter, so a raw
+    underscore in commentary is what turned the 2026-11-16 award links
+    into utmsource / utmmedium / utmcampaign / utmcontent. The caption
+    itself stays unescaped: X and Instagram share that string.
+    """
+    text = captions.build_award_linkedin(award(), branded(), fresh=False)["text"]
+    query = (
+        "utm_source=linkedin&utm_medium=organic"
+        "&utm_campaign=award&utm_content=card"
+    )
+    assert query in text
+    assert "utmsource=" not in text
+    escaped = post_linkedin.escape_commentary(text)
+    assert query not in escaped
+    assert (
+        r"utm\_source=linkedin&utm\_medium=organic"
+        r"&utm\_campaign=award&utm\_content=card"
+    ) in escaped
+    rendered = re.sub(r"\\_", "_", escaped)
+    assert query in rendered
+    assert "utmsource=" not in rendered
 
 
 def test_the_post_link_is_the_feed_url():
