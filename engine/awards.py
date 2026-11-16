@@ -740,8 +740,13 @@ def approve(expect=None, root=None):
     try:
         record = approval.write_approval(state["pending"], state["approved"],
                                          expect=expect)
-    except FileNotFoundError as exc:
-        print(f"[awards] {exc}")
+    except FileNotFoundError:
+        # Name the awards file. The shared gate says "pending.json", which
+        # is the daily queue, and that sent the 2026-11-16 log looking at
+        # the wrong path.
+        print(f"[awards] REFUSED: {state['pending']} is missing, so there "
+              f"is nothing to approve. Publish reads the queue prepare "
+              f"pushed to the branch. Nothing was posted.")
         return 1
     except approval.ApprovalMismatch as exc:
         print(f"[awards] REFUSED: {exc}")

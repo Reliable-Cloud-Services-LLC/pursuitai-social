@@ -126,11 +126,126 @@ def test_nothing_to_commit_is_a_success_not_a_failure(repos):
 
 def test_a_missing_path_is_not_a_failure(repos):
     """publish deletes pending.json and analytics writes only metrics, so a
-    named path that does not exist this run is normal."""
+    named path that does not exist this run is normal.
+
+    It must not take the paths that DO exist with it. `git add` aborts the
+    whole command when one pathspec matches nothing, and the old `|| true`
+    then reported "nothing to commit" while the real change stayed
+    untracked. That is the 2026-11-16 awards failure, with `logs` standing
+    in for the cursor file that was never written."""
     a, _ = repos
     open(os.path.join(a, "content", "pending.json"), "w").write('{"x":2}')
     r = run_script(a, "post log", "content", "logs")
     assert r.returncode == 0, r.stdout + r.stderr
+    assert "absent, not part of this commit: logs" in r.stdout
+    git(a, "fetch", "origin")
+    landed = git(a, "show", "origin/main:content/pending.json").stdout
+    assert landed == '{"x":2}'
+
+
+def test_every_named_path_absent_is_still_a_success(repos):
+    """An approve that refused, with nothing posted, names files that were
+    never in the tree. That is "nothing to commit", not a second failure."""
+    a, _ = repos
+    r = run_script(a, "award post log",
+                   "content/awards_pending.json",
+                   "content/awards_approved.json",
+                   "logs/award_posted.jsonl")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "nothing to commit" in r.stdout
+    assert "absent, not part of this commit: content/awards_pending.json" in r.stdout
+
+
+def test_awards_prepare_lands_the_queue_when_the_cursor_was_not_written(repos):
+    """The handoff. Prepare writes the queue and names the cursor and the
+    skip log too. On a day the cursor stays put those files do not exist.
+    The queue still has to reach the branch, byte for byte, because publish
+    checks the branch out and hashes whatever is there."""
+    a, b = repos
+    payload = '{"date":"2026-11-16","posts":[{"id":"page-1"}]}\n'
+    os.makedirs(os.path.join(a, "content"), exist_ok=True)
+    with open(os.path.join(a, "content", "awards_pending.json"), "w") as handle:
+        handle.write(payload)
+    r = run_script(
+        a, "awards prepare 2026-11-16",
+        "content/awards_pending.json",
+        "logs/award_cursor.json",
+        "logs/award_skipped.jsonl")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "nothing to commit" not in r.stdout
+    assert "absent, not part of this commit: logs/award_cursor.json" in r.stdout
+    assert "absent, not part of this commit: logs/award_skipped.jsonl" in r.stdout
+    assert "pushed on attempt 1" in r.stdout
+
+    git(b, "pull")
+    landed = open(os.path.join(b, "content", "awards_pending.json"), "rb").read()
+    assert landed == payload.encode()
+
+
+def test_a_cursor_advance_with_no_queue_still_lands(repos):
+    """A page that is already handled writes the cursor and removes the
+    queue. The missing queue must not swallow the cursor."""
+    a, b = repos
+    os.makedirs(os.path.join(a, "logs"), exist_ok=True)
+    cursor = '{"since":"next-cursor"}\n'
+    with open(os.path.join(a, "logs", "award_cursor.json"), "w") as handle:
+        handle.write(cursor)
+    r = run_script(
+        a, "awards prepare 2026-11-16",
+        "content/awards_pending.json",
+        "logs/award_cursor.json",
+        "logs/award_skipped.jsonl")
+    assert r.returncode == 0, r.stdout + r.stderr
+    git(b, "pull")
+    landed = open(os.path.join(b, "logs", "award_cursor.json")).read()
+    assert landed == cursor
+    assert not os.path.exists(os.path.join(b, "content", "awards_pending.json"))
+
+
+def test_award_publish_commits_the_log_after_the_queue_is_deleted(repos):
+    """The dedupe log is the only record that an award was posted. Publish
+    deletes the queue first. That deletion, and a cursor that was not
+    written, must not keep the log off the branch — the next run would
+    post the same award again."""
+    a, b = repos
+    os.makedirs(os.path.join(a, "content"), exist_ok=True)
+    with open(os.path.join(a, "content", "awards_pending.json"), "w") as handle:
+        handle.write('{"posts":[{"id":"page-1"}]}\n')
+    with open(os.path.join(a, "content", "awards_approved.json"), "w") as handle:
+        handle.write("{}\n")
+    git(a, "add", "-A")
+    git(a, "commit", "-m", "queue")
+    git(a, "push")
+    git(b, "pull")
+
+    os.remove(os.path.join(b, "content", "awards_pending.json"))
+    os.remove(os.path.join(b, "content", "awards_approved.json"))
+    os.makedirs(os.path.join(b, "logs"), exist_ok=True)
+    with open(os.path.join(b, "logs", "award_posted.jsonl"), "w") as handle:
+        handle.write('{"id":"page-1"}\n')
+    r = run_script(
+        b, "award post log 2026-11-16",
+        "content/awards_pending.json",
+        "content/awards_approved.json",
+        "logs/award_posted.jsonl",
+        "logs/award_cursor.json",
+        "logs/award_skipped.jsonl")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "absent, not part of this commit: logs/award_cursor.json" in r.stdout
+
+    git(a, "pull")
+    assert not os.path.exists(os.path.join(a, "content", "awards_pending.json"))
+    assert not os.path.exists(os.path.join(a, "content", "awards_approved.json"))
+    assert open(os.path.join(a, "logs", "award_posted.jsonl")).read() == (
+        '{"id":"page-1"}\n')
+
+
+def test_a_missing_pathspec_is_not_swallowed_by_one_git_add():
+    """The one-liner is the bug. A source scan is not the test above, but
+    putting the one-liner back would make that test fail only after
+    someone also deleted it — this names the line that has to stay gone."""
+    script = open(SCRIPT).read()
+    assert 'git add -A -- "$@" || true' not in script
 
 
 def test_an_unlandable_push_fails_loudly(repos):
@@ -186,6 +301,8 @@ def test_the_swallowing_form_is_not_reintroduced():
     ("daily.yml", "prepare"),
     ("daily.yml", "post log"),
     ("analytics.yml", "metrics"),
+    ("awards.yml", "awards prepare"),
+    ("awards.yml", "award post log"),
 ])
 def test_each_writer_routes_through_the_helper(workflow, message):
     text = workflow_text()[workflow]

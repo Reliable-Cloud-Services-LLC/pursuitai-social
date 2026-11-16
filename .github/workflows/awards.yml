@@ -108,6 +108,34 @@ jobs:
             once the branch is clean.
         run: scripts/commit_and_push.sh "awards prepare $(date -u +%F)" content/awards_pending.json logs/award_cursor.json logs/award_skipped.jsonl
 
+      # The hash below is taken from this checkout. Publish is a later job
+      # with its own checkout of the branch, so the file has to be ON the
+      # branch and byte-for-byte this one before anyone is asked to approve.
+      # A missing cursor file used to make `git add` stage nothing and the
+      # commit step still exit 0; this is the check that catches that.
+      - name: Confirm the award queue is on the branch
+        run: |
+          if [ ! -f content/awards_pending.json ]; then
+            echo "no award queue this run — nothing for publish to read"
+            exit 0
+          fi
+          branch="${GITHUB_REF_NAME:?}"
+          git fetch --depth=1 origin \
+            "+refs/heads/${branch}:refs/remotes/origin/${branch}"
+          if ! git cat-file -e "origin/${branch}:content/awards_pending.json"; then
+            echo "::error::content/awards_pending.json was prepared but is not on origin/${branch}."
+            echo "::error::publish checks that branch out. Refusing to ask for approval of a queue it cannot see."
+            exit 1
+          fi
+          git cat-file blob "origin/${branch}:content/awards_pending.json" \
+            > "$RUNNER_TEMP/awards_pending.on-branch"
+          if ! cmp -s content/awards_pending.json "$RUNNER_TEMP/awards_pending.on-branch"; then
+            echo "::error::origin/${branch}:content/awards_pending.json is not the file just prepared."
+            echo "::error::Refusing to approve a queue publish would not see."
+            exit 1
+          fi
+          echo "queue on origin/${branch} matches the prepared file"
+
       - name: Send for review
         id: review
         env:
@@ -161,6 +189,12 @@ jobs:
           if [ -z "$EXPECT" ]; then
             echo "::error::prepare published no pending_sha256."
             echo "::error::Refusing to publish unverified award posts."
+            exit 1
+          fi
+          if [ ! -f content/awards_pending.json ]; then
+            echo "::error::content/awards_pending.json is not in this checkout of ${GITHUB_REF_NAME}."
+            echo "::error::prepare recorded sha256 ${EXPECT:0:12}…, but that file is not on the branch publish checked out."
+            echo "::error::Nothing was posted. These awards stay eligible for the next run."
             exit 1
           fi
           python engine/awards.py --approve --expect "$EXPECT"

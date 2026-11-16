@@ -65,7 +65,8 @@ def write_approval(pending_path, approved_path, actor=None, now=None,
     swap that happened during the hours before the click.
     """
     if not os.path.exists(pending_path):
-        raise FileNotFoundError("nothing to approve — pending.json is missing")
+        raise FileNotFoundError(
+            f"nothing to approve — {pending_path} is missing")
     if expect and compute_hash(pending_path) != expect:
         raise ApprovalMismatch(
             "pending.json is not what was sent for review — approving it "
