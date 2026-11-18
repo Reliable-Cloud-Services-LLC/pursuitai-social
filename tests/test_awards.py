@@ -131,8 +131,11 @@ def branded():
 
 @pytest.fixture
 def quiet_model(monkeypatch):
-    """No caption test should call Claude, even if a key is exported."""
+    """No caption test should call Claude, SAM, or LinkedIn."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("SAM_API_KEY", raising=False)
+    monkeypatch.delenv("LINKEDIN_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("LINKEDIN_ORG_ID", raising=False)
 
 
 # ---------- selection ----------

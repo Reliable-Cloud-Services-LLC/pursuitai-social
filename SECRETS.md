@@ -33,6 +33,7 @@ shell or put them in a `.env` you never commit (`.env` is gitignored).
 | `LINKEDIN_CLIENT_SECRET` | recommended | LinkedIn app → Auth tab | As above — both are needed for introspection. |
 | `PUBLIC_AWARDS_FEED_TOKEN` | yes, for award posts | PursuitAI platform | `awards.yml` logs that the feed is not configured and queues nothing. The daily post is unaffected. |
 | `PUBLIC_AWARDS_FEED_BASE_URL` | optional | PursuitAI platform | Defaults to `https://api.pursuitai.net`. Set it only to point the award feed at another environment. |
+| `SAM_API_KEY` | optional | SAM.gov Entity API | Award posts do not tag a company page unless a website is known. The feed's `recipient_website` is used when the platform sends it. Without that field and without this key, the post still goes out, with the plain legal name and no company mention. |
 
 Only `X_API_KEY` and `IG_USER_ID` gate whether a channel is *attempted* — the
 engine checks those two as the "are credentials present" signal. The rest fail
@@ -236,6 +237,23 @@ Leave it unset to use production.
 
 Do not put the token in the repo. It is a repository secret, same as the
 LinkedIn token.
+
+### Optional: SAM.gov website for company mentions
+
+Award posts can mention the winner's LinkedIn Page only when that Page's
+website domain equals the website on the winner's SAM.gov entity
+registration. The feed already includes `recipient_uei`. It does not yet
+include the website. Either of these is enough, and neither is required:
+
+| Source | Required? |
+|---|---|
+| Feed field `recipient_website` | no — used when the platform adds it |
+| `SAM_API_KEY` | no — `GET https://api.sam.gov/entity-information/v3/entities?ueiSAM=…&includeSections=entityRegistration` reads `entityURL` |
+
+Create a public API key at <https://sam.gov> (Entity Management / entity
+information). With both unset, prepare logs that there is no SAM website
+and queues the plain legal name. A wrong or missing key does not fail the
+run. Do not commit the key.
 
 ## Media hosting — 4 secrets
 

@@ -33,6 +33,7 @@ a human roughly every two months. See docs/LINKEDIN_ACCESS.md.
 """
 import json
 import os
+import re
 import time
 from urllib.parse import quote
 
@@ -139,6 +140,51 @@ def escape_commentary(text):
     for ch in _LITTLE_TEXT_ESCAPE:
         text = text.replace(ch, "\\" + ch)
     return text
+
+
+# A mention is little text, not a string we can escape as a whole. The
+# grammar is MentionElement ::= '@' FallbackText? '(' 'Urn' ')' with
+# FallbackText ::= '[' Text ']'. Posts API examples (read 2026-11-18):
+#   @[Devtestco](urn:li:organization:2414183)
+#   @[Eddy](urn:li:person:1234)
+# Escaping the '@', brackets, or parens that form that element turns it
+# back into plain text. Reserved characters INSIDE the name and the URN
+# still have to be escaped, including '#', which the plain-text escaper
+# leaves alone so our hashtag block survives.
+# https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format?view=li-lms-2026-10
+_MENTION_RE = re.compile(
+    r"@\[([^\[\]\n]*)\]\((urn:li:(?:organization:\d+|person:[A-Za-z0-9_-]+))\)")
+_MENTION_ESCAPE = _LITTLE_TEXT_ESCAPE + "#"
+
+
+def _escape_mention_piece(text):
+    for ch in _MENTION_ESCAPE:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+def escape_commentary_with_mentions(text):
+    """Escape little text, leaving mention elements as mentions.
+
+    Plain segments go through escape_commentary, so a parenthesis or an
+    underscore outside a mention still cannot truncate the post, and a
+    hashtag is still left for LinkedIn to linkify. The mention's own
+    name and URN are escaped without escaping the `@[]()` that define
+    the element. A string that merely looks like a mention but does not
+    match this pattern is escaped as plain text, which publishes the
+    characters instead of truncating at them.
+    """
+    if not text:
+        return text or ""
+    parts = []
+    pos = 0
+    for match in _MENTION_RE.finditer(text):
+        parts.append(escape_commentary(text[pos:match.start()]))
+        parts.append("@[" + _escape_mention_piece(match.group(1))
+                     + "](" + _escape_mention_piece(match.group(2)) + ")")
+        pos = match.end()
+    parts.append(escape_commentary(text[pos:]))
+    return "".join(parts)
 
 
 # LINKEDIN_DRAFT=1 creates the post as a DRAFT: LinkedIn parses and renders
@@ -366,7 +412,7 @@ def post_image(repo_rel_path, commentary, alt_text=None):
 
     payload = {
         "author": author,
-        "commentary": escape_commentary(commentary),
+        "commentary": escape_commentary_with_mentions(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],
@@ -690,7 +736,7 @@ def post_video(repo_rel_path, commentary, title=None):
 
     payload = {
         "author": author,
-        "commentary": escape_commentary(commentary),
+        "commentary": escape_commentary_with_mentions(commentary),
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED",
                          "targetEntities": [],

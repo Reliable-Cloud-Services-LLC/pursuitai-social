@@ -183,9 +183,13 @@ def awards_review(pending, review_url=None, media_urls=None):
                     "alt_text": post.get("alt") or f"award {index}",
                 })
             who = post.get("recipient_name") or post.get("recipient") or "award"
-            blocks.append(_section(
-                f"*Post {index} — {who}*\n```"
-                + (post.get("text_linkedin") or "") + "```"))
+            review = (post.get("mention_review") or "").strip()
+            caption = post.get("text_linkedin") or ""
+            body = f"*Post {index} — {who}*"
+            if review:
+                body += "\n" + review
+            body += "\n```" + caption + "```"
+            blocks.append(_section(body))
         if review_url:
             blocks.append(_section(
                 f"<{review_url}|Approve or reject this run →>"))

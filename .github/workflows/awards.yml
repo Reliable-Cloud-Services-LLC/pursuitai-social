@@ -54,6 +54,9 @@ jobs:
           PUBLIC_AWARDS_FEED_TOKEN: ${{ secrets.PUBLIC_AWARDS_FEED_TOKEN }}
           PUBLIC_AWARDS_FEED_BASE_URL: ${{ secrets.PUBLIC_AWARDS_FEED_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
         run: python engine/awards.py --dry-run
 
   prepare:
@@ -76,6 +79,9 @@ jobs:
           PUBLIC_AWARDS_FEED_TOKEN: ${{ secrets.PUBLIC_AWARDS_FEED_TOKEN }}
           PUBLIC_AWARDS_FEED_BASE_URL: ${{ secrets.PUBLIC_AWARDS_FEED_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
         run: python engine/awards.py --prepare
 
       - name: Upload award cards
@@ -106,7 +112,7 @@ jobs:
           PUSH_FAILURE_HINT: >-
             awards_pending.json is what the publish job reads. Re-dispatch
             once the branch is clean.
-        run: scripts/commit_and_push.sh "awards prepare $(date -u +%F)" content/awards_pending.json logs/award_cursor.json logs/award_skipped.jsonl
+        run: scripts/commit_and_push.sh "awards prepare $(date -u +%F)" content/awards_pending.json content/linkedin_mentions.json logs/award_cursor.json logs/award_skipped.jsonl
 
       # The hash below is taken from this checkout. Publish is a later job
       # with its own checkout of the branch, so the file has to be ON the
@@ -203,6 +209,7 @@ jobs:
         env:
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
           LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
+          SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
         run: python engine/awards.py --publish
 
@@ -212,4 +219,4 @@ jobs:
           PUSH_FAILURE_HINT: >-
             The award log is the only record that an award was posted.
             Without it the next run will post the same award again.
-        run: scripts/commit_and_push.sh "award post log $(date -u +%F)" content/awards_pending.json content/awards_approved.json logs/award_posted.jsonl logs/award_cursor.json logs/award_skipped.jsonl
+        run: scripts/commit_and_push.sh "award post log $(date -u +%F)" content/awards_pending.json content/awards_approved.json content/linkedin_mentions.json logs/award_posted.jsonl logs/award_cursor.json logs/award_skipped.jsonl
