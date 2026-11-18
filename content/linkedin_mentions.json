@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "note": "UEI to LinkedIn organization, plus owner-confirmed people. Automatic matches never overwrite source override or blocked.",
+  "organizations": {},
+  "people": {}
+}

@@ -695,6 +695,109 @@ def build_award_linkedin(award, brand, *, fresh=True):
     return {"text": _assemble_award(chosen, award, brand),
             "varied": chosen != body}
 
+
+# LinkedIn Posts API little text, read 2026-11-18. An organization mention
+# has to be the Page's full name. A member mention may be one token of the
+# member's name. The element is @[Name](urn:li:organization:N) or
+# @[Name](urn:li:person:ID). See engine/mentions.py for when we are allowed
+# to emit one. This function only formats.
+# https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format?view=li-lms-2026-10
+# https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-10
+_ORG_URN = re.compile(r"urn:li:organization:\d+\Z")
+_PERSON_URN = re.compile(r"urn:li:person:[A-Za-z0-9_-]+\Z")
+MAX_MENTIONS = 3
+
+
+def mention_element(name, urn):
+    """One little-text mention, or "" when the name or URN cannot be one.
+
+    Brackets and newlines in the name would break FallbackText, so those
+    names are refused here and the caller posts the plain name instead.
+    """
+    name = (name or "").strip()
+    urn = (urn or "").strip()
+    if not name or any(ch in name for ch in "[]\n\r"):
+        return ""
+    if not (_ORG_URN.match(urn) or _PERSON_URN.match(urn)):
+        return ""
+    return f"@[{name}]({urn})"
+
+
+def _visible_name_ok(name, award):
+    """A mention's visible text is part of the caption, so it is held to
+    the same figure rules as the body. The URN is not visible and is not
+    checked here."""
+    if not name or not str(name).strip():
+        return False
+    if ungrounded_money(name, award) or ungrounded_numbers(name, award):
+        return False
+    return True
+
+
+def _rank_people(people):
+    """At most two confirmed people: the executive, then the growth lead."""
+    confirmed = []
+    for person in people or []:
+        if not isinstance(person, dict) or not person.get("confirmed"):
+            continue
+        if not (person.get("linkedin_name") or person.get("name")):
+            continue
+        confirmed.append(person)
+    order = {"executive": 0, "growth": 1}
+    confirmed.sort(key=lambda person: (
+        order.get(person.get("role") or "", 2),
+        person.get("name") or ""))
+    return confirmed[:2]
+
+
+def with_award_mentions(text, company, people, award):
+    """Prefix verified mentions. The feed caption underneath is unchanged.
+
+    At most three mention elements. A confirmed person with no person URN
+    is written as a plain name, which is not a mention. Unconfirmed people
+    are not passed in here. A name that would add a figure the feed did
+    not supply is left out rather than posted.
+    """
+    body = text or ""
+    company = company or {}
+    slots = []
+    mentions = 0
+    if company.get("status") == "matched":
+        name = (company.get("localized_name") or "").strip()
+        element = ""
+        if _visible_name_ok(name, award):
+            element = mention_element(name, company.get("organization_urn") or "")
+        if element:
+            slots.append(element)
+            mentions += 1
+    for person in _rank_people(people):
+        name = (person.get("linkedin_name") or person.get("name") or "").strip()
+        if not _visible_name_ok(name, award):
+            continue
+        element = mention_element(name, person.get("person_urn") or "")
+        if element and mentions < MAX_MENTIONS:
+            slots.append(element)
+            mentions += 1
+        else:
+            slots.append(name)
+    if not slots:
+        return body
+    lead = " | ".join(slots)
+    prefixed = f"{lead}\n\n{body}" if body else lead
+    if len(prefixed) > LI_LIMIT:
+        return body
+    return prefixed
+
+
+def caption_without_mention_lead(text):
+    """The caption body, without a mention lead this module added."""
+    raw = text or ""
+    parts = raw.split("\n\n", 1)
+    if (len(parts) == 2 and "@[" in parts[0] and "](urn:li:" in parts[0]):
+        return parts[1]
+    return raw
+
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(os.path.dirname(here), "content", "calendar.json")) as f:

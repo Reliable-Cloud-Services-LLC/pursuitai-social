@@ -70,6 +70,11 @@ What this will not do:
   * Invent a fact. Copy is built from the feed row. A model rewrite that
     adds a number, drops the recipient, names a vehicle the feed left
     null, or swaps the link is thrown away.
+  * Tag a company it cannot verify. A LinkedIn mention is sent only when
+    exactly one organization page has a website domain equal to the
+    awardee's SAM registration website. No match, or more than one, and
+    the post uses the plain legal name. Confirmed mappings are reused.
+    People are mentioned only after they are confirmed. See engine/mentions.py.
   * Follow the cursor past awards we have not posted. next_since is saved
     only once every eligible row in the page has been posted or recorded
     as unpostable. Deduping is logs/award_posted.jsonl, keyed by the
@@ -98,6 +103,7 @@ import approval
 import captions
 import cards
 import compliance
+import mentions
 
 DAILY_CAP = 3
 # Server maximum. The default of 20 would hide a larger award sitting
@@ -269,6 +275,10 @@ _STRING_KEYS = (
     "pop_start", "pop_end", "naics_code", "naics_description", "psc_code",
     "set_aside", "extent_competed", "summary", "description_source",
     "generated_unique_award_id",
+    # Optional. The feed does not send these today. When it does (or a
+    # row is handed in with one), the company mention can be verified
+    # without SAM_API_KEY. Absent keys stay "".
+    "recipient_website", "entity_website", "sam_website",
 )
 
 
@@ -612,6 +622,8 @@ def _build_posts(chosen, brand, root, dry_run):
                 _append_jsonl(state["skipped"], _log_row(
                     award, reason="caption", at=_now()))
             continue
+        decorated = mentions.decorate(award, built["text"], root,
+                                      dry_run=dry_run)
         rel = f"assets/cards/award_{award['slug']}.png"
         alt = f"{award['recipient_name']} — {card_topic(award)['stat']}"
         if not dry_run:
@@ -630,12 +642,22 @@ def _build_posts(chosen, brand, root, dry_run):
             first_seen_at=award.get("first_seen_at") or "",
             first_published_at=award.get("first_published_at") or "",
             recipient_name=award["recipient_name"],
+            recipient_uei=award.get("recipient_uei") or "",
             obligation=award.get("obligation"),
             ceiling=award.get("ceiling"),
             naics_code=award.get("naics_code") or "",
+            naics_description=award.get("naics_description") or "",
+            summary=award.get("summary") or "",
             set_aside=award.get("set_aside") or "",
             extent_competed=award.get("extent_competed") or "",
-            text_linkedin=built["text"],
+            text_linkedin=decorated["text"],
+            text_linkedin_plain=decorated["plain"],
+            mention_review=decorated["review"],
+            mention={
+                "company": decorated["company"],
+                "executives": decorated["executives"],
+                "people": decorated["people"],
+            },
             copy_varied=built["varied"],
             media_linkedin=rel,
             url=captions.award_page_url(award),
@@ -653,6 +675,9 @@ def _print_posts(posts, deferred, page):
           f"left for a later day.")
     for index, post in enumerate(posts, 1):
         print(f"\n--- {index} {post['recipient_name']} ---")
+        if post.get("mention_review"):
+            print(post["mention_review"])
+            print()
         print(post["text_linkedin"])
 
 
@@ -809,13 +834,30 @@ def publish(root=None, poster=None, force=False):
                   f"— not posting it again")
             posted.append(dedupe_key(post))
             continue
+        prepared = mentions.finalize(post, root)
+        text = prepared["text"]
+        plain = prepared["plain"] or text
+        if text != (post.get("text_linkedin") or ""):
+            print(f"[awards] {post.get('slug')}: mentions updated from "
+                  f"content/linkedin_mentions.json before posting")
         try:
-            outcome = poster(post["media_linkedin"], post["text_linkedin"],
-                             post.get("alt"))
+            outcome = poster(post["media_linkedin"], text, post.get("alt"))
         except Exception as exc:
-            failed = f"{type(exc).__name__}: {exc}"
-            print(f"[awards] FAILED {dedupe_key(post)}: {failed}")
-            break
+            if text != plain and mentions.tagging_failure(exc):
+                print(f"[awards] tagging failed for {post.get('slug')} "
+                      f"({type(exc).__name__}: {exc}); "
+                      f"posting the plain caption")
+                try:
+                    outcome = poster(post["media_linkedin"], plain,
+                                     post.get("alt"))
+                except Exception as exc2:
+                    failed = f"{type(exc2).__name__}: {exc2}"
+                    print(f"[awards] FAILED {dedupe_key(post)}: {failed}")
+                    break
+            else:
+                failed = f"{type(exc).__name__}: {exc}"
+                print(f"[awards] FAILED {dedupe_key(post)}: {failed}")
+                break
         extra = outcome if isinstance(outcome, dict) else {"id": outcome}
         _append_jsonl(state["posted"], _log_row(
             post,

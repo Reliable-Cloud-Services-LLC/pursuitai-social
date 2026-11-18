@@ -97,6 +97,33 @@ Slack asks for review. Publish waits on the `social-publish` environment.
 One approval covers that day's batch, because that file is what the gate
 hashes. Rejecting the run posts none of them.
 
+The Slack review names the proposed LinkedIn company tag and how it was
+verified: the SAM registration website and the Page's website have the
+same domain, and exactly one Page matched. No match, or more than one,
+and the caption keeps the plain legal name. The mapping is stored in
+`content/linkedin_mentions.json` (UEI, organization URN, source, verified
+date) and reused. Fix it on the branch with `python engine/mentions.py
+set-org`, `block-org`, or `unblock-org` before you approve; publish
+checks that file out with the queue and a block or a fix wins over the
+proposal.
+
+Up to two executives (a CEO, and a BD or growth lead) are suggested from
+the company website. They are not tagged until you confirm them. Push the
+confirmation, then approve — the publish job does not start until you
+approve, and its checkout is what it posts:
+
+```
+python engine/mentions.py confirm-person --uei UEI --name "Jane Doe" \
+  --title "CEO" --profile https://www.linkedin.com/in/example
+```
+
+A profile URL becomes a real member mention only when People Typeahead
+returns a person URN (restricted permission, and only followers of the
+PursuitAI Page). Otherwise the confirmed name is plain text. Pass
+`--urn urn:li:person:…` when you already have the URN. Unconfirmed names
+are left out. At most three mentions go on a post. If LinkedIn rejects
+the mention, publish retries that post with the plain caption.
+
 The feed cursor (`logs/award_cursor.json`, the `since` / `next_since`
 pair) moves only once every eligible row on the page has been posted or
 recorded in `logs/award_skipped.jsonl`. A skipped row failed the caption
