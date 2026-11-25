@@ -676,41 +676,6 @@
       ]
     },
     {
-      "id": "secure-docs",
-      "feature": "Secure File Storage",
-      "headline": "Encrypted per file. Bound to your org.",
-      "body": "NDAs, teaming agreements, proposal drafts — each file encrypted before storage with its own key, and the ciphertext cryptographically bound to your organization. No admin screen can open a file: the download and preview endpoints do not exist on that surface. Full access audit log.",
-      "hook_x": "Where do your teaming agreements and proposal drafts live right now? PursuitAI's vault encrypts every file with its own key and binds the ciphertext to your org. The admin surface has no download or preview endpoint at all — with role-gated access and a full audit log.",
-      "hook_ig": "Your NDAs and proposal drafts deserve better than a shared drive.\n\nPursuitAI's Secure File Storage encrypts each document before it's stored — each with its own key, and the ciphertext cryptographically bound to your organization, so a file encrypted for one tenant can't be unwrapped for another. The super-admin surface is metadata-only by construction — the download and preview endpoints simply do not exist on it.\n\nIn-app preview without download, role-gated access enforced at the storage layer, and a complete audit log.\n\nBuilt for firms that get security-reviewed.",
-      "stat": "Per-file keys, tenant-bound + audit log",
-      "page": "/",
-      "media": "card",
-      "verification": {
-        "status": "VERIFIED",
-        "source_type": "code",
-        "source_ref": "apps/backend/app/api/admin_files.py:1-8 (metadata-only by construction: 'download/preview endpoints deliberately DO NOT EXIST on this router (absence, not 403)... wrapped_dek/nonce are never selected into a response'); apps/backend/app/services/file_storage.py:103-116 (per-file data key, org_id as EncryptionContext), :270 (org_id as AES-GCM AAD); apps/backend/app/api/files.py:69,164 (role-gated download, FileAccessLog on every access)",
-        "verified_on": "2026-07-29",
-        "note": "Now claims the APPLICATION layer, which is the strong and checkable claim, and makes none about the operator layer. The previous wording -- 'platform staff see metadata, never contents' -- reads as a capability guarantee, and it is not one: file_storage.py:64 is ONE shared KMS CMK, so an operator with AWS access to it plus S3 plus the DB can decrypt out-of-band. pursuit-ai had already removed that exact sentence from its own landing copy in #1975 (50e137c6); I preserved it in PR #28 while rewriting the adjacent 'your own key' clause, and an independent audit caught it. NB apps/web/src/features/files/components/FilesTab.js:21 still carries the old sentence in-product -- a pursuit-ai defect, reported separately."
-      },
-      "icon": "shield-check",
-      "angles": [
-        {
-          "headline": "The admin screen has no download button.",
-          "stat": "The endpoint does not exist",
-          "body": "On the admin file surface, download and preview endpoints are not disabled or permission-checked. They were never built. Absence, not a 403.",
-          "hook_x": "Most platforms secure admin access to your files with a permission check. On our admin file surface the download and preview endpoints do not exist at all — absence rather than a 403. Nothing to misconfigure.",
-          "hook_ig": "There is a difference between \"staff are not allowed to open your files\" and \"there is no way to open them from that screen.\"\n\nThe first is a permission check, and permission checks get misconfigured.\n\nOn our admin file surface the download and preview endpoints were never built. Absence, not a 403."
-        },
-        {
-          "headline": "Every file, its own key.",
-          "stat": "Per-file keys, bound to your org",
-          "body": "NDAs, teaming agreements, proposal drafts — each encrypted before storage with its own key, the ciphertext bound to your organization, and every access written to an audit log.",
-          "hook_x": "NDAs, teaming agreements, draft proposals. Each file is encrypted before storage with its own key, the ciphertext bound to your organization, and every access lands in an audit log you can read.",
-          "hook_ig": "The documents that matter in GovCon are the ones you would least like loose: NDAs, teaming agreements, unsubmitted proposals.\n\nEach one is encrypted before storage with its own key. The ciphertext is bound to your organization. Every access is written to an audit log you can read."
-        }
-      ]
-    },
-    {
       "id": "exec-analytics",
       "feature": "Executive Pipeline Analytics",
       "headline": "The CFO view of your book of business.",

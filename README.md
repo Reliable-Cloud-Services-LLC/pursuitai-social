@@ -66,7 +66,7 @@ comes back tomorrow. A failed run is loud: non-zero exit, a Slack alert, and a
 
 | File | What it does |
 |---|---|
-| `calendar.json` | **The single source of truth.** Brand config plus 24 feature topics, each with a headline, body, per-platform hooks, and a stat. Add a topic here and nothing else changes. |
+| `calendar.json` | **The single source of truth.** Brand config plus the feature topics, each with a headline, body, per-platform hooks, and a stat. Add a topic here and nothing else changes — but a new topic must pass [docs/CONTENT_STANDARDS.md](docs/CONTENT_STANDARDS.md) (e.g. we do not market security posture as a feature). |
 | `pilot.json` | The five pilot angles. Edit the copy here. Ids are `utm_content`. `"enabled"` ships `false`. `"channels"` turns X, Instagram, or LinkedIn off without a code change. |
 | `state.json` | The rotation cursor: which topic is next, how many runs have published. Only advances on a confirmed post. |
 | `pending.json` | The prepared-but-unpublished post, awaiting review. Committed, because the publish job is a separate run. |

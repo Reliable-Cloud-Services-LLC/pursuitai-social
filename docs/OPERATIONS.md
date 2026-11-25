@@ -8,7 +8,7 @@ us, and what is still open.
 Keep it current. A stale operations doc is worse than none, because it is
 believed.
 
-_Last reviewed: 2026-11-14._
+_Last reviewed: 2026-11-25._
 
 ---
 
@@ -21,7 +21,7 @@ _Last reviewed: 2026-11-14._
 | **LinkedIn** | Page API posting is live to the Pursuit AI Page, after the same `social-publish` approval as X and Instagram. Community Management access is in place. The 60-day token re-auth and the expiry warning still apply. `scripts/preview.py --linkedin` is the manual fallback. See [LINKEDIN_ACCESS.md](LINKEDIN_ACCESS.md). |
 | **Award posts** | Weekdays 12:47 UTC, `awards.yml`. LinkedIn only, up to 3 brand-new awards, same `social-publish` gate, its own `content/awards_pending.json`. |
 | **Facebook** | Not wired. |
-| **Rotation** | 26 of 27 topics publishable. `card → screenshot → card → ad`. |
+| **Rotation** | 25 of 26 topics publishable. `card → screenshot → card → ad`. |
 | **Cron** | Mon–Sat 05:13 UTC, `daily.yml`. Late is normal (always); dropped happens. |
 
 The one blocked topic is `capability-statement` — **UNVERIFIABLE**, not
