@@ -16,7 +16,8 @@ and a machine feed:
         "award_type_code", "award_category",
         "obligation", "ceiling", "action_date", "pop_start", "pop_end",
         "naics_code", "naics_description", "psc_code",
-        "set_aside", "extent_competed", "summary", "description_source",
+        "set_aside", "extent_competed", "offers_received", "summary",
+        "description_source",
         "generated_unique_award_id",
         "official_urls": {"usaspending": "..."}
      }, ...],
@@ -37,6 +38,11 @@ the three we pick are the largest of the page, not of a 20-row slice).
 `generated_unique_award_id` are additive. Older feeds omit them. An
 FPDS-first row can have an empty `generated_unique_award_id` and an
 empty `official_urls.usaspending` until USAspending has the award.
+`offers_received` (FPDS numberOfOffersReceived) and `extent_competed`
+are the same kind of addition. Both may be null. The caption names how
+many competitors lost only when `offers_received` is an integer from 2
+through 999 and the extent does not say the award was not competed,
+sole source, or a follow-on. Otherwise that line is left out.
 `first_seen_at` / `first_published_at` is when the record became public,
 which for DoD can be about 90 days after `action_date`. Withdrawn
 awards are not in the feed.
@@ -57,7 +63,8 @@ What this will not do:
     limits the feed to IT NAICS and at least $1M, and it leaves out
     modifications, options, and withdrawn awards. Task orders are in
     the feed. We still drop a row that is not flagged new.
-  * Filter on extent_competed. Sole-source is not a skip.
+  * Filter on extent_competed. Sole-source is not a skip. The caption
+    still posts. It does not claim the winner beat other bidders.
   * Drop a row because `generated_unique_award_id` is empty. FPDS can
     publish the page before USAspending has that id.
   * Post more than three a day. The caption and the card lead with the
@@ -67,9 +74,12 @@ What this will not do:
     stops. The awards workflow parks on the social-publish environment,
     the same human gate as the daily post, with its own file so it cannot
     overwrite content/pending.json.
-  * Invent a fact. Copy is built from the feed row. A model rewrite that
-    adds a number, drops the recipient, names a vehicle the feed left
-    null, or swaps the link is thrown away.
+  * Invent a fact. Copy is built from the feed row. "Beat N other
+    bidders" is offers_received minus 1, and only when that count is
+    in range and the extent does not say otherwise. A task order with
+    a vehicle says "Won over N other {vehicle} holders". A model rewrite
+    that adds a number, drops the recipient, names a vehicle the feed
+    left null, or swaps the link is thrown away.
   * Tag a company it cannot verify. A LinkedIn mention is sent only when
     exactly one organization page has a website domain equal to the
     awardee's SAM registration website. No match, or more than one, and
@@ -315,6 +325,9 @@ def normalize_item(raw):
     item["is_task_order"] = _is_new(raw.get("is_task_order"))
     item["obligation"] = _money(raw.get("obligation"))
     item["ceiling"] = _money(raw.get("ceiling"))
+    # Optional. Absent on older feeds, and then None — the caption
+    # omits the bidder line, which is how those rows already read.
+    item["offers_received"] = captions._offers_received(raw)
     item["official_urls"] = _official_urls(raw)
     return item
 
@@ -650,6 +663,8 @@ def _build_posts(chosen, brand, root, dry_run):
             summary=award.get("summary") or "",
             set_aside=award.get("set_aside") or "",
             extent_competed=award.get("extent_competed") or "",
+            offers_received=captions._offers_received(award),
+            offers_review=captions.offers_review(award),
             text_linkedin=decorated["text"],
             text_linkedin_plain=decorated["plain"],
             mention_review=decorated["review"],
@@ -677,6 +692,9 @@ def _print_posts(posts, deferred, page):
         print(f"\n--- {index} {post['recipient_name']} ---")
         if post.get("mention_review"):
             print(post["mention_review"])
+            print()
+        if post.get("offers_review"):
+            print(post["offers_review"])
             print()
         print(post["text_linkedin"])
 

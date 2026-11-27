@@ -167,8 +167,11 @@ the greater of obligation and ceiling — that are not already in
 caption is written from that row (`recipient_name`, `awarding_agency`,
 the lead value, and the rest of the feed fields) and links to the
 feed's `url`. A task order is not called a new contract, and a vehicle
-is named only when `contract_vehicle` is set. A dry run prints them
-and stops:
+is named only when `contract_vehicle` is set. When `offers_received` is
+from 2 through 999 and the award was competed, the caption says how
+many other bidders the winner beat, or how many other holders of the
+vehicle for a task order. A missing count leaves that line out. A dry
+run prints them and stops:
 
 ```bash
 .venv/bin/python engine/awards.py --dry-run

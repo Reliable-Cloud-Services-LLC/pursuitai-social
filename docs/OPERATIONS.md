@@ -80,8 +80,23 @@ lead value, `naics_code`, PIID, the parent PIID, the vehicle, the signed
 date, the release date, the feed's summary, and `set_aside` /
 `extent_competed` when those are present. A task order is called a task
 order. `contract_vehicle` is quoted only when the feed set it ("under
-GSA MAS"); a null vehicle is not guessed from the parent PIID. When
-`action_date` is more than 14 days before `first_seen_at` (or
+GSA MAS"); a null vehicle is not guessed from the parent PIID.
+
+When `offers_received` is an integer from 2 through 999, and
+`extent_competed` does not mark the award not competed, sole source, or
+a follow-on, one line follows the value lines. N is `offers_received`
+minus 1: "Beat N other bidders", or "Beat 1 other bidder". A task order
+that names `contract_vehicle` says "Won over N other {vehicle} holders"
+("Won over 1 other GSA MAS holder" when N is 1), because only holders of
+that vehicle could bid. Codes B, C, E, G, and NDO omit the line, and so
+does a description containing "not competed", "not available for
+competition", "non-competitive", "sole source", or "follow on". A null
+count, a count outside that range, or a non-competed extent leaves the
+line out. The Slack review shows `Offers received: 7 → 'Beat 6 other
+bidders'` or `Offers received: n/a (omitted)`. A feed that sends neither
+field is unchanged.
+
+When `action_date` is more than 14 days before `first_seen_at` (or
 `first_published_at`), the caption says the record was recently released
 and may cite the signed date. It is not taken from OrangeSlices or any
 other outlet. The link is the feed's `url`

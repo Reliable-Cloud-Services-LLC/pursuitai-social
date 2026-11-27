@@ -160,8 +160,10 @@ def build_ig(topic, brand, fresh=True):
 # --- Public award posts ----------------------------------------------------
 # A caption here is a news post, not a product hook. Every figure has to
 # come from the feed record: Claude may tighten wording and may not add a
-# number, a name, or a link. The award URL is appended afterwards so a
-# rewrite cannot swap it for someone else's article.
+# number, a name, or a link. The one derived figure is how many other
+# offers lost, and only when offers_received itself supports it. The award
+# URL is appended afterwards so a rewrite cannot swap it for someone
+# else's article.
 
 _MONEY_CLAIM = re.compile(
     r"\$\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:billion|million|thousand|[bmk]))?"
@@ -255,6 +257,89 @@ def _amount(value):
     return number
 
 
+# FPDS extent-competed values that mean this award was not a fresh
+# competition. The feed may send the code, the description, or both.
+# A blank value is not sole source. It means the feed did not say, and
+# the bidder line is then decided only by offers_received.
+_UNCOMPETED_CODES = frozenset({"B", "C", "E", "G", "NDO"})
+_UNCOMPETED_PHRASES = (
+    "NOT COMPETED",
+    "NOT AVAILABLE FOR COMPETITION",
+    "NON COMPETITIVE",
+    "SOLE SOURCE",
+    "FOLLOW ON",
+)
+# Counts above this are left out. A larger number is not turned into a claim.
+_OFFERS_MAX = 999
+
+
+def _offers_received(award):
+    """FPDS numberOfOffersReceived as an int, or None.
+
+    An older feed omits the key. Null, a bool, and anything that is not
+    a whole number are None, so the caption says nothing about bidders
+    and reads the way it did before the field existed.
+    """
+    if not isinstance(award, dict):
+        return None
+    raw = award.get("offers_received")
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not re.fullmatch(r"-?\d+", text):
+            return None
+        return int(text)
+    if isinstance(raw, float):
+        if raw != raw or raw in (float("inf"), float("-inf")):
+            return None
+        if raw != int(raw):
+            return None
+        return int(raw)
+    if isinstance(raw, int):
+        return raw
+    return None
+
+
+def _extent_uncompeted(value):
+    """True when extent_competed says not competed, sole source, or follow-on.
+
+    Codes B, C, and G are not competed. NDO is a non-competitive delivery
+    order. E is a follow-on to a competed action, which is not a new
+    competition. Descriptions are matched the same way, including "sole
+    source". Anything else, including a missing value, is not a reason
+    to drop a count the feed actually sent.
+    """
+    if value is None or isinstance(value, (bool, dict, list)):
+        return False
+    upper = str(value).strip().upper()
+    if not upper:
+        return False
+    folded = re.sub(r"[^A-Z0-9]+", " ", upper).strip()
+    if any(phrase in folded for phrase in _UNCOMPETED_PHRASES):
+        return True
+    if "NONCOMPETITIVE" in folded.replace(" ", ""):
+        return True
+    tokens = folded.split()
+    return bool(tokens) and tokens[0] in _UNCOMPETED_CODES
+
+
+def _bidders_beaten(award):
+    """How many other offers lost, or None when the line must be omitted.
+
+    N is offers_received - 1. Below 2 there is nobody to have beaten.
+    Above 999 the figure is not one we will state. A non-competed extent
+    wins over the count.
+    """
+    offers = _offers_received(award)
+    if offers is None or offers < 2 or offers > _OFFERS_MAX:
+        return None
+    extent = award.get("extent_competed") if isinstance(award, dict) else None
+    if _extent_uncompeted(extent):
+        return None
+    return offers - 1
+
+
 def _allowed_amounts(award):
     amounts = []
     for key in ("obligation", "ceiling"):
@@ -339,6 +424,15 @@ def _plain_tokens(award):
         tokens.add(format(number, "f").rstrip("0").rstrip("."))
         for match in _NUM.findall(format_dollars(number)):
             tokens.add(match.replace(",", ""))
+    # offers_received is a feed field. The beaten count (that number
+    # minus 1) is allowed only when the caption would print it, so a
+    # sole-source row cannot grow a bidder line in a rewrite.
+    offers = _offers_received(award)
+    if offers is not None:
+        tokens.add(str(offers))
+    beaten = _bidders_beaten(award)
+    if beaten is not None:
+        tokens.add(str(beaten))
     return tokens
 
 
@@ -451,6 +545,41 @@ def _vehicle_name(award):
     return str(raw).strip()
 
 
+def competitor_sentence(award):
+    """One caption line for how many competitors lost, or "".
+
+    A task or delivery order that names its vehicle competed only among
+    holders of that vehicle, so the line says so. Every other award says
+    how many other bidders it beat. The count is not estimated.
+    """
+    beaten = _bidders_beaten(award)
+    if beaten is None:
+        return ""
+    vehicle = _vehicle_name(award)
+    if _is_task_order(award) and vehicle:
+        noun = "holder" if beaten == 1 else "holders"
+        return f"Won over {beaten} other {vehicle} {noun}."
+    noun = "bidder" if beaten == 1 else "bidders"
+    return f"Beat {beaten} other {noun}."
+
+
+def offers_review(award):
+    """The approval-queue line for the bidder count.
+
+    The quoted words are the caption sentence without its period, so a
+    reviewer sees the claim that would ship. A missing count is "n/a".
+    A count we will not use is the number plus "omitted".
+    """
+    sentence = competitor_sentence(award)
+    offers = _offers_received(award)
+    if sentence:
+        shown = sentence[:-1] if sentence.endswith(".") else sentence
+        return f"Offers received: {offers} → '{shown}'"
+    if offers is None:
+        return "Offers received: n/a (omitted)"
+    return f"Offers received: {offers} (omitted)"
+
+
 def format_date(value):
     """'July 27, 2026', or "" when the feed has no date."""
     day = _parse_date(value)
@@ -557,6 +686,10 @@ def award_facts_body(award, *, include_summary=True):
         if released:
             lines.append(f"The public record is dated {released}.")
     lines.extend(_value_lines(award))
+    # After the value lines, so the dollar lead stays the first figure.
+    competed = competitor_sentence(award)
+    if competed:
+        lines.append(competed)
     details = []
     if award.get("naics_code"):
         naics = f"NAICS {award['naics_code']}"
@@ -644,9 +777,21 @@ def _award_body_ok(body, award):
 
 
 def compliance_check(award, text):
-    """The existing content rules, pointed at one award caption."""
+    """The existing content rules, pointed at one award caption.
+
+    "Won over N other {vehicle} holders" is the offers_received count,
+    not a customer testimonial. The testimonial rule treats "won" next
+    to an Inc/LLC name as a reference, which would drop every task-order
+    caption that states the count. That one sentence is removed for this
+    check only. A summary that says the firm "won" something else still
+    trips the rule and is left out of the post.
+    """
     import compliance
-    return compliance.check_claims(_award_topic(award), text)
+    checked = text or ""
+    sentence = competitor_sentence(award)
+    if sentence:
+        checked = checked.replace(sentence, " ")
+    return compliance.check_claims(_award_topic(award), checked)
 
 
 def _acceptable_body(award):

@@ -25,6 +25,7 @@ import awards  # noqa: E402
 import captions  # noqa: E402
 import cards  # noqa: E402
 import compliance  # noqa: E402
+import notify  # noqa: E402
 import post_linkedin  # noqa: E402
 
 
@@ -711,15 +712,354 @@ def test_a_rewrite_that_invents_a_vehicle_falls_back(monkeypatch, quiet_model):
 
 def test_current_feed_without_the_new_keys_still_posts(quiet_model):
     row = award()
-    for key in ("is_task_order", "contract_vehicle", "first_seen_at"):
+    for key in ("is_task_order", "contract_vehicle", "first_seen_at",
+                "offers_received", "extent_competed"):
         row.pop(key, None)
     chosen, _ = awards.select_awards([row])
     assert chosen[0]["is_task_order"] is False
     assert chosen[0]["contract_vehicle"] == ""
     assert chosen[0]["first_seen_at"] == ""
+    assert chosen[0]["offers_received"] is None
     text = captions.build_award_linkedin(row, branded(), fresh=False)["text"]
+    normalized = captions.build_award_linkedin(
+        chosen[0], branded(), fresh=False)["text"]
+    assert normalized == text
     assert "was awarded a contract" in text
     assert "task order" not in text.casefold()
+    assert "Beat " not in text
+    assert "Won over" not in text
+    assert captions.offers_review(row) == "Offers received: n/a (omitted)"
+    assert captions.offers_review(chosen[0]) == "Offers received: n/a (omitted)"
+
+
+# ---------- offers received ----------
+
+def _caption(row):
+    built = captions.build_award_linkedin(row, branded(), fresh=False)
+    assert built is not None
+    return built["text"]
+
+
+def test_competed_contract_says_how_many_bidders_were_beat(quiet_model):
+    row = award(offers_received=7,
+                extent_competed="FULL AND OPEN COMPETITION")
+    text = _caption(row)
+    assert "Beat 6 other bidders." in text
+    assert text.index("$12 million") < text.index("$4.2 million")
+    assert text.index("$4.2 million") < text.index("Beat 6 other bidders.")
+    assert "Competition: FULL AND OPEN COMPETITION." in text
+    assert captions.offers_review(row) == (
+        "Offers received: 7 → 'Beat 6 other bidders'")
+    assert captions.ungrounded_numbers(text, row) == []
+    assert captions.ungrounded_money(text, row) == []
+    assert compliance.check_claims(captions._award_topic(row), text) == []
+
+
+def test_task_order_counts_other_vehicle_holders(quiet_model):
+    row = navy(offers_received=5,
+               extent_competed="FULL AND OPEN COMPETITION")
+    text = _caption(row)
+    assert "Won over 4 other GSA MAS holders." in text
+    assert "other bidder" not in text.casefold()
+    assert text.index("$2,778,270") < text.index("$915,980")
+    assert text.index("$915,980") < text.index(
+        "Won over 4 other GSA MAS holders.")
+    assert captions.offers_review(row) == (
+        "Offers received: 5 → 'Won over 4 other GSA MAS holders'")
+    assert captions.ungrounded_numbers(text, row) == []
+    assert captions.ungrounded_money(text, row) == []
+    # "Provecta Tech, Inc." does not match the testimonial pattern (the
+    # comma). A name that does, next to "Won", would drop the post. The
+    # count is a feed fact, so the award gate lets that sentence through.
+    named = navy(recipient_name="Provecta Tech Inc.", offers_received=5,
+                 extent_competed="A")
+    body = captions.award_facts_body(named)
+    assert compliance.check_claims(captions._award_topic(named), body)
+    assert captions.compliance_check(named, body) == []
+    assert "Won over 4 other GSA MAS holders." in _caption(named)
+
+    alliant = navy(
+        slug="alliant-order",
+        id="page-alliant",
+        url="https://pursuitai.net/awards/alliant-order",
+        contract_vehicle="Alliant 2",
+        offers_received=5,
+        extent_competed="A",
+    )
+    alliant_text = _caption(alliant)
+    assert "Won over 4 other Alliant 2 holders." in alliant_text
+    assert "gsa mas" not in alliant_text.casefold()
+    assert captions.ungrounded_numbers(alliant_text, alliant) == []
+    assert captions.offers_review(alliant) == (
+        "Offers received: 5 → 'Won over 4 other Alliant 2 holders'")
+
+
+def test_one_other_competitor_is_singular(quiet_model):
+    row = award(offers_received=2, extent_competed="D")
+    text = _caption(row)
+    assert "Beat 1 other bidder." in text
+    assert "bidders" not in text
+    assert captions.offers_review(row) == (
+        "Offers received: 2 → 'Beat 1 other bidder'")
+
+    order = navy(offers_received=2, extent_competed="CDO",
+                 action_date="2026-11-12",
+                 first_seen_at="2026-11-13T00:00:00Z",
+                 first_published_at="2026-11-13T00:00:00Z")
+    order_text = _caption(order)
+    assert "Won over 1 other GSA MAS holder." in order_text
+    assert "holders" not in order_text
+    assert captions.offers_review(order) == (
+        "Offers received: 2 → 'Won over 1 other GSA MAS holder'")
+
+
+def test_a_single_offer_omits_the_bidder_line(quiet_model):
+    row = award(offers_received=1,
+                extent_competed="FULL AND OPEN COMPETITION")
+    text = _caption(row)
+    assert "other bidder" not in text.casefold()
+    assert "Won over" not in text
+    assert "Competition: FULL AND OPEN COMPETITION." in text
+    assert captions.offers_review(row) == "Offers received: 1 (omitted)"
+    bare = award()
+    bare.pop("extent_competed", None)
+    without = _caption(bare)
+    assert "Competition:" not in without
+    # Same dollars and the same opening. The only new sentence on the
+    # competed row is the extent the feed already quoted.
+    assert "Beat " not in text
+    assert "Beat " not in without
+
+
+def test_null_offers_received_omits_the_bidder_line(quiet_model):
+    row = award(offers_received=None, extent_competed=None)
+    text = _caption(row)
+    baseline = _caption(award())
+    assert text == baseline
+    assert "other bidder" not in text.casefold()
+    assert captions.offers_review(row) == "Offers received: n/a (omitted)"
+
+
+def test_missing_offer_fields_match_today_caption(quiet_model):
+    row = award()
+    row.pop("offers_received", None)
+    row.pop("extent_competed", None)
+    text = _caption(row)
+    assert text == _caption(award())
+    assert captions.offers_review(row) == "Offers received: n/a (omitted)"
+    chosen, _ = awards.select_awards([row])
+    assert chosen[0]["offers_received"] is None
+    assert _caption(chosen[0]) == text
+
+
+def test_sole_source_extent_omits_the_bidder_line(quiet_model):
+    row = award(offers_received=7,
+                extent_competed="NOT AVAILABLE FOR COMPETITION")
+    text = _caption(row)
+    assert "other bidder" not in text.casefold()
+    assert "Won over" not in text
+    assert "Competition: NOT AVAILABLE FOR COMPETITION." in text
+    assert captions.offers_review(row) == "Offers received: 7 (omitted)"
+    # Still queued. Sole source is not a skip.
+    chosen, _ = awards.select_awards([row])
+    assert len(chosen) == 1
+
+
+@pytest.mark.parametrize("extent", [
+    "B", "C", "G", "NDO", "E", "b", "ndo",
+    "C: Not Competed",
+    "NOT COMPETED",
+    "NOT COMPETED UNDER SAP",
+    "NON-COMPETITIVE DELIVERY ORDER",
+    "FOLLOW ON TO COMPETED ACTION",
+    "FOLLOW-ON TO COMPETED ACTION",
+    "SOLE SOURCE",
+    "sole-source",
+])
+def test_noncompeted_extent_omits_the_bidder_line(extent, quiet_model):
+    row = award(offers_received=7, extent_competed=extent)
+    text = _caption(row)
+    assert "other bidder" not in text.casefold()
+    assert "Won over" not in text
+    assert captions.offers_review(row) == "Offers received: 7 (omitted)"
+    assert captions._bidders_beaten(row) is None
+
+
+@pytest.mark.parametrize("extent", [
+    "A", "D", "F", "CDO",
+    "FULL AND OPEN COMPETITION",
+    "FULL AND OPEN COMPETITION AFTER EXCLUSION OF SOURCES",
+    "COMPETED UNDER SAP",
+    "COMPETITIVE DELIVERY ORDER",
+    "CDO - COMPETITIVE DELIVERY ORDER",
+    None,
+    "",
+])
+def test_competed_or_blank_extent_states_the_count(extent, quiet_model):
+    row = award(offers_received=7, extent_competed=extent)
+    text = _caption(row)
+    assert "Beat 6 other bidders." in text
+    assert captions.offers_review(row) == (
+        "Offers received: 7 → 'Beat 6 other bidders'")
+
+
+@pytest.mark.parametrize("offers,expected", [
+    (999, "Beat 998 other bidders."),
+    (1000, None),
+    (0, None),
+    (2, "Beat 1 other bidder."),
+])
+def test_offer_count_bounds(offers, expected, quiet_model):
+    row = award(offers_received=offers, extent_competed="A")
+    text = _caption(row)
+    if expected is None:
+        assert "other bidder" not in text.casefold()
+        assert captions.offers_review(row) == (
+            f"Offers received: {offers} (omitted)")
+    else:
+        assert expected in text
+        shown = expected[:-1]
+        assert captions.offers_review(row) == (
+            f"Offers received: {offers} → '{shown}'")
+        assert captions.ungrounded_numbers(text, row) == []
+
+
+def test_unusable_offer_counts_are_not_quoted():
+    assert captions.offers_review({"offers_received": True}) == (
+        "Offers received: n/a (omitted)")
+    assert captions.offers_review({"offers_received": 7.5}) == (
+        "Offers received: n/a (omitted)")
+    assert captions.offers_review({"offers_received": "seven"}) == (
+        "Offers received: n/a (omitted)")
+    assert captions.offers_review({}) == "Offers received: n/a (omitted)"
+    assert captions._offers_received({"offers_received": "7"}) == 7
+    assert captions._offers_received({"offers_received": 8.0}) == 8
+    assert captions.offers_review({"offers_received": "7",
+                                   "extent_competed": "A"}) == (
+        "Offers received: 7 → 'Beat 6 other bidders'")
+
+
+def test_a_task_order_without_a_vehicle_counts_bidders(quiet_model):
+    row = navy(
+        contract_vehicle=None,
+        offers_received=5,
+        extent_competed="A",
+        action_date="2026-11-12",
+        first_seen_at="2026-11-13T00:00:00Z",
+        first_published_at="2026-11-13T00:00:00Z",
+    )
+    text = _caption(row)
+    assert "Beat 4 other bidders." in text
+    assert "holders" not in text.casefold()
+    assert "gsa mas" not in text.casefold()
+    assert captions.offers_review(row) == (
+        "Offers received: 5 → 'Beat 4 other bidders'")
+
+
+def test_normalize_keeps_offers_received_for_the_caption(quiet_model):
+    raw = award(offers_received=7, extent_competed="A")
+    chosen, _ = awards.select_awards([raw])
+    assert chosen[0]["offers_received"] == 7
+    assert isinstance(chosen[0]["offers_received"], int)
+    text = _caption(chosen[0])
+    assert "Beat 6 other bidders." in text
+
+
+def test_a_summary_that_says_won_is_still_dropped(quiet_model):
+    row = award(offers_received=7, extent_competed="A",
+                summary="Acme Federal Solutions LLC won bigger work.")
+    text = _caption(row)
+    assert "Beat 6 other bidders." in text
+    assert "won bigger" not in text.casefold()
+
+    order = navy(offers_received=5, extent_competed="A",
+                 recipient_name="Provecta Tech Inc.",
+                 summary="Provecta Tech Inc. won the support work.")
+    order_text = _caption(order)
+    assert "Won over 4 other GSA MAS holders." in order_text
+    assert "won the support" not in order_text.casefold()
+
+
+def test_a_rewrite_that_changes_the_bidder_count_falls_back(
+        monkeypatch, quiet_model):
+    row = award(offers_received=7, extent_competed="A")
+
+    def fake(topic, platform, brand):
+        return topic["hook_ig"].replace(
+            "Beat 6 other bidders.", "Beat 99 other bidders.")
+
+    monkeypatch.setattr(captions, "_claude_variant", fake)
+    built = captions.build_award_linkedin(row, branded(), fresh=True)
+    assert "Beat 6 other bidders." in built["text"]
+    assert "Beat 99" not in built["text"]
+    assert built["varied"] is False
+
+
+def test_offer_count_does_not_change_which_awards_are_queued():
+    small = award(generated_unique_award_id="SMALL", slug="small",
+                  obligation=2_000_000, ceiling=2_000_000,
+                  offers_received=40, extent_competed="A")
+    big = award(generated_unique_award_id="BIG", slug="big",
+                obligation=9_000_000, ceiling=9_000_000,
+                offers_received=2, extent_competed="C")
+    chosen, _ = awards.select_awards([small, big])
+    assert [row["generated_unique_award_id"] for row in chosen] == [
+        "BIG", "SMALL"]
+
+
+def test_prepare_records_the_offers_review(tmp_path, monkeypatch, quiet_model):
+    row = award(offers_received=7, extent_competed="A")
+    monkeypatch.setattr(awards, "fetch_feed", lambda **kwargs: _page([row]))
+    pending = awards.prepare(root=str(tmp_path), dry_run=True)
+    post = pending["posts"][0]
+    assert post["offers_received"] == 7
+    assert post["offers_review"] == (
+        "Offers received: 7 → 'Beat 6 other bidders'")
+    assert "Beat 6 other bidders." in post["text_linkedin"]
+    # Dedupe key is still the page id. The new fields are not part of it.
+    assert post["dedupe_key"] == row["id"]
+
+
+def test_approval_review_shows_offers_received(monkeypatch):
+    sent = {}
+
+    def fake(text, blocks):
+        sent["text"] = text
+        sent["blocks"] = blocks
+        return True
+
+    monkeypatch.setattr(notify, "_send_blocks", fake)
+    pending = {"posts": [
+        {
+            "recipient_name": "Acme Federal Solutions LLC",
+            "text_linkedin": "caption",
+            "offers_review": "Offers received: 7 → 'Beat 6 other bidders'",
+            "mention_review": "Company tag: none",
+        },
+        {
+            "recipient_name": "Solo LLC",
+            "text_linkedin": "caption",
+            "offers_review": "Offers received: n/a (omitted)",
+        },
+    ]}
+    assert notify.awards_review(pending) is True
+    blob = "\n".join(
+        (block.get("text") or {}).get("text") or ""
+        for block in sent["blocks"])
+    assert "Offers received: 7 → 'Beat 6 other bidders'" in blob
+    assert "Offers received: n/a (omitted)" in blob
+    assert "Company tag: none" in blob
+
+
+def test_dry_run_prints_the_offers_line(capsys):
+    awards._print_posts([{
+        "recipient_name": "Acme Federal Solutions LLC",
+        "offers_review": "Offers received: n/a (omitted)",
+        "mention_review": "",
+        "text_linkedin": "caption",
+    }], [], {"unavailable": False})
+    out = capsys.readouterr().out
+    assert "Offers received: n/a (omitted)" in out
 
 
 # ---------- queue, dedupe log, cursor ----------
