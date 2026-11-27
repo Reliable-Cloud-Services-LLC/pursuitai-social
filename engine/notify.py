@@ -184,10 +184,13 @@ def awards_review(pending, review_url=None, media_urls=None):
                 })
             who = post.get("recipient_name") or post.get("recipient") or "award"
             review = (post.get("mention_review") or "").strip()
+            offers = (post.get("offers_review") or "").strip()
             caption = post.get("text_linkedin") or ""
             body = f"*Post {index} — {who}*"
             if review:
                 body += "\n" + review
+            if offers:
+                body += "\n" + offers
             body += "\n```" + caption + "```"
             blocks.append(_section(body))
         if review_url:
